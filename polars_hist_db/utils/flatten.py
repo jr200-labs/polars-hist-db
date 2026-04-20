@@ -14,10 +14,14 @@ def flatten(df: pl.DataFrame) -> pl.DataFrame:
     with parent column name, and explode list columns
     """
     struct_cols = [
-        col for col, dtype in zip(df.columns, df.dtypes) if type(dtype) is pl.Struct
+        col
+        for col, dtype in zip(df.columns, df.dtypes, strict=True)
+        if type(dtype) is pl.Struct
     ]
     list_cols = [
-        col for col, dtype in zip(df.columns, df.dtypes) if type(dtype) is pl.List
+        col
+        for col, dtype in zip(df.columns, df.dtypes, strict=True)
+        if type(dtype) is pl.List
     ]
 
     if len(list_cols) > 0:

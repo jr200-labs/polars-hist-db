@@ -38,6 +38,7 @@ from ..utils.db_utils import (
 
 
 LOGGER = logging.getLogger(__name__)
+_NO_TIME_HINT = TimeHint(mode="none")
 
 
 class DataframeOps:
@@ -151,7 +152,7 @@ class DataframeOps:
         table_name: str,
         query_df: pl.DataFrame,
         column_selection: Optional[List[str]],
-        time_hint: TimeHint = TimeHint(mode="none"),
+        time_hint: TimeHint = _NO_TIME_HINT,
     ) -> pl.DataFrame:
         tmp_table_name = f"tmp_{uuid4()}".lower()
 

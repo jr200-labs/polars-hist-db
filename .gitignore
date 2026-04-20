@@ -48,3 +48,4 @@ __pycache__
 .coverage
 .*_cache
 htmlcov/
+.shared/
