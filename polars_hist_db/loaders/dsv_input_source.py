@@ -2,7 +2,7 @@ from datetime import datetime
 import logging
 from pathlib import Path
 import time
-from typing import AsyncGenerator, Awaitable, Callable, List, Tuple, Union
+from typing import Any, AsyncGenerator, Awaitable, Callable, List, Tuple, Union
 
 import polars as pl
 from sqlalchemy import Connection, Engine
@@ -114,17 +114,20 @@ class DsvCrawlerInputSource(InputSource[DsvCrawlerInputConfig]):
                 partitions = self._process_payload(Path(csv_file), file_time)
 
                 async def commit_fn(
-                    connection: Connection, modified_tables: List[Tuple[str, str]]
+                    connection: Connection,
+                    modified_tables: List[Tuple[str, str]],
+                    _csv_file: str = csv_file,
+                    _file_time: Any = file_time,
                 ) -> bool:
                     for modified_schema, modified_table in modified_tables:
                         aops = AuditOps(modified_schema)
-                        path = Path(csv_file).absolute()
+                        path = Path(_csv_file).absolute()
                         result: bool = aops.add_entry(
                             "dsv",
                             path.as_posix(),
                             modified_table,
                             connection,
-                            file_time,
+                            _file_time,
                         )
 
                         if not result:

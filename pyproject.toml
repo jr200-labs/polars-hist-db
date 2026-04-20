@@ -79,8 +79,8 @@ module = "tests.*"
 disallow_untyped_defs = false
 disallow_untyped_decorators = false
 
-[tool.ruff.lint]
-extend-select = ["G"]
+[tool.ruff]
+extend = ".shared/ruff.toml"
 
 [build-system]
 requires = ["hatchling"]

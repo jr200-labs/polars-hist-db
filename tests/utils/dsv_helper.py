@@ -70,13 +70,13 @@ def create_temp_file_tree(dircnt: int, depth: int, filecnt: int):
     tempDir = tempfile.TemporaryDirectory(prefix="scandir_rs_")  # noqa: F821
     for dn in range(dircnt):
         dirName = f"{tempDir.name}/dir{dn}"
-        for depth in range(depth):
+        for _depth_level in range(depth):
             os.makedirs(dirName)
             for fn in range(filecnt):
                 open(f"{dirName}/file{fn}.bin", "wb").close()
                 open(f"{dirName}/file{fn}.txt", "wb").close()
                 open(f"{dirName}/file{fn}.log", "wb").close()
-            dirName = f"{dirName}/dir{depth}"
+            dirName = f"{dirName}/dir{_depth_level}"
     return tempDir
 
 
@@ -214,7 +214,7 @@ def read_df_from_db(
     engine: Engine,
     table_schema: str,
     table_config: TableConfig,
-    asof_date: datetime = datetime.now(timezone.utc),
+    asof_date: Optional[datetime] = None,
     return_view: bool = False,
 ) -> Tuple[pl.DataFrame, Optional[pl.DataFrame]]:
     # table_name = (
@@ -223,6 +223,8 @@ def read_df_from_db(
     #     else table_config.name
     # )
 
+    if asof_date is None:
+        asof_date = datetime.now(timezone.utc)
     table_name = table_config.name
     primary_keys = list(table_config.primary_keys)
 
@@ -352,5 +354,5 @@ def add_random_row(
         new_row[col_name] = c_val
 
     return pl.concat(
-        [df, pl.DataFrame(new_row, schema=dict(zip(df.columns, df.dtypes)))]
+        [df, pl.DataFrame(new_row, schema=dict(zip(df.columns, df.dtypes, strict=True)))]
     )
