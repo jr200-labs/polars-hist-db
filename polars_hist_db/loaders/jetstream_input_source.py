@@ -172,7 +172,9 @@ class JetStreamInputSource(InputSource[JetStreamInputConfig]):
                         _msgs: list = msgs,
                         _msg_audits: list = msg_audits,
                     ) -> bool:
-                        for msg, (audit_log_id, created_at) in zip(_msgs, _msg_audits, strict=True):
+                        for msg, (audit_log_id, created_at) in zip(
+                            _msgs, _msg_audits, strict=True
+                        ):
                             result = True
                             if audit_log_id in audit_entries:
                                 for modified_schema, modified_table in modified_tables:
@@ -203,8 +205,8 @@ class JetStreamInputSource(InputSource[JetStreamInputConfig]):
 
                     yield (
                         partitions,
-                        lambda connection, modified_tables, _ae=audit_entries: commit_fn(
-                            _ae, connection, modified_tables
+                        lambda connection, modified_tables, _ae=audit_entries: (
+                            commit_fn(_ae, connection, modified_tables)
                         ),
                     )
 

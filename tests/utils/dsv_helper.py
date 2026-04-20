@@ -354,5 +354,8 @@ def add_random_row(
         new_row[col_name] = c_val
 
     return pl.concat(
-        [df, pl.DataFrame(new_row, schema=dict(zip(df.columns, df.dtypes, strict=True)))]
+        [
+            df,
+            pl.DataFrame(new_row, schema=dict(zip(df.columns, df.dtypes, strict=True))),
+        ]
     )
