@@ -165,49 +165,54 @@ class JetStreamInputSource(InputSource[JetStreamInputConfig]):
 
                     partitions = self._apply_time_partitioning(df, msg_ts)
 
-                    async def commit_fn(
-                        audit_entries: List[str],
-                        connection: Connection,
-                        modified_tables: List[Tuple[str, str]],
-                        _msgs: list = msgs,
-                        _msg_audits: list = msg_audits,
-                    ) -> bool:
-                        for msg, (audit_log_id, created_at) in zip(
-                            _msgs, _msg_audits, strict=True
-                        ):
-                            result = True
-                            if audit_log_id in audit_entries:
-                                for modified_schema, modified_table in modified_tables:
-                                    aops = AuditOps(modified_schema)
-                                    result = result and aops.add_entry(
-                                        "nats-jetstream",
-                                        audit_log_id,
+                    def _make_commit_fn(
+                        bound_msgs: list,
+                        bound_msg_audits: list,
+                        bound_audit_entries: List[str],
+                    ) -> Callable[[Connection, List[Tuple[str, str]]], Awaitable[bool]]:
+                        async def commit_fn(
+                            connection: Connection,
+                            modified_tables: List[Tuple[str, str]],
+                        ) -> bool:
+                            for msg, (audit_log_id, created_at) in zip(
+                                bound_msgs, bound_msg_audits, strict=True
+                            ):
+                                result = True
+                                if audit_log_id in bound_audit_entries:
+                                    for (
+                                        modified_schema,
                                         modified_table,
-                                        connection,
-                                        created_at,
+                                    ) in modified_tables:
+                                        aops = AuditOps(modified_schema)
+                                        result = result and aops.add_entry(
+                                            "nats-jetstream",
+                                            audit_log_id,
+                                            modified_table,
+                                            connection,
+                                            created_at,
+                                        )
+
+                                if result:
+                                    await msg.ack()
+                                else:
+                                    await msg.nak()
+                                    LOGGER.error(
+                                        "audit for [%s.%s - %s]: FAILED",
+                                        table_schema,
+                                        table_name,
+                                        audit_log_id,
+                                    )
+                                    raise NonRetryableException(
+                                        "Failed to update audit log"
                                     )
 
-                            if result:
-                                await msg.ack()
-                            else:
-                                await msg.nak()
-                                LOGGER.error(
-                                    "audit for [%s.%s - %s]: FAILED",
-                                    table_schema,
-                                    table_name,
-                                    audit_log_id,
-                                )
-                                raise NonRetryableException(
-                                    "Failed to update audit log"
-                                )
+                            return True
 
-                        return True
+                        return commit_fn
 
                     yield (
                         partitions,
-                        lambda connection, modified_tables, _ae=audit_entries: (
-                            commit_fn(_ae, connection, modified_tables)
-                        ),
+                        _make_commit_fn(msgs, msg_audits, audit_entries),
                     )
 
                 except TimeoutError:
