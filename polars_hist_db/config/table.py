@@ -162,7 +162,7 @@ class TableConfig:
             TableColumnConfig(
                 name=col_name, data_type=SQLType.from_polars(col_type), table=table_name
             )
-            for col_name, col_type in zip(df.columns, df.dtypes)
+            for col_name, col_type in zip(df.columns, df.dtypes, strict=True)
         ]
 
         result = TableConfig(
@@ -210,8 +210,7 @@ class TableConfig:
             except Exception as e:
                 raise ValueError(
                     f"Error building column {col_cfg.table}.{col_cfg.name} : {col_cfg.data_type}",
-                    e,
-                )
+                ) from e
 
         return columns
 
