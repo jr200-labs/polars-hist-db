@@ -1,9 +1,9 @@
 repos:
   - repo: local
     hooks:
-      - id: sync-shared-lint
-        name: sync shared lint config
-        entry: bash -c 'mkdir -p .shared && curl -sfL "https://raw.githubusercontent.com/jr200-labs/github-action-templates/master/shared/sync-shared-lint.sh" -o .shared/sync-shared-lint.sh && chmod +x .shared/sync-shared-lint.sh && ./.shared/sync-shared-lint.sh python'
+      - id: sync-shared
+        name: sync shared configs
+        entry: bash -c 'mkdir -p .shared; [ -x .shared/sync.sh ] || { curl -sfL --max-time 10 "https://raw.githubusercontent.com/jr200-labs/github-action-templates/master/shared/sync.sh" -o .shared/sync.sh 2>/dev/null && chmod +x .shared/sync.sh; }; [ -x .shared/sync.sh ] && .shared/sync.sh python; exit 0'
         language: system
         always_run: true
         pass_filenames: false
