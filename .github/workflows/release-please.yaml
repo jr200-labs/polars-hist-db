@@ -23,7 +23,7 @@ jobs:
   dispatch-wheel-build:
     needs: release
     if: needs.release.outputs.release_created == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     steps:
       - name: Mint app token
         id: app-token
