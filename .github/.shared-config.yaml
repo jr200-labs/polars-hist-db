@@ -1,0 +1,12 @@
+# See jr200-labs/github-action-templates/AGENTS.md for the catalogue
+# of available groups.
+#
+# python group intentionally omitted — this repo's tests need a
+# running MySQL container that the canonical ci-python.yaml doesn't
+# bring up, so a bespoke ci.yaml passes run-tests: false to the
+# reusable + has its own integration-test setup. Tracked under
+# JRL-32 phase 1.5 (consider canonical ci-python with optional
+# services / run-tests knob).
+workflows:
+  - hygiene
+  - release
