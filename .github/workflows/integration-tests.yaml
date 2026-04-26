@@ -60,10 +60,12 @@ jobs:
           chmod 600 ~/.netrc
 
       - name: Install nats-server (started by tests via subprocess)
+        env:
+          NATS_VERSION: v2.12.7
         run: |
-          curl -sSL https://github.com/nats-io/nats-server/releases/latest/download/nats-server-v2.10.20-linux-amd64.tar.gz \
+          curl -sSL "https://github.com/nats-io/nats-server/releases/download/${NATS_VERSION}/nats-server-${NATS_VERSION}-linux-amd64.tar.gz" \
             | tar -xz -C /tmp
-          sudo install /tmp/nats-server-*/nats-server /usr/local/bin/nats-server
+          sudo install "/tmp/nats-server-${NATS_VERSION}-linux-amd64/nats-server" /usr/local/bin/nats-server
           nats-server --version
 
       - name: Sync deps
