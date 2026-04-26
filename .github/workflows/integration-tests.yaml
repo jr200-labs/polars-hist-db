@@ -23,12 +23,13 @@ jobs:
 
     services:
       mariadb:
-        # Match docker-compose.yaml exactly so local-dev and CI agree on
-        # the TIMESTAMP epoch range (11.8-noble: 2106; older 11.x: 2038).
-        image: mariadb:11.8-noble
+        # Match docker-compose.yaml verbatim (image + env vars).
+        image: docker.io/library/mariadb:11.8-noble
         env:
-          MARIADB_ROOT_PASSWORD: admin
-          MARIADB_AUTO_UPGRADE: "1"
+          MYSQL_DATABASE: mariadb
+          MYSQL_ROOT_PASSWORD: admin
+          MYSQL_USER: test
+          MYSQL_PASSWORD: test
         ports:
           - 13307:3306
         options: >-
@@ -76,6 +77,15 @@ jobs:
             sleep 1
           done
           docker logs nats | tail -20
+
+      - name: Probe MariaDB server (debug TIMESTAMP capability)
+        run: |
+          docker exec $(docker ps -q --filter ancestor=docker.io/library/mariadb:11.8-noble | head -1) \
+            mariadb -uroot -padmin -e "
+              SELECT @@version, @@time_zone, @@system_time_zone;
+              SELECT MAXVALUE FROM (SELECT TIMESTAMP'2106-02-07 06:28:15.999999' AS MAXVALUE) t;
+              SHOW VARIABLES LIKE '%timestamp%';
+            "
 
       - name: Sync deps
         run: uv sync --group dev
