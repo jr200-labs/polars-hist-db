@@ -78,15 +78,6 @@ jobs:
           done
           docker logs nats | tail -20
 
-      - name: Probe MariaDB server (debug TIMESTAMP capability)
-        run: |
-          docker exec $(docker ps -q --filter ancestor=docker.io/library/mariadb:11.8-noble | head -1) \
-            mariadb -uroot -padmin -e "
-              SELECT @@version, @@time_zone, @@system_time_zone;
-              SELECT MAXVALUE FROM (SELECT TIMESTAMP'2106-02-07 06:28:15.999999' AS MAXVALUE) t;
-              SHOW VARIABLES LIKE '%timestamp%';
-            "
-
       - name: Sync deps
         run: uv sync --group dev
 
