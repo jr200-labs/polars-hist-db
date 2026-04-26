@@ -85,13 +85,6 @@ disallow_untyped_decorators = false
 [tool.ruff]
 extend = ".shared/ruff.toml"
 
-[tool.ruff.lint.per-file-ignores]
-# Test modules prepend `pytestmark = pytest.mark.integration` at the
-# top so it's visible at-a-glance; other imports follow. E402 ("module
-# level import not at top of file") would force pytestmark below the
-# imports where it's easy to miss.
-"tests/**/*.py" = ["E402"]
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

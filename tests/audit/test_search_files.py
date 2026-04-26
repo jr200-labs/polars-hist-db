@@ -1,7 +1,3 @@
-import pytest
-
-pytestmark = pytest.mark.integration
-
 # -*- coding: utf-8 -*-
 
 from datetime import datetime, timedelta
@@ -12,6 +8,8 @@ import pytz
 from polars_hist_db.core import AuditOps
 from polars_hist_db.loaders import find_files
 from ..utils.dsv_helper import create_temp_file_tree, setup_fixture_dataset
+
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture(scope="session", autouse=True)

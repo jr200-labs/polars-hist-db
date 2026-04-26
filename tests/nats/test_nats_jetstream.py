@@ -1,7 +1,3 @@
-import pytest
-
-pytestmark = pytest.mark.integration
-
 import json
 import pytest
 import pytest_asyncio
@@ -15,6 +11,8 @@ from tests.utils.nats_helper import (
     publish_dataframe_messages,
     try_create_test_stream,
 )
+
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture(scope="session")

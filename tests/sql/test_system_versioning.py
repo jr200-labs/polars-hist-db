@@ -1,13 +1,11 @@
-import pytest
-
-pytestmark = pytest.mark.integration
-
 from datetime import datetime, timezone
 
 import pytest
 
 from polars_hist_db.core import DbOps
 from tests.utils.dsv_helper import setup_fixture_dataset
+
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture

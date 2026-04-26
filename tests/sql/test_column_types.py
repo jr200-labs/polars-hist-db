@@ -1,7 +1,3 @@
-import pytest
-
-pytestmark = pytest.mark.integration
-
 from datetime import datetime
 import pytest
 from polars.testing import assert_frame_equal
@@ -13,6 +9,8 @@ from ..utils.dsv_helper import (
     modify_and_read,
     setup_fixture_dataset,
 )
+
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture

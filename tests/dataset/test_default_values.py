@@ -1,7 +1,3 @@
-import pytest
-
-pytestmark = pytest.mark.integration
-
 from datetime import datetime
 import pytest
 
@@ -15,6 +11,8 @@ from ..utils.dsv_helper import (
     read_df_from_db,
     setup_fixture_dataset,
 )
+
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture

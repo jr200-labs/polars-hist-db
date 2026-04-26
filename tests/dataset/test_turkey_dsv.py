@@ -1,7 +1,3 @@
-import pytest
-
-pytestmark = pytest.mark.integration
-
 from datetime import datetime, timedelta
 import pytest
 import polars as pl
@@ -18,6 +14,8 @@ from ..utils.dsv_helper import (
 )
 
 from .helpers import custom_try_to_usd
+
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture

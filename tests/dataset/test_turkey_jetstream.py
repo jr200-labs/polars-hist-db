@@ -1,7 +1,3 @@
-import pytest
-
-pytestmark = pytest.mark.integration
-
 import asyncio
 import pytest
 import pytest_asyncio
@@ -23,6 +19,8 @@ from ..utils.dsv_helper import (
     read_df_from_db,
     setup_fixture_dataset,
 )
+
+pytestmark = pytest.mark.integration
 
 LOGGER = logging.getLogger(__name__)
 

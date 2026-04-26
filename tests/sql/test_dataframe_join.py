@@ -1,7 +1,3 @@
-import pytest
-
-pytestmark = pytest.mark.integration
-
 from datetime import datetime, timedelta
 import pytest
 import polars as pl
@@ -17,6 +13,8 @@ from ..utils.dsv_helper import (
     set_random_seed,
     setup_fixture_dataset,
 )
+
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
