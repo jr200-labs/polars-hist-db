@@ -8,4 +8,5 @@
 workflows:
   - hygiene
   - python
+  - wheel
   - release
