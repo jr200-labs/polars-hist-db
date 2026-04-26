@@ -20,6 +20,8 @@ from ..utils.dsv_helper import (
     setup_fixture_dataset,
 )
 
+pytestmark = pytest.mark.integration
+
 LOGGER = logging.getLogger(__name__)
 
 

@@ -5,6 +5,8 @@ import pytest
 from polars_hist_db.core import DbOps
 from tests.utils.dsv_helper import setup_fixture_dataset
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture
 def fixture_with_simple_table_1():

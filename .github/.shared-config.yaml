@@ -1,12 +1,11 @@
-# See jr200-labs/github-action-templates/AGENTS.md for the catalogue
-# of available groups.
+# See jr200-labs/github-action-templates/AGENTS.md for the catalogue.
 #
-# python group intentionally omitted — this repo's tests need a
-# running MySQL container that the canonical ci-python.yaml doesn't
-# bring up, so a bespoke ci.yaml passes run-tests: false to the
-# reusable + has its own integration-test setup. Tracked under
-# JRL-32 phase 1.5 (consider canonical ci-python with optional
-# services / run-tests knob).
+# Integration tests (pytest -m integration) are not run in CI by any
+# canonical group yet — they need MySQL + NATS service containers.
+# Defer to a bespoke integration-tests.yaml when someone wants them
+# wired up. The canonical ci-python runs lint + mypy + the unit
+# subset (see pytest.ini's `-m "not integration"`).
 workflows:
   - hygiene
+  - python
   - release

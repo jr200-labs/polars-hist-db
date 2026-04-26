@@ -12,6 +12,8 @@ from tests.utils.nats_helper import (
     try_create_test_stream,
 )
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture(scope="session")
 def nats_server():

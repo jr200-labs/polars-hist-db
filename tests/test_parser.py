@@ -4,7 +4,7 @@ from polars_hist_db.config import (
     TableConfig,
     TableConfigs,
 )
-from ..utils.dsv_helper import get_test_config
+from .utils.dsv_helper import get_test_config
 
 
 def assert_table_config_object(table_config: TableConfig):

@@ -1,0 +1,20 @@
+name: ci-python
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  ci:
+    uses: jr200-labs/github-action-templates/.github/workflows/ci_uv_python.yaml@master
+    secrets:
+      # Always forwarded so `uv sync` can clone private git deps via
+      # an installation token. Reusable's `check-git-auth` step skips
+      # the auth setup gracefully if the secret is empty / absent —
+      # safe for repos with no private deps.
+      client_id: ${{ vars.INTEGRATION_CLIENT_ID }}
+      app_private_key: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}
