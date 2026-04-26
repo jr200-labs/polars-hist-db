@@ -19,16 +19,13 @@ permissions:
 
 jobs:
   integration:
-    # 5/6 failing tests as of 2026-04-26 are TIMESTAMP-range regressions
-    # under MariaDB 11 (tests expect MariaDB 12's 2106 epoch upper bound;
-    # 11 caps at 2038). Accepted until the MariaDB 12 upgrade lands;
-    # workflow report is informational, not blocking.
-    continue-on-error: true
     runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
 
     services:
       mariadb:
-        image: mariadb:11
+        # Match docker-compose.yaml exactly so local-dev and CI agree on
+        # the TIMESTAMP epoch range (11.8-noble: 2106; older 11.x: 2038).
+        image: mariadb:11.8-noble
         env:
           MARIADB_ROOT_PASSWORD: admin
           MARIADB_AUTO_UPGRADE: "1"
