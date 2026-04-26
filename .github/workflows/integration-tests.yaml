@@ -59,14 +59,21 @@ jobs:
             "${{ steps.git-auth.outputs.token }}" > ~/.netrc
           chmod 600 ~/.netrc
 
-      - name: Install nats-server (started by tests via subprocess)
-        env:
-          NATS_VERSION: v2.12.7
+      - name: Start nats-server (docker, mounting tests/nats-server.conf)
         run: |
-          curl -sSL "https://github.com/nats-io/nats-server/releases/download/${NATS_VERSION}/nats-server-${NATS_VERSION}-linux-amd64.tar.gz" \
-            | tar -xz -C /tmp
-          sudo install "/tmp/nats-server-${NATS_VERSION}-linux-amd64/nats-server" /usr/local/bin/nats-server
-          nats-server --version
+          docker run -d --name nats \
+            -p ${NATS_PORT}:${NATS_PORT} \
+            -v "$PWD/tests/nats-server.conf:/etc/nats/nats-server.conf:ro" \
+            nats:2.12 \
+            -c /etc/nats/nats-server.conf -p ${NATS_PORT}
+          # wait for nats to be ready (no built-in healthcheck on this image)
+          for i in {1..20}; do
+            docker run --rm --network host curlimages/curl:latest \
+              -sf "http://localhost:8222/varz" >/dev/null 2>&1 || \
+              nc -z localhost ${NATS_PORT} && break
+            sleep 1
+          done
+          docker logs nats | tail -20
 
       - name: Sync deps
         run: uv sync --group dev
