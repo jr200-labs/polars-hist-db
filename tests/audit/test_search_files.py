@@ -1,3 +1,7 @@
+import pytest
+
+pytestmark = pytest.mark.integration
+
 # -*- coding: utf-8 -*-
 
 from datetime import datetime, timedelta

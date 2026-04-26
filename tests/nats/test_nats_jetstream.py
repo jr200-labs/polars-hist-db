@@ -1,3 +1,7 @@
+import pytest
+
+pytestmark = pytest.mark.integration
+
 import json
 import pytest
 import pytest_asyncio

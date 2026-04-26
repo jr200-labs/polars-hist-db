@@ -1,3 +1,7 @@
+import pytest
+
+pytestmark = pytest.mark.integration
+
 import asyncio
 import pytest
 import pytest_asyncio

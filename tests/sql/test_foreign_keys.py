@@ -1,5 +1,9 @@
 import pytest
 
+pytestmark = pytest.mark.integration
+
+import pytest
+
 from polars_hist_db.core.table_config import TableConfigOps
 from polars_hist_db.config import TableConfig
 from polars_hist_db.core.table import TableOps
