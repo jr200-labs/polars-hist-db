@@ -1,8 +1,5 @@
 import json
 import logging
-import subprocess
-import time
-import signal
 import os
 import polars as pl
 from nats.aio.client import Client as NATS
@@ -10,7 +7,6 @@ import nats
 from nats.js.client import JetStreamContext
 
 from polars_hist_db.config.input.jetstream_config import JetStreamSubscriptionConfig
-from tests.utils.dsv_helper import _tests_dir
 
 LOGGER = logging.getLogger(__name__)
 
@@ -47,28 +43,15 @@ async def publish_dataframe_messages(
 
 
 def create_nats_server():
-    # Start NATS server with JetStream enabled
-    conf_file = os.path.join(_tests_dir(), "nats-server.conf")
-    server = subprocess.Popen(
-        ["nats-server", "-c", conf_file, "-p", NATS_PORT],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        preexec_fn=os.setsid,  # This ensures we can kill the entire process group
-    )
+    """Lifecycle no-op kept for back-compat with existing fixtures.
 
-    # Give the server a moment to start
-    time.sleep(1)
-
-    try:
-        yield server
-    finally:
-        try:
-            # Cleanup: kill the server and all its child processes
-            os.killpg(os.getpgid(server.pid), signal.SIGTERM)
-            server.wait()
-        except ProcessLookupError:
-            # Process might have already terminated
-            pass
+    nats-server used to be subprocess.Popen-spawned per test session;
+    we now provide it externally (CI: docker run step that mounts
+    tests/nats-server.conf; local: run nats-server yourself before
+    pytest). Tests call this as a context manager out of habit; just
+    yield None so they keep working.
+    """
+    yield None
 
 
 async def try_create_test_stream(

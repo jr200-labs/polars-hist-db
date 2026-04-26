@@ -1,0 +1,85 @@
+name: integration-tests
+
+# Bespoke integration test runner — JRL-33 convention. Runs the
+# pytest -m integration subset (split out in #36) against real
+# MariaDB + NATS so the suite has somewhere to actually execute.
+#
+# Reference shape for other repos that need to wire bespoke
+# integration tests; see github-action-templates/AGENTS.md
+# "integration-tests workflow checklist".
+
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  integration:
+    runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+
+    services:
+      mariadb:
+        # Match docker-compose.yaml verbatim (image + env vars).
+        image: docker.io/library/mariadb:11.8-noble
+        env:
+          MYSQL_DATABASE: mariadb
+          MYSQL_ROOT_PASSWORD: admin
+          MYSQL_USER: test
+          MYSQL_PASSWORD: test
+        ports:
+          - 13307:3306
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
+
+    env:
+      MARIADB_PORT: "13307"
+      NATS_PORT: "14222"
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Mint App token (private git deps)
+        id: git-auth
+        uses: actions/create-github-app-token@v3.1.1
+        with:
+          client-id: ${{ vars.INTEGRATION_CLIENT_ID }}
+          private-key: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Write netrc for private git deps
+        run: |
+          printf 'machine github.com\nlogin x-access-token\npassword %s\n' \
+            "${{ steps.git-auth.outputs.token }}" > ~/.netrc
+          chmod 600 ~/.netrc
+
+      - name: Start nats-server (docker, mounting tests/nats-server.conf)
+        run: |
+          docker run -d --name nats \
+            -p ${NATS_PORT}:${NATS_PORT} \
+            -v "$PWD/tests/nats-server.conf:/etc/nats/nats-server.conf:ro" \
+            nats:2.12 \
+            -c /etc/nats/nats-server.conf -p ${NATS_PORT}
+          # wait for nats to be ready (no built-in healthcheck on this image)
+          for i in {1..20}; do
+            docker run --rm --network host curlimages/curl:latest \
+              -sf "http://localhost:8222/varz" >/dev/null 2>&1 || \
+              nc -z localhost ${NATS_PORT} && break
+            sleep 1
+          done
+          docker logs nats | tail -20
+
+      - name: Sync deps
+        run: uv sync --group dev
+
+      - name: Run integration tests
+        run: uv run pytest -m integration -v
