@@ -5,6 +5,8 @@ from polars_hist_db.config import TableConfig
 from polars_hist_db.core.table import TableOps
 from tests.utils.dsv_helper import setup_fixture_dataset
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture
 def fixture_with_column_selection():

@@ -15,6 +15,8 @@ from ..utils.dsv_helper import (
 
 from .helpers import custom_try_to_usd
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture
 def fixture_with_config():

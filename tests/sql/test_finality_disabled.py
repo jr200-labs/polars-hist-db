@@ -9,6 +9,8 @@ from ..utils.dsv_helper import (
     setup_fixture_dataset,
 )
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture
 def fixture_with_simple_table():

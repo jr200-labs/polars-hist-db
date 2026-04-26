@@ -46,9 +46,12 @@ dev = [
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-ra -q"
+addopts = "-ra -q -m 'not integration'"
 log_cli = "true"
 log_cli_level = "WARN"
+markers = [
+    "integration: needs external infra (MySQL / NATS); excluded from default collection. Run via `pytest -m integration` in a workflow that brings the infra up.",
+]
 # log_cli_level = "INFO"
 log_format = "%(asctime)s %(levelname)s %(message)s"
 log_date_format = "%Y-%m-%d %H:%M:%S"
