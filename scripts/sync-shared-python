@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mkdir -p .shared
+[ -x .shared/sync.sh ] || {
+  curl -sfL --max-time 10 "https://raw.githubusercontent.com/jr200-labs/github-action-templates/master/shared/sync.sh" -o .shared/sync.sh 2>/dev/null
+  chmod +x .shared/sync.sh
+}
+
+if [ -x .shared/sync.sh ]; then
+  .shared/sync.sh python
+  if [ -f release-please-config.json ] && command -v jq >/dev/null 2>&1; then
+    tmp=$(mktemp)
+    jq '.["release-type"] = "python"' release-please-config.json > "$tmp"
+    mv "$tmp" release-please-config.json
+  fi
+fi
