@@ -1503,11 +1503,7 @@ sqlalchemy = [
 dev = [
     { name = "coverage" },
     { name = "ipykernel" },
-    { name = "jupyter-server" },
-    { name = "jupyterlab" },
-    { name = "mistune" },
     { name = "mypy" },
-    { name = "notebook" },
     { name = "pyarrow-stubs" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -1539,11 +1535,7 @@ provides-extras = ["sqlalchemy", "nats"]
 dev = [
     { name = "coverage", specifier = ">=7.13.5" },
     { name = "ipykernel", specifier = ">=7.2.0" },
-    { name = "jupyter-server", specifier = ">=2.18.2" },
-    { name = "jupyterlab", specifier = ">=4.5.7" },
-    { name = "mistune", specifier = ">=3.2.1" },
     { name = "mypy", specifier = ">=2.0.0" },
-    { name = "notebook", specifier = ">=7.5.6" },
     { name = "pyarrow-stubs", specifier = ">=20.0.0.20251215" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", specifier = ">=1.3.0" },
