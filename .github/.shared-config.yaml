@@ -9,5 +9,6 @@
 workflows:
   - hygiene
   - python
+  - quarto-docs
   - wheel
   - release
