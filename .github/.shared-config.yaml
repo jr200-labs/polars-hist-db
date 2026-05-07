@@ -2,8 +2,9 @@
 #
 # Integration tests (pytest -m integration) are not run in CI by any
 # canonical group yet — they need MySQL + NATS service containers.
-# Defer to a bespoke integration-tests.yaml when someone wants them
-# wired up. The canonical ci-python runs lint + mypy + the unit
+# Defer to a bespoke workflow file when someone wants them wired up
+# (named `bespoke_*.yaml` so drift-check ignores it). The canonical
+# ci-python runs lint + mypy + the unit
 # subset (see pytest.ini's `-m "not integration"`).
 workflows:
   - hygiene

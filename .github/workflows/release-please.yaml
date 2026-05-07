@@ -16,7 +16,6 @@ jobs:
   release:
     uses: jr200-labs/github-action-templates/.github/workflows/release_please.yaml@master
     with:
-      release-type: python
       target-branch: master
       runner: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     secrets:
