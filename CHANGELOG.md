@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.2](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.1...v0.12.2) (2026-05-07)
+
+
+### Bug Fixes
+
+* **deps:** update vulnerable jupyter lockfile deps ([#47](https://github.com/jr200-labs/polars-hist-db/issues/47)) ([3c68f73](https://github.com/jr200-labs/polars-hist-db/commit/3c68f73dc96cdab7d566cc11e46d27b94891cd46))
+
 ## [0.12.1](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.0...v0.12.1) (2026-05-07)
 
 
