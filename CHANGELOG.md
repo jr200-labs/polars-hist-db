@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.0...v0.12.1) (2026-05-07)
+
+
+### Features
+
+* **deps:** update dependency mypy to v2 ([#41](https://github.com/jr200-labs/polars-hist-db/issues/41)) ([7fcc7da](https://github.com/jr200-labs/polars-hist-db/commit/7fcc7da5aaba03b688d7db229343d08b8f59e580))
+
 ## [0.12.0](https://github.com/jr200-labs/polars-hist-db/compare/v0.11.0...v0.12.0) (2026-04-21)
 
 
