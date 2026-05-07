@@ -16,7 +16,7 @@ set -uo pipefail
 
 REPO="jr200-labs/github-action-templates"
 BRANCH="${SYNC_REF:-master}"
-BASE_URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}/consumers"
+BASE_URL="${SYNC_BASE_URL:-https://raw.githubusercontent.com/${REPO}/${BRANCH}/consumers}"
 CONFIG=".github/.shared-config.yaml"
 WORKFLOWS_DIR=".github/workflows"
 STRICT="${STRICT:-0}"
@@ -124,6 +124,9 @@ case "$MODE" in
         for f in "$WORKFLOWS_DIR"/*.yaml; do
             [ -f "$f" ] || continue
             name=$(basename "$f" .yaml)
+            if [[ "$name" == bespoke_* ]]; then
+                continue
+            fi
             echo "$WORKFLOWS" | grep -qx "$name" || echo "stale-or-bespoke: $f (not in resolved set)"
         done
         exit $rc
