@@ -24,7 +24,7 @@ jobs:
     services:
       mariadb:
         # Match docker-compose.yaml verbatim (image + env vars).
-        image: docker.io/library/mariadb:11.8-noble
+        image: docker.io/library/mariadb:12.2-noble
         env:
           MYSQL_DATABASE: mariadb
           MYSQL_ROOT_PASSWORD: admin
@@ -43,10 +43,10 @@ jobs:
       NATS_PORT: "14222"
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v8.1.0
 
       - name: Mint App token (private git deps)
         id: git-auth
