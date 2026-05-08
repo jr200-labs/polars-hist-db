@@ -6,6 +6,11 @@
       "description": "Use semver tags for quarto-cli git dep, not commit digests",
       "matchPackageNames": ["quarto-cli"],
       "versioning": "semver"
+    },
+    {
+      "description": "Keep the MariaDB test image on the current major until the integration setup is intentionally migrated.",
+      "matchPackageNames": ["docker.io/library/mariadb"],
+      "enabled": false
     }
   ]
 }
