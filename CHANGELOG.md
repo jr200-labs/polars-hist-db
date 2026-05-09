@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.3](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.2...v0.12.3) (2026-05-08)
+
+
+### Features
+
+* **deps:** update github-actions (major) ([#50](https://github.com/jr200-labs/polars-hist-db/issues/50)) ([7ddcc45](https://github.com/jr200-labs/polars-hist-db/commit/7ddcc45b9e8aac827d9219cee23b6663ad9733f4))
+
 ## [0.12.2](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.1...v0.12.2) (2026-05-07)
 
 
