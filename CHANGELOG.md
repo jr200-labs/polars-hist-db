@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.4](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.3...v0.12.4) (2026-05-18)
+
+
+### Bug Fixes
+
+* **deps:** update actions/create-github-app-token action to v3.2.0 ([#56](https://github.com/jr200-labs/polars-hist-db/issues/56)) ([547de1a](https://github.com/jr200-labs/polars-hist-db/commit/547de1afec43bc4fdf190c25ffd2dbe58f9ac04e))
+* **deps:** update quarto-cli digest to 8607f5e ([#55](https://github.com/jr200-labs/polars-hist-db/issues/55)) ([9825cd5](https://github.com/jr200-labs/polars-hist-db/commit/9825cd5212c5a1335ccd18006f0de90ee2174478))
+
 ## [0.12.3](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.2...v0.12.3) (2026-05-08)
 
 
