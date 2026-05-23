@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.5](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.4...v0.12.5) (2026-05-23)
+
+
+### Bug Fixes
+
+* **deps:** update quarto-cli digest to 36e2232 ([#58](https://github.com/jr200-labs/polars-hist-db/issues/58)) ([803e743](https://github.com/jr200-labs/polars-hist-db/commit/803e7430311a171049ea2fbd8e27b080e1bb09e8))
+* **deps:** update quarto-cli digest to fcb70f3 ([#60](https://github.com/jr200-labs/polars-hist-db/issues/60)) ([1e6e2a1](https://github.com/jr200-labs/polars-hist-db/commit/1e6e2a177512c37e4c7c4e3319603e04a793b419))
+
 ## [0.12.4](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.3...v0.12.4) (2026-05-18)
 
 
