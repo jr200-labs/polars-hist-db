@@ -13,6 +13,7 @@ from sqlalchemy import (
     text,
     UniqueConstraint,
 )
+from sqlalchemy.schema import CreateColumn
 from sqlalchemy.schema import CreateTable
 
 from .db import DbOps
@@ -155,6 +156,33 @@ class TableConfigOps:
         tbl = tbo.get_table_metadata()
         return tbl
 
+    def _add_missing_delta_columns(
+        self, tbo: TableOps, table_config: TableConfig
+    ) -> None:
+        existing_table = tbo.get_table_metadata()
+        existing_columns = set(existing_table.columns.keys())
+        missing_columns = [
+            column
+            for column in table_config.build_sqlalchemy_columns(is_delta_table=True)
+            if column.name not in existing_columns
+        ]
+
+        for column in missing_columns:
+            column_sql = str(CreateColumn(column).compile(self.connection))
+            LOGGER.info(
+                "adding missing column %s.%s.%s",
+                tbo.table_schema,
+                tbo.table_name,
+                column.name,
+            )
+            DbOps(self.connection).execute_sqlalchemy(
+                f"sql.base.table_add_column.{tbo.table_name}.{column.name}",
+                text(
+                    f"ALTER TABLE {tbo.table_schema}.{tbo.table_name} "
+                    f"ADD COLUMN {column_sql}"
+                ),
+            )
+
     def _create_nontemporal(
         self,
         table_name: str,
@@ -166,6 +194,8 @@ class TableConfigOps:
     ) -> Table:
         tbo = TableOps(table_config.schema, table_name, self.connection)
         if tbo.table_exists():
+            if is_delta_table:
+                self._add_missing_delta_columns(tbo, table_config)
             return tbo.get_table_metadata()
 
         LOGGER.info("creating table %s.%s", tbo.table_schema, tbo.table_name)
