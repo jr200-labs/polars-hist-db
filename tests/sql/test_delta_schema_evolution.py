@@ -51,3 +51,48 @@ def test_delta_table_create_adds_missing_columns():
             assert "image_url" in table_ops.get_table_metadata().columns
         finally:
             TableConfigOps(connection).drop(evolved_config)
+
+
+def test_nontemporal_table_create_adds_missing_columns():
+    engine = mariadb_engine_test()
+    initial_config = TableConfig(
+        name="nontemporal_schema_evolution",
+        schema="test",
+        columns=[
+            TableColumnConfig(
+                table="nontemporal_schema_evolution",
+                name="id",
+                data_type="INT",
+            ),
+        ],
+    )
+    evolved_config = TableConfig(
+        name="nontemporal_schema_evolution",
+        schema="test",
+        columns=[
+            TableColumnConfig(
+                table="nontemporal_schema_evolution",
+                name="id",
+                data_type="INT",
+            ),
+            TableColumnConfig(
+                table="nontemporal_schema_evolution",
+                name="image_file",
+                data_type="VARCHAR(255)",
+            ),
+        ],
+    )
+
+    with engine.begin() as connection:
+        table_ops = TableOps("test", "nontemporal_schema_evolution", connection)
+        TableConfigOps(connection).drop(initial_config)
+        try:
+            TableConfigOps(connection).create(initial_config)
+
+            assert "image_file" not in table_ops.get_table_metadata().columns
+
+            TableConfigOps(connection).create(evolved_config)
+
+            assert "image_file" in table_ops.get_table_metadata().columns
+        finally:
+            TableConfigOps(connection).drop(evolved_config)
