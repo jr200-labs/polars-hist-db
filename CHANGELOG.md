@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.7](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.6...v0.12.7) (2026-06-01)
+
+
+### Bug Fixes
+
+* evolve persistent table columns ([#64](https://github.com/jr200-labs/polars-hist-db/issues/64)) ([667d95b](https://github.com/jr200-labs/polars-hist-db/commit/667d95bc7384f7e2a5c619a022b1fa2e130a8079))
+
 ## [0.12.6](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.5...v0.12.6) (2026-06-01)
 
 
