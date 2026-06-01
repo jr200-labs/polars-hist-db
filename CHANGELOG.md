@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.6](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.5...v0.12.6) (2026-06-01)
+
+
+### Bug Fixes
+
+* **deps:** update quarto-cli digest to 5748ba2 ([#61](https://github.com/jr200-labs/polars-hist-db/issues/61)) ([2972242](https://github.com/jr200-labs/polars-hist-db/commit/29722424eb97fe41729fdc5025adb93aac9852cb))
+* evolve additive delta table columns ([#63](https://github.com/jr200-labs/polars-hist-db/issues/63)) ([56a04c1](https://github.com/jr200-labs/polars-hist-db/commit/56a04c1da5b6c1ac1c5b2e5d210600040405fcff))
+
 ## [0.12.5](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.4...v0.12.5) (2026-05-23)
 
 
