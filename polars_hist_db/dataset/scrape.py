@@ -7,7 +7,7 @@ import polars as pl
 from sqlalchemy import Connection, Engine
 
 from ..config import TableConfig, TableConfigs, DatasetConfig
-from ..core import DataframeOps, TableConfigOps, TableOps
+from ..core import DataframeOps, TableConfigOps
 from ..utils import NonRetryableException
 
 from .extract_item import scrape_extract_item
@@ -48,14 +48,11 @@ def _ensure_delta_table(
     For temporary tables this must run in the same connection that will
     use the table, since TEMPORARY TABLEs are session-scoped.
     """
-    if not TableOps(
-        delta_table_config.schema, delta_table_config.name, connection
-    ).table_exists():
-        TableConfigOps(connection).create(
-            delta_table_config,
-            is_delta_table=True,
-            is_temporary_table=is_temporary_table,
-        )
+    TableConfigOps(connection).create(
+        delta_table_config,
+        is_delta_table=True,
+        is_temporary_table=is_temporary_table,
+    )
 
 
 async def try_run_pipeline_as_transaction(
