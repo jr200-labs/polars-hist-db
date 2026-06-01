@@ -156,14 +156,12 @@ class TableConfigOps:
         tbl = tbo.get_table_metadata()
         return tbl
 
-    def _add_missing_delta_columns(
-        self, tbo: TableOps, table_config: TableConfig
-    ) -> None:
+    def _add_missing_columns(self, tbo: TableOps, table_config: TableConfig) -> None:
         existing_table = tbo.get_table_metadata()
         existing_columns = set(existing_table.columns.keys())
         missing_columns = [
             column
-            for column in table_config.build_sqlalchemy_columns(is_delta_table=True)
+            for column in table_config.build_sqlalchemy_columns(is_delta_table=False)
             if column.name not in existing_columns
         ]
 
@@ -194,8 +192,7 @@ class TableConfigOps:
     ) -> Table:
         tbo = TableOps(table_config.schema, table_name, self.connection)
         if tbo.table_exists():
-            if is_delta_table:
-                self._add_missing_delta_columns(tbo, table_config)
+            self._add_missing_columns(tbo, table_config)
             return tbo.get_table_metadata()
 
         LOGGER.info("creating table %s.%s", tbo.table_schema, tbo.table_name)

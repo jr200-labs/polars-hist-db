@@ -22,7 +22,7 @@ check:
 	uv run mypy .
 
 run-tests:
-	NATS_PORT=$(NATS_PORT) MARIADB_PORT=$(MARIADB_PORT) uv run pytest tests/
+	NATS_PORT=$(NATS_PORT) MARIADB_PORT=$(MARIADB_PORT) uv run python -m pytest tests/
 
 render:
 	@echo "Rendering Quarto project in $(PROJECT_ROOT)/..."
