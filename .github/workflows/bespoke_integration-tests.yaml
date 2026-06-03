@@ -24,7 +24,7 @@ jobs:
     services:
       mariadb:
         # Match docker-compose.yaml verbatim (image + env vars).
-        image: docker.io/library/mariadb:11.8-noble
+        image: docker.io/library/mariadb:12.3-noble
         env:
           MYSQL_DATABASE: mariadb
           MYSQL_ROOT_PASSWORD: admin
