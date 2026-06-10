@@ -60,7 +60,7 @@ testpaths = [
 ]
 
 [tool.uv.sources]
-quarto-cli = { git = "https://github.com/quarto-dev/quarto-cli", rev = "838d2274f2550e27cb48f1b298785198003dd3ff" }
+quarto-cli = { git = "https://github.com/quarto-dev/quarto-cli", rev = "1072f7a9ac737c0170c82205bda7fef4dea862bf" }
 
 [tool.mypy]
 warn_unused_configs = true
