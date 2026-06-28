@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.13](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.12...v0.12.13) (2026-06-28)
+
+
+### Features
+
+* add experimental XTDB backend parity ([#91](https://github.com/jr200-labs/polars-hist-db/issues/91)) ([7d9a192](https://github.com/jr200-labs/polars-hist-db/commit/7d9a192abafa0bb614582684f32fab4358af5eb3))
+
 ## [0.12.12](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.11...v0.12.12) (2026-06-28)
 
 
