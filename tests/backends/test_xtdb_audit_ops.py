@@ -1,0 +1,181 @@
+from datetime import datetime, timezone
+
+import polars as pl
+
+from polars_hist_db.core.audit import AuditOps
+from polars_hist_db.loaders.input_source import InputSource
+
+
+class _XtdbConnection:
+    class _Dialect:
+        name = "postgresql"
+
+    dialect = _Dialect()
+
+
+class _Context:
+    def __init__(self, connection):
+        self.connection = connection
+
+    def __enter__(self):
+        return self.connection
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        return False
+
+
+def test_xtdb_audit_filter_items_creates_audit_table_without_sqlalchemy_inspector(
+    monkeypatch,
+):
+    created_tables = []
+
+    class _TableConfigOps:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def table_exists(self, table_schema, table_name):
+            return False
+
+        def create(self, table_config):
+            created_tables.append(table_config)
+            return table_config
+
+    class _DataframeOps:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def from_raw_sql(self, query, schema_overrides=None):
+            assert "FROM kpler.__audit_log" in query
+            return pl.DataFrame(
+                {
+                    "data_source": [],
+                    "data_source_ts": [],
+                },
+                schema={
+                    "data_source": pl.Utf8,
+                    "data_source_ts": pl.Datetime("us", "UTC"),
+                },
+            )
+
+    monkeypatch.setattr(
+        "polars_hist_db.core.audit._xtdb_table_config_ops",
+        _TableConfigOps,
+    )
+    monkeypatch.setattr("polars_hist_db.core.audit._xtdb_dataframe_ops", _DataframeOps)
+
+    filtered_items = AuditOps("kpler").filter_items(
+        pl.DataFrame(
+            {
+                "__path": ["trades.csv"],
+                "__created_at": [datetime(2026, 1, 1, tzinfo=timezone.utc)],
+            }
+        ),
+        "__path",
+        "__created_at",
+        "trades",
+        _XtdbConnection(),
+    )
+
+    assert filtered_items.height == 1
+    assert [table.name for table in created_tables] == ["__audit_log"]
+
+
+def test_xtdb_file_filter_uses_plain_connection_context(monkeypatch):
+    class _InputSource(InputSource):
+        async def next_df(self, engine):
+            raise NotImplementedError
+
+        async def cleanup(self):
+            raise NotImplementedError
+
+    class _AuditOps:
+        def __init__(self, schema):
+            self.schema = schema
+
+        def filter_items(self, items, *args):
+            return items
+
+        def prevalidate_new_items(self, *args):
+            return None
+
+    class _Engine:
+        class _Dialect:
+            name = "postgresql"
+
+        dialect = _Dialect()
+        connection = _XtdbConnection()
+        used_connect = False
+
+        def connect(self):
+            self.used_connect = True
+            return _Context(self.connection)
+
+        def begin(self):
+            raise AssertionError("XTDB file filtering must not use engine.begin()")
+
+    monkeypatch.setattr("polars_hist_db.loaders.input_source.AuditOps", _AuditOps)
+    source = object.__new__(_InputSource)
+    source.dataset = type("Dataset", (), {"scrape_limit": 0})()
+    engine = _Engine()
+
+    filtered = InputSource._search_and_filter_files(
+        source,
+        pl.DataFrame(
+            {
+                "__path": ["trades.csv"],
+                "__created_at": [datetime(2026, 1, 1, tzinfo=timezone.utc)],
+            }
+        ),
+        "kpler",
+        "trades",
+        engine,
+    )
+
+    assert engine.used_connect is True
+    assert filtered.height == 1
+
+
+def test_xtdb_audit_add_entry_writes_via_backend_dataframe_ops(monkeypatch):
+    inserted = []
+
+    class _TableConfigOps:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def table_exists(self, table_schema, table_name):
+            return True
+
+        def from_table(self, table_schema, table_name):
+            return AuditOps(table_schema)._table_config()
+
+    class _DataframeOps:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def table_insert(self, df, table_schema, table_name, table_config=None):
+            inserted.append((df, table_schema, table_name, table_config))
+            return df.height
+
+    monkeypatch.setattr(
+        "polars_hist_db.core.audit._xtdb_table_config_ops",
+        _TableConfigOps,
+    )
+    monkeypatch.setattr("polars_hist_db.core.audit._xtdb_dataframe_ops", _DataframeOps)
+
+    did_insert = AuditOps("kpler").add_entry(
+        "dsv",
+        "trades.csv",
+        "trades",
+        _XtdbConnection(),
+        datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+
+    assert did_insert is True
+    [(inserted_df, table_schema, table_name, table_config)] = inserted
+    assert table_schema == "kpler"
+    assert table_name == "__audit_log"
+    assert table_config.name == "__audit_log"
+    assert "audit_id" in inserted_df.columns
+    assert inserted_df.select("table_name", "data_source").rows() == [
+        ("trades", "trades.csv")
+    ]

@@ -1,0 +1,75 @@
+from dataclasses import dataclass
+from typing import Any, Literal, Mapping, Optional
+
+
+BackendName = Literal["mariadb", "xtdb", "mssql"]
+
+
+def _default_port(backend: str) -> int:
+    if backend == "xtdb":
+        return 5432
+    if backend == "mssql":
+        return 1433
+    return 3306
+
+
+def _default_adbc_port(backend: str) -> Optional[int]:
+    if backend == "xtdb":
+        return 9832
+    return None
+
+
+def _parse_port(value: Any, backend: str) -> int:
+    if value is None:
+        return _default_port(backend)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return _default_port(backend)
+
+
+def _parse_optional_port(value: Any, backend: str) -> Optional[int]:
+    if value is None:
+        return _default_adbc_port(backend)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return _default_adbc_port(backend)
+
+
+@dataclass(frozen=True)
+class DbEngineConfig:
+    backend: BackendName = "mariadb"
+    hostname: str = "127.0.0.1"
+    port: int = 3306
+    adbc_port: Optional[int] = None
+    database: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    ssl_config: Optional[Mapping[str, Any]] = None
+    pool_size: int = 3
+    max_overflow: int = 2
+
+    @classmethod
+    def from_mapping(cls, cfg: Mapping[str, Any]) -> "DbEngineConfig":
+        backend = str(cfg.get("backend", "mariadb")).lower()
+        return cls(
+            backend=_validate_backend(backend),
+            hostname=str(cfg.get("hostname", "127.0.0.1")),
+            port=_parse_port(cfg.get("port"), backend),
+            adbc_port=_parse_optional_port(cfg.get("adbc_port"), backend),
+            database=cfg.get("database"),
+            username=cfg.get("username"),
+            password=cfg.get("password"),
+            ssl_config=cfg.get("ssl_config"),
+            pool_size=int(cfg.get("pool_size", 3)),
+            max_overflow=int(cfg.get("max_overflow", 2)),
+        )
+
+
+def _validate_backend(backend: str) -> BackendName:
+    if backend in {"mariadb", "xtdb", "mssql"}:
+        return backend  # type: ignore[return-value]
+    raise ValueError(f"Unsupported database backend '{backend}'")

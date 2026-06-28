@@ -5,18 +5,23 @@ from io import StringIO
 import os
 from pathlib import Path
 import random
+import subprocess
 import tempfile
 import textwrap
+import time
 from types import MappingProxyType
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import polars as pl
+import pytest
 import sqlalchemy
-from sqlalchemy import Engine, Select, select
+from sqlalchemy import Engine, Select, select, text
 from sqlalchemy.dialects import mysql
 
 from sqlalchemy import create_engine
 
+from polars_hist_db.backends import DbEngineConfig, backend_from_config
+from polars_hist_db.backends.xtdb import XtdbBackend
 from polars_hist_db.config.parser_config import IngestionColumnConfig
 from polars_hist_db.loaders import load_typed_dsv
 from polars_hist_db.config import (
@@ -29,7 +34,6 @@ from polars_hist_db.core import (
     AuditOps,
     DataframeOps,
     DbOps,
-    TableConfigOps,
     TableOps,
 )
 from polars_hist_db.types import PolarsType, SQLAlchemyType
@@ -60,6 +64,61 @@ def mariadb_engine_test() -> Engine:
         pool_size=3,
         max_overflow=2,
         connect_args={"client_flag": 0},
+    )
+
+
+def backend_params():
+    return [
+        "mariadb",
+        pytest.param(
+            "xtdb",
+            marks=pytest.mark.skipif(
+                os.environ.get("POLARS_HIST_DB_XTDB_LIVE") != "1",
+                reason="set POLARS_HIST_DB_XTDB_LIVE=1 to run XTDB parity tests",
+            ),
+        ),
+    ]
+
+
+def _docker(args: list[str]) -> str:
+    return subprocess.check_output(["docker", *args], text=True).strip()
+
+
+def _published_port(container_id: str) -> int:
+    output = _docker(["port", container_id, "5432/tcp"])
+    first_binding = output.splitlines()[0]
+    return int(first_binding.rsplit(":", 1)[1])
+
+
+def xtdb_engine_test() -> tuple[Engine, str]:
+    container_id = _docker(
+        ["run", "--rm", "-d", "-p", "5432", "ghcr.io/xtdb/xtdb:nightly"]
+    )
+    config = DbEngineConfig(
+        backend="xtdb",
+        hostname="127.0.0.1",
+        port=_published_port(container_id),
+    )
+    engine = XtdbBackend().create_engine(config)
+    deadline = time.monotonic() + 60
+    while True:
+        try:
+            with engine.connect() as connection:
+                connection.execute(text("SELECT 1"))
+            break
+        except Exception:
+            if time.monotonic() > deadline:
+                engine.dispose()
+                subprocess.run(["docker", "rm", "-f", container_id], check=False)
+                raise
+            time.sleep(1)
+
+    return engine, container_id
+
+
+def _backend_from_engine(engine: Engine):
+    return getattr(
+        engine, "_polars_hist_db_backend", backend_from_config(DbEngineConfig())
     )
 
 
@@ -183,21 +242,33 @@ def from_test_result(
     return df
 
 
-def setup_fixture_dataset(test_file: str):
+def setup_fixture_dataset(test_file: str, backend_name: str = "mariadb"):
     config = PolarsHistDbConfig.from_yaml(get_test_config(test_file))
-    engine = mariadb_engine_test()
+    container_id = None
+    if backend_name == "mariadb":
+        engine = mariadb_engine_test()
+        backend = backend_from_config(DbEngineConfig(backend="mariadb"))
+    elif backend_name == "xtdb":
+        engine, container_id = xtdb_engine_test()
+        backend = backend_from_config(DbEngineConfig(backend="xtdb"))
+    else:
+        raise ValueError(f"unsupported test backend {backend_name!r}")
+    engine._polars_hist_db_backend = backend  # type: ignore[attr-defined]
 
     table_schema = config.tables.schemas()[0]
     table_configs = config.tables
     audit_table = AuditOps(table_schema)
 
-    with engine.begin() as connection:
-        TableConfigOps(connection).drop_all(table_configs)
-        audit_table.drop(connection)
+    connection_context = engine.connect if backend.name == "xtdb" else engine.begin
+    with connection_context() as connection:
+        backend.table_configs(connection).drop_all(table_configs)
+        if backend.name == "mariadb":
+            audit_table.drop(connection)
 
         for tc in table_configs.items:
-            DbOps(connection).db_create(tc.schema)
-            TableConfigOps(connection).create(tc)
+            if backend.name == "mariadb":
+                DbOps(connection).db_create(tc.schema)
+            backend.table_configs(connection).create(tc)
             if tc.schema != table_schema:
                 raise ValueError(
                     "mixed-schema tests not supported (to keep things simple)"
@@ -205,9 +276,71 @@ def setup_fixture_dataset(test_file: str):
 
     yield engine, config
 
-    with engine.begin() as connection:
-        TableConfigOps(connection).drop_all(table_configs)
-        audit_table.drop(connection)
+    try:
+        with connection_context() as connection:
+            backend.table_configs(connection).drop_all(table_configs)
+            if backend.name == "mariadb":
+                audit_table.drop(connection)
+    finally:
+        engine.dispose()
+        if container_id is not None:
+            subprocess.run(["docker", "rm", "-f", container_id], check=False)
+
+
+def _normalise_xtdb_dataframe(
+    df: pl.DataFrame,
+    table_config: TableConfig,
+    include_temporal_columns: bool,
+) -> pl.DataFrame:
+    primary_keys = list(table_config.primary_keys)
+    if "_id" in df.columns:
+        if len(primary_keys) == 1 and primary_keys[0] not in df.columns:
+            df = df.rename({"_id": primary_keys[0]})
+        else:
+            df = df.drop("_id")
+
+    if include_temporal_columns and table_config.is_temporal:
+        for column in ["_valid_from", "_valid_to"]:
+            if (
+                column in df.columns
+                and isinstance(df[column].dtype, pl.Datetime)
+                and getattr(df[column].dtype, "time_zone", None) is not None
+            ):
+                df = df.with_columns(pl.col(column).dt.replace_time_zone(None))
+        if "_valid_to" in df.columns:
+            df = df.with_columns(
+                pl.col("_valid_to").fill_null(
+                    datetime.fromisoformat("2106-02-07T06:28:15.999999")
+                )
+            )
+        df = df.rename(
+            {
+                col: f"_{col}"
+                for col in ["_valid_from", "_valid_to"]
+                if col in df.columns
+            }
+        )
+    else:
+        df = df.drop([col for col in ["_valid_from", "_valid_to"] if col in df.columns])
+
+    configured_columns = [column.name for column in table_config.columns]
+    if include_temporal_columns and table_config.is_temporal:
+        configured_columns = [*configured_columns, "__valid_from", "__valid_to"]
+    selected_columns = [column for column in configured_columns if column in df.columns]
+    df = df.select(selected_columns)
+
+    configured_dtypes = {
+        column.name: PolarsType.from_sql(column.data_type)
+        for column in table_config.columns
+        if column.name in df.columns
+    }
+    if include_temporal_columns and table_config.is_temporal:
+        for column in ["_valid_from", "_valid_to", "__valid_from", "__valid_to"]:
+            if column in df.columns:
+                configured_dtypes[column] = pl.Datetime("us")
+    return df.with_columns(
+        pl.col(column).cast(dtype) for column, dtype in configured_dtypes.items()
+    ).pipe(PolarsType.cast_str_to_cat)
 
 
 def read_df_from_db(
@@ -227,8 +360,43 @@ def read_df_from_db(
         asof_date = datetime.now(timezone.utc)
     table_name = table_config.name
     primary_keys = list(table_config.primary_keys)
+    backend = _backend_from_engine(engine)
 
-    with engine.begin() as connection:
+    connection_context = engine.connect if backend.name == "xtdb" else engine.begin
+    with connection_context() as connection:
+        if backend.name == "xtdb":
+            dataframe_ops = backend.dataframes(connection)
+            if table_config.is_temporal and not return_view:
+                df_read = dataframe_ops.from_raw_sql(
+                    f"SELECT *, _valid_from, _valid_to FROM {table_schema}.{table_name}"
+                )
+            else:
+                df_read = dataframe_ops.from_table(table_schema, table_name)
+            df_read = _normalise_xtdb_dataframe(
+                df_read,
+                table_config,
+                include_temporal_columns=table_config.is_temporal and not return_view,
+            ).sort(primary_keys)
+
+            if not table_config.is_temporal or return_view:
+                return df_read, None
+
+            df_read_history = dataframe_ops.from_raw_sql(
+                f"""
+                SELECT *, _valid_from, _valid_to
+                FROM {table_schema}.{table_name}
+                FOR VALID_TIME ALL
+                WHERE _valid_to IS NOT NULL
+                  AND _valid_to <= TIMESTAMP '{asof_date.isoformat()}'
+                """
+            )
+            df_read_history = _normalise_xtdb_dataframe(
+                df_read_history,
+                table_config,
+                include_temporal_columns=True,
+            ).sort(primary_keys + ["__valid_from"])
+            return df_read, df_read_history
+
         tbo = TableOps(table_schema, table_name, connection)
         table = tbo.get_table_metadata()
         df_read = (
@@ -257,6 +425,47 @@ def read_df_from_db(
         return df_read, df_read_history
 
 
+def read_raw_sql_from_db(
+    engine: Engine,
+    query: str,
+    table_config: Optional[TableConfig] = None,
+) -> pl.DataFrame:
+    backend = _backend_from_engine(engine)
+    connection_context = engine.connect if backend.name == "xtdb" else engine.begin
+    with connection_context() as connection:
+        df = backend.dataframes(connection).from_raw_sql(query)
+
+    if backend.name == "xtdb" and table_config is not None:
+        df = _normalise_xtdb_dataframe(
+            df,
+            table_config,
+            include_temporal_columns=False,
+        )
+    return df
+
+
+def get_test_backend_name(engine: Engine) -> str:
+    return _backend_from_engine(engine).name
+
+
+def connection_context_for_engine(engine: Engine):
+    backend = _backend_from_engine(engine)
+    return engine.connect if backend.name == "xtdb" else engine.begin
+
+
+def dataframe_ops_for_engine(engine: Engine, connection):
+    return _backend_from_engine(engine).dataframes(connection)
+
+
+def table_config_ops_for_engine(engine: Engine, connection):
+    return _backend_from_engine(engine).table_configs(connection)
+
+
+def commit_xtdb_connection(engine: Engine, connection):
+    if _backend_from_engine(engine).name == "xtdb":
+        connection.commit()
+
+
 def modify_and_read(
     engine: Engine,
     df: pl.DataFrame,
@@ -268,12 +477,34 @@ def modify_and_read(
     as_override: bool = False,
     return_view: bool = False,
 ) -> Tuple[pl.DataFrame, Optional[pl.DataFrame]]:
-    with engine.begin() as connection:
+    backend = _backend_from_engine(engine)
+    connection_context = engine.connect if backend.name == "xtdb" else engine.begin
+    with connection_context() as connection:
         # config = (
         #     table_config.generate_overrides_config() if as_override else table_config
         # )
         config = table_config
-        if operation == "delete":
+        if backend.name == "xtdb":
+            if operation == "delete":
+                raise NotImplementedError("XTDB test helper delete is not implemented")
+            assert dataset.delta_config is not None
+            if app_time is not None and "_valid_from" not in df.columns:
+                df = df.with_columns(
+                    pl.lit(app_time.replace(tzinfo=None)).alias("_valid_from")
+                )
+            backend.temporal_upsert(
+                df,
+                table_schema,
+                config.name,
+                connection=connection,
+                table_config=config,
+                delta_config=dataset.delta_config,
+                valid_time=dataset.valid_time_for_table(table_schema, config.name),
+                dropout_close_time=(
+                    app_time.replace(tzinfo=None) if app_time is not None else None
+                ),
+            )
+        elif operation == "delete":
             DataframeOps(connection).table_delete_rows_temporal(
                 df, table_schema, config.name, app_time
             )

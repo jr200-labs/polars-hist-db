@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
+import hashlib
 import logging
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 import polars as pl
 from sqlalchemy import and_, Connection, delete, select, Table
@@ -15,6 +16,28 @@ from .table_config import TableConfigOps
 from ..utils.db_utils import smallest_datetime
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _is_xtdb_connection(connection: Any) -> bool:
+    return getattr(getattr(connection, "dialect", None), "name", None) == "postgresql"
+
+
+def _xtdb_table_config_ops(connection: Any) -> Any:
+    from ..backends.xtdb import XtdbTableConfigOps
+
+    return XtdbTableConfigOps(connection)
+
+
+def _xtdb_dataframe_ops(connection: Any) -> Any:
+    from ..backends.xtdb import XtdbDataframeOps
+
+    return XtdbDataframeOps(connection)
+
+
+def _sql_literal(value: object) -> str:
+    if isinstance(value, datetime):
+        return f"TIMESTAMP '{value.isoformat()}'"
+    return "'" + str(value).replace("'", "''") + "'"
 
 
 class AuditOps:
@@ -80,7 +103,18 @@ class AuditOps:
         )
         return table_config
 
-    def create(self, connection: Connection) -> Table:
+    def _table_sql(self) -> str:
+        return f"{self.schema}.{self._table_name}"
+
+    def create(self, connection: Connection) -> Table | TableConfig:
+        if _is_xtdb_connection(connection):
+            table_config = self._table_config()
+            table_config_ops = _xtdb_table_config_ops(connection)
+            if not table_config_ops.table_exists(self.schema, self._table_name):
+                table_config_ops.create(table_config)
+                return table_config
+            return table_config_ops.from_table(self.schema, self._table_name)
+
         audit_table_name = str(self._table_name)
         tbo = TableOps(self.schema, audit_table_name, connection)
 
@@ -106,6 +140,19 @@ class AuditOps:
         interval: Literal["open", "closed"],
         connection: Connection,
     ) -> int:
+        if _is_xtdb_connection(connection):
+            self.create(connection)
+            operator = ">" if interval == "open" else ">="
+            query = (
+                f"DELETE FROM {self._table_sql()} "
+                f"WHERE table_name = {_sql_literal(target_table_name)} "
+                f"AND data_source_ts {operator} {_sql_literal(timestamp)}"
+            )
+            from ..backends.xtdb import _execute_xtdb_dml
+
+            _execute_xtdb_dml(connection, query)
+            return 0
+
         tbo = TableOps(self.schema, self._table_name, connection)
         tbl = tbo.get_table_metadata()
         if interval == "open":
@@ -134,6 +181,36 @@ class AuditOps:
         new_data_source_items: pl.DataFrame,
         connection: Connection,
     ):
+        if _is_xtdb_connection(connection):
+            self.create(connection)
+            latest_log = _xtdb_dataframe_ops(connection).from_raw_sql(
+                "SELECT data_source_ts "
+                f"FROM {self._table_sql()} "
+                f"WHERE table_name = {_sql_literal(target_table_name)} "
+                "ORDER BY data_source_ts "
+                "LIMIT 1",
+                schema_overrides={"data_source_ts": pl.Datetime("us", "UTC")},
+            )
+            if latest_log.is_empty():
+                return
+
+            xtdb_latest_log_ts: datetime = latest_log[0, "data_source_ts"]
+            invalid_data_source_items = new_data_source_items.filter(
+                pl.col("__created_at")
+                <= pl.lit(xtdb_latest_log_ts).cast(pl.dtype_of(pl.col("__created_at")))
+            )
+
+            if not invalid_data_source_items.is_empty():
+                LOGGER.error(
+                    "latest data_source_ts: %s",
+                    xtdb_latest_log_ts.isoformat(),
+                )
+                LOGGER.error(invalid_data_source_items)
+                raise ValueError(
+                    "uploading from data_sources with earlier timestamps is not supported"
+                )
+            return
+
         self.create(connection)
         tbo = TableOps(self.schema, self._table_name, connection)
         tbl = tbo.get_table_metadata()
@@ -169,7 +246,32 @@ class AuditOps:
         target_table_name: str,
         connection: Connection,
     ) -> pl.DataFrame:
+        if _is_xtdb_connection(connection):
+            self.create(connection)
+            existing_tbl_entries = (
+                _xtdb_dataframe_ops(connection)
+                .from_raw_sql(
+                    "SELECT data_source, data_source_ts "
+                    f"FROM {self._table_sql()} "
+                    f"WHERE table_name = {_sql_literal(target_table_name)} "
+                    "ORDER BY data_source_ts",
+                    schema_overrides={"data_source_ts": pl.Datetime("us", "UTC")},
+                )
+                .with_columns(pl.col("data_source").cast(pl.Utf8))
+            )
+
+            if existing_tbl_entries.is_empty():
+                return data_source_items
+
+            data_source_items = self._filter_unprocessed_items(
+                data_source_items, existing_tbl_entries, data_source_col_name
+            )
+            return self._filter_historic_items(
+                data_source_items, existing_tbl_entries, data_source_ts_col_name
+            )
+
         audit_tbl = self.create(connection)
+        assert isinstance(audit_tbl, Table)
 
         # get the set of datasource items already processed
         target_table_logs_sql = (
@@ -250,8 +352,6 @@ class AuditOps:
                 "Developer Error: data_source_timestamp must be timezone aware"
             )
 
-        self.create(connection)
-
         new_item = {
             "table_name": f"{target_table_name}",
             "data_source_type": data_source_type,
@@ -260,6 +360,35 @@ class AuditOps:
             "upload_ts": datetime.now(timezone.utc),
         }
 
+        if _is_xtdb_connection(connection):
+            table_config = self.create(connection)
+            assert isinstance(table_config, TableConfig)
+            audit_id_value = "|".join(
+                [
+                    self.schema,
+                    target_table_name,
+                    data_source_type,
+                    data_source,
+                    data_source_timestamp.isoformat(),
+                ]
+            )
+            new_item["audit_id"] = (
+                int(
+                    hashlib.sha256(audit_id_value.encode()).hexdigest()[:8],
+                    16,
+                )
+                & 0x7FFFFFFF
+            )
+            df = pl.DataFrame([new_item])
+            num_rows_changed = _xtdb_dataframe_ops(connection).table_insert(
+                df,
+                self.schema,
+                self._table_name,
+                table_config=table_config,
+            )
+            return num_rows_changed == 1
+
+        self.create(connection)
         tbo = TableOps(self.schema, self._table_name, connection)
         tbl = tbo.get_table_metadata()
         insert_stmt = tbl.insert().values(new_item)
@@ -275,7 +404,43 @@ class AuditOps:
         target_table_name: Optional[str] = None,
         data_source_type: Optional[InputDataSourceType] = None,
     ) -> pl.DataFrame:
+        if _is_xtdb_connection(connection):
+            self.create(connection)
+
+            xtdb_filters: list[str] = []
+            if target_table_name is not None:
+                xtdb_filters.append(f"table_name = {_sql_literal(target_table_name)}")
+            if data_source_type is not None:
+                xtdb_filters.append(
+                    f"data_source_type = {_sql_literal(data_source_type)}"
+                )
+            if asof_timestamp is not None:
+                if asof_timestamp.tzinfo is None:
+                    raise ValueError("asof_timestamp must be timezone aware")
+                xtdb_filters.append(f"data_source_ts <= {_sql_literal(asof_timestamp)}")
+
+            where_clause = f"WHERE {' AND '.join(xtdb_filters)}" if xtdb_filters else ""
+            latest_log = _xtdb_dataframe_ops(connection).from_raw_sql(
+                "SELECT * "
+                f"FROM {self._table_sql()} "
+                f"{where_clause} "
+                "ORDER BY data_source_ts DESC",
+                schema_overrides={
+                    "data_source_ts": pl.Datetime("us", "UTC"),
+                    "upload_ts": pl.Datetime("us", "UTC"),
+                },
+            )
+            if latest_log.is_empty():
+                return latest_log
+            return (
+                latest_log.group_by("table_name")
+                .first()
+                .with_columns(pl.col("data_source_ts").cast(pl.Datetime("us", "UTC")))
+                .with_columns(pl.col("upload_ts").cast(pl.Datetime("us", "UTC")))
+            )
+
         tbl = self.create(connection)
+        assert isinstance(tbl, Table)
 
         filters = []
         if target_table_name is not None:
