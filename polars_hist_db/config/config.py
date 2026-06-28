@@ -1,9 +1,54 @@
+from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping, Optional
 
 from .helpers import get_nested_key, load_yaml
 
 from .dataset import DatasetsConfig
 from .table import TableConfigs
+from ..backends.config import DbEngineConfig
+
+
+@dataclass(frozen=True)
+class ParitySemanticForeignKeyConfig:
+    source: str
+    target: str
+    columns: tuple[str, ...]
+
+    def __init__(self, source: str, target: str, columns: Iterable[str]):
+        object.__setattr__(self, "source", source)
+        object.__setattr__(self, "target", target)
+        object.__setattr__(self, "columns", tuple(columns))
+
+
+@dataclass(frozen=True)
+class ParityConfig:
+    ignore_columns: tuple[str, ...] = field(default_factory=tuple)
+    semantic_foreign_keys: tuple[ParitySemanticForeignKeyConfig, ...] = field(
+        default_factory=tuple
+    )
+
+    def __init__(
+        self,
+        ignore_columns: Iterable[str] = (),
+        semantic_foreign_keys: Iterable[
+            ParitySemanticForeignKeyConfig | Mapping[str, Any]
+        ] = (),
+    ):
+        object.__setattr__(self, "ignore_columns", tuple(ignore_columns))
+        object.__setattr__(
+            self,
+            "semantic_foreign_keys",
+            tuple(
+                item
+                if isinstance(item, ParitySemanticForeignKeyConfig)
+                else ParitySemanticForeignKeyConfig(
+                    source=str(item["source"]),
+                    target=str(item["target"]),
+                    columns=item["columns"],
+                )
+                for item in semantic_foreign_keys
+            ),
+        )
 
 
 class PolarsHistDbConfig:
@@ -17,13 +62,23 @@ class PolarsHistDbConfig:
         self.config_file_path = config_file_path
         dataset_params = get_nested_key(cfg_dict, datasets_path)
         table_params = get_nested_key(cfg_dict, table_configs_path)
+        db_params = get_nested_key(cfg_dict, ["db"]) or {}
+        parity_params = get_nested_key(cfg_dict, ["parity"]) or {}
 
+        self.db_config = DbEngineConfig.from_mapping(db_params)
+        self.parity = ParityConfig(**parity_params)
         self.tables = TableConfigs(items=table_params)
 
         if dataset_params:
             self.datasets = DatasetsConfig(
                 datasets=dataset_params, config_file_path=config_file_path
             )
+
+    def create_engine(self):
+        from ..backends import backend_from_config
+
+        backend = backend_from_config(self.db_config)
+        return backend.create_engine(self.db_config)
 
     @classmethod
     def from_yaml(

@@ -1,22 +1,27 @@
 import pytest
 import polars as pl
-from sqlalchemy import select
-
-from polars_hist_db.core.dataframe import DataframeOps
-
-from polars_hist_db.core.table import TableOps
 from ..utils.dsv_helper import (
+    backend_params,
     from_test_result,
     modify_and_read,
+    read_raw_sql_from_db,
     setup_fixture_dataset,
 )
 
-pytestmark = pytest.mark.integration
-
 
 @pytest.fixture
-def fixutre_with_simple_table():
-    yield from setup_fixture_dataset("simple_nontemporal.yaml")
+def fixutre_with_simple_table(request):
+    yield from setup_fixture_dataset("simple_nontemporal.yaml", request.param)
+
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.parametrize(
+        "fixutre_with_simple_table",
+        backend_params(),
+        indirect=True,
+    ),
+]
 
 
 def test_select_sql(fixutre_with_simple_table):
@@ -64,8 +69,7 @@ def test_select_sql(fixutre_with_simple_table):
 
     # read using raw sql
     _sql = f"select * from {table_schema}.{table_config.name}"
-    with engine.begin() as connection:
-        df_read = DataframeOps(connection).from_raw_sql(_sql)
+    df_read = read_raw_sql_from_db(engine, _sql, table_config)
 
     df_expected = from_test_result(
         """
@@ -111,17 +115,6 @@ def test_select_sql(fixutre_with_simple_table):
 
     # read empty dataframe using raw sql
     _sql = f"select * from {table_schema}.{table_config.name} where 1=0"
-    with engine.begin() as connection:
-        df_read = DataframeOps(connection).from_raw_sql(_sql)
-
-    assert df_read.is_empty()
-
-    # read empty dataframe using selectable
-    with engine.begin() as connection:
-        tbo = TableOps(table_schema, table_config.name, connection)
-        tbl = tbo.get_table_metadata()
-        select_sql = select(tbl).where("1" == "0")
-
-        df_read = DataframeOps(connection).from_selectable(select_sql)
+    df_read = read_raw_sql_from_db(engine, _sql, table_config)
 
     assert df_read.is_empty()

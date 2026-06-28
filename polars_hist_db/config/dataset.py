@@ -230,6 +230,19 @@ class TimePartition:
     unique_strategy: Literal["first", "last"] = "last"
 
 
+@dataclass(frozen=True)
+class ValidTimeConfig:
+    table: str
+    from_column: str
+    schema: Optional[str] = None
+    to_column: Optional[str] = None
+
+    def matches(self, table_schema: str, table_name: str) -> bool:
+        if self.table != table_name:
+            return False
+        return self.schema is None or self.schema == table_schema
+
+
 @dataclass
 class DatasetConfig:
     name: str
@@ -240,6 +253,7 @@ class DatasetConfig:
     time_partition: Optional[TimePartition] = None
     null_values: Optional[Sequence[str]] = None
     delta_config: DeltaConfig = field(default_factory=DeltaConfig)
+    valid_time: Sequence[ValidTimeConfig] = field(default_factory=tuple)
     config_file_path: Optional[str] = None
 
     def __post_init__(self):
@@ -261,6 +275,23 @@ class DatasetConfig:
             self.time_partition, TimePartition
         ):
             self.time_partition = TimePartition(**self.time_partition)
+
+        self.valid_time = [
+            item if isinstance(item, ValidTimeConfig) else ValidTimeConfig(**item)
+            for item in self.valid_time
+        ]
+
+    def valid_time_for_table(
+        self, table_schema: str, table_name: str
+    ) -> Optional[ValidTimeConfig]:
+        return next(
+            (
+                valid_time
+                for valid_time in self.valid_time
+                if valid_time.matches(table_schema, table_name)
+            ),
+            None,
+        )
 
 
 @dataclass

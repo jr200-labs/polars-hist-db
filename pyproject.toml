@@ -9,7 +9,7 @@ requires-python = ">=3.12,<4.0"
 dependencies = [
     "nats-py>=2.14.0",
     "pandas>=3.0.2",
-    "polars[sqlalchemy]>=1.39.3",
+    "polars[sqlalchemy]>=1.41.2",
     "pyarrow>=23.0.1",
     "pymysql>=1.1.2",
     "pytz>=2026.1.post1",
@@ -22,9 +22,13 @@ dependencies = [
 [project.optional-dependencies]
 sqlalchemy = ["polars[sqlalchemy]"]
 nats = ["nats-py"]
+xtdb = ["adbc-driver-flightsql>=1.10.0", "psycopg[binary]>=3.2.2"]
 
 [project.urls]
 Repository = "https://github.com/jr200-labs/polars-hist-db"
+
+[project.scripts]
+polars-hist-db-parity = "polars_hist_db.parity:main"
 
 [dependency-groups]
 dev = [
@@ -73,6 +77,8 @@ module = [
     "scandir_rs.*",
     "nats.*",
     "nkeys.*",
+    "adbc_driver_flightsql.*",
+    "psycopg.*",
     "pyarrow.*",
 ]
 ignore_missing_imports = true

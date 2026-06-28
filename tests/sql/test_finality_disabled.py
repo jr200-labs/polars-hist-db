@@ -4,17 +4,25 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 from ..utils.dsv_helper import (
+    backend_params,
     from_test_result,
     modify_and_read,
     setup_fixture_dataset,
 )
 
-pytestmark = pytest.mark.integration
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.parametrize(
+        "fixture_with_simple_table",
+        backend_params(),
+        indirect=True,
+    ),
+]
 
 
 @pytest.fixture
-def fixture_with_simple_table():
-    yield from setup_fixture_dataset("simple.yaml")
+def fixture_with_simple_table(request):
+    yield from setup_fixture_dataset("simple.yaml", request.param)
 
 
 def test_dataframe_upsert(fixture_with_simple_table):
