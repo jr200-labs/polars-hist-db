@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.12.12](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.11...v0.12.12) (2026-06-28)
+
+
+### Bug Fixes
+
+* **deps:** update dependency jr200-labs/github-action-templates to shared-v0.1.19 ([#88](https://github.com/jr200-labs/polars-hist-db/issues/88)) ([dc46a93](https://github.com/jr200-labs/polars-hist-db/commit/dc46a93e932386e02bc9dee76661730b4f112725))
+* **deps:** update dependency jr200-labs/github-action-templates to shared-v0.1.20 ([#90](https://github.com/jr200-labs/polars-hist-db/issues/90)) ([b202da8](https://github.com/jr200-labs/polars-hist-db/commit/b202da890187654e5cbeaaf9ac99d1a63fbf54d2))
+* **deps:** update quarto-cli digest to 02ffed3 ([#89](https://github.com/jr200-labs/polars-hist-db/issues/89)) ([c0ae38e](https://github.com/jr200-labs/polars-hist-db/commit/c0ae38e0f0bb8b322064b660d5c5c6e825d23ba8))
+* **deps:** update quarto-cli digest to 45ecb6e ([#84](https://github.com/jr200-labs/polars-hist-db/issues/84)) ([1c5158e](https://github.com/jr200-labs/polars-hist-db/commit/1c5158e45975aee7f282f34a4de0846711d36a17))
+* **deps:** update quarto-cli digest to f8a22ff ([#86](https://github.com/jr200-labs/polars-hist-db/issues/86)) ([d90b31d](https://github.com/jr200-labs/polars-hist-db/commit/d90b31d1adc3463c5c90b377bb48ebb2d9765c33))
+* **deps:** update shared workflow ref ([#79](https://github.com/jr200-labs/polars-hist-db/issues/79)) ([b2ed129](https://github.com/jr200-labs/polars-hist-db/commit/b2ed129160454b37c3389a122f6ede1cdbdf2042))
+* **deps:** update shared workflow ref ([#81](https://github.com/jr200-labs/polars-hist-db/issues/81)) ([c751c67](https://github.com/jr200-labs/polars-hist-db/commit/c751c67c762343697a88a7f3c2d60b096f73ec9c))
+* **deps:** update shared workflow ref ([#82](https://github.com/jr200-labs/polars-hist-db/issues/82)) ([49e2ffc](https://github.com/jr200-labs/polars-hist-db/commit/49e2ffcb68cdd182e88e99a1848dbc9e74d382ea))
+* **deps:** update shared workflow ref ([#83](https://github.com/jr200-labs/polars-hist-db/issues/83)) ([344c2ad](https://github.com/jr200-labs/polars-hist-db/commit/344c2ad34310cebbbe27997dd6ec45e5b246e1e0))
+* **deps:** update shared workflow ref ([#85](https://github.com/jr200-labs/polars-hist-db/issues/85)) ([57e28f5](https://github.com/jr200-labs/polars-hist-db/commit/57e28f5ab536ddd82542b31f922452c1f78b6167))
+* **deps:** update shared workflow ref ([#87](https://github.com/jr200-labs/polars-hist-db/issues/87)) ([0fdcf3f](https://github.com/jr200-labs/polars-hist-db/commit/0fdcf3f01252f84d4a2eb440097f074f62db8944))
+
 ## [0.12.11](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.10...v0.12.11) (2026-06-19)
 
 
