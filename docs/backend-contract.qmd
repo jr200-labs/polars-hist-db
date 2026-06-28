@@ -1,0 +1,345 @@
+---
+title: "Backend Contract"
+---
+
+This document defines the storage-backend contract for `polars-hist-db`.
+The current implementation uses MariaDB system-versioned tables, but Private consumer
+should treat the stable product surface as typed Polars dataframes over
+temporal tables. A second backend, such as XTDB, should be evaluated against
+this contract before any migration is attempted.
+
+## Goal
+
+The backend layer must support repeatable ingestion of raw and derived data,
+typed dataframe reads and writes, and point-in-time views of historical state.
+It must also provide enough update visibility for downstream services to
+invalidate caches, publish events, and build user-facing projections.
+
+The goal of an XTDB spike is not to reproduce MariaDB SQL mechanics. The goal
+is to prove that the same `polars-hist-db` behaviours can be implemented with
+equivalent or better correctness, performance, and operability.
+
+## Public Behaviour
+
+Backend implementations must preserve these behaviours:
+
+- Read a whole table into a strongly typed `polars.DataFrame`.
+- Read query results into a strongly typed `polars.DataFrame`.
+- Write dataframes into configured tables using the configured schema.
+- Create configured tables idempotently.
+- Add missing configured columns without silently dropping existing data.
+- Apply default values in the same places as the current dataframe insert path.
+- Upsert temporal data using configured primary keys and delta semantics.
+- Delete rows temporally when the source marks rows as final or removed.
+- Query latest state, all historical states, an as-of state, and a bounded
+  historical span through `TimeHint`.
+- Track ingestion audit entries so repeated scrapes skip already-ingested
+  source items.
+- Expose table-update signals that downstream services can poll or publish.
+- Preserve transaction boundaries for each file or message partition.
+
+## Current MariaDB Coupling
+
+The existing implementation mixes the public behaviour above with several
+MariaDB-specific details:
+
+- Temporal history is implemented with hidden `__valid_from` and `__valid_to`
+  columns created as a `PERIOD FOR SYSTEM_TIME`.
+- Historical reads are expressed with MariaDB `FOR SYSTEM_TIME` hints.
+- Upsert timestamps are controlled with `SET @@timestamp` through
+  `DbOps.set_system_versioning_time`.
+- Table metadata is loaded with SQLAlchemy reflection and MariaDB SQL types.
+- Delta upserts are implemented with temporary SQL tables, SQLAlchemy
+  `UPDATE ... WHERE`, and `INSERT ... SELECT` statements.
+- Some current query surfaces accept SQLAlchemy `Selectable` objects, so they
+  implicitly assume a SQLAlchemy-compatible backend.
+- Audit tables live in the same relational database as the target tables.
+
+These details are valid for the MariaDB adapter, but they should not leak into
+the storage-neutral contract.
+
+## Backend Interface Shape
+
+A backend adapter should own the operations below. Naming can change during
+implementation, but the boundary should remain explicit.
+
+Backends are selected through the parsed `db.backend` configuration field.
+`mariadb` is the default and complete backend. `xtdb` is experimental while the
+spike proves parity. `mssql` is reserved for a future MS SQL adapter because MS
+SQL also has temporal-table support, but it should not be exposed as implemented
+until it passes the same contract tests.
+
+### Connection and Transactions
+
+- Build and dispose backend connections from `DbEngineConfig`.
+- Provide a transaction context compatible with dataset ingestion.
+- Allow backend-specific tuning without changing dataset configuration shape.
+
+### Schema Management
+
+- Create schemas or namespaces.
+- Create configured tables from `TableConfig`.
+- Reflect an existing table into `TableConfig`.
+- Add missing configured columns.
+- Report primary keys, nullable columns, default values, and backend-native
+  type information.
+
+### Type Mapping
+
+- Map configured SQL-like types to Polars dtypes.
+- Map Polars dtypes to backend-native storage types.
+- Round-trip dates, datetimes, decimals, booleans, categoricals, integers,
+  floats, strings, and nulls without lossy conversion.
+- Preserve decimal precision needed by finance and gas-volume data.
+
+### Reads
+
+- Read table latest state.
+- Read table history with `TimeHint(mode="all")`.
+- Read an as-of state with `TimeHint(mode="asof")`.
+- Read a bounded history with `TimeHint(mode="span")`.
+- Read filtered/query results without forcing callers to hand-write backend
+  SQL where a dataframe-key lookup would be sufficient.
+
+### Writes
+
+- Insert dataframes.
+- Update dataframes by primary key.
+- Upsert temporal dataframes by primary key.
+- Delete rows temporally.
+- Return changed-row counts where they are meaningful.
+- Keep one source partition or message inside one atomic commit unit.
+
+### Delta and Finality Semantics
+
+The adapter must support the existing `DeltaConfig` behaviours:
+
+- Drop unchanged rows when configured.
+- Handle duplicate source keys with `error`, `take_first`, or `take_last`.
+- Apply `row_finality="disabled"` without deleting missing rows.
+- Apply `row_finality="dropout"` by temporally deleting rows missing from the
+  incoming source snapshot.
+- Leave room for `row_finality="manual"` behaviour without blocking future
+  implementation.
+
+### Audit and Update Visibility
+
+- Record source-item audit entries.
+- Filter already-ingested source items.
+- Query latest audit entry by table and source timestamp.
+- Support table-update callbacks used by API services for cache invalidation
+  and event publication.
+
+## XTDB Evaluation Requirements
+
+Official XTDB materials describe XTDB as an open-source immutable SQL database
+with comprehensive time-travel, bitemporal records, a columnar engine built on
+Apache Arrow, and object-storage-oriented architecture:
+
+- <https://github.com/xtdb/xtdb>
+- <https://docs.xtdb.com/intro/what-is-xtdb.html>
+
+Those properties are directly relevant to Private consumer because the data platform is
+already Polars/Arrow-oriented and needs historical views. The same materials
+also describe a strongly ordered transaction path, with writes for a database
+processed through a single leader. That is a valuable consistency model, but it
+means write throughput and batching must be measured on representative feeds.
+
+XTDB should only move beyond spike status if it passes the following gates:
+
+- The adapter can run representative `polars-hist-db` ingestion tests without
+  weakening type checks.
+- Temporal query parity tests pass against MariaDB and XTDB for latest, all,
+  as-of, and span reads.
+- Delta upsert parity tests pass for inserts, updates, duplicate handling,
+  unchanged-row dropping, and row-finality dropout.
+- Finance-shaped data preserves decimal precision and timestamp semantics.
+- Private consumer-shaped record and entity tables can be read into Arrow/Polars without
+  row-by-row conversion becoming the bottleneck.
+- Netbacks-style high-frequency update streams can be batched without violating
+  freshness requirements.
+- Operational work is understood: deployment, backup, restore, object storage,
+  schema evolution, monitoring, and failure recovery.
+- Migration can be run table-by-table with dual-read or dual-write validation.
+
+## Reuse From `polars-xtdb`
+
+The existing `polars-xtdb` prototype is useful prior art, but it should not be
+treated as a completed backend. It already explores XTDB reads, system-time
+columns, and basic type mapping. The current gaps are the important parts for
+Private consumer:
+
+- Type mapping is incomplete for the schemas now used by `polars-hist-db`.
+- Dataset ingestion, audit tracking, delta upserts, and finality are not wired
+  into the prototype.
+- The prototype exposes XTDB-specific helper functions rather than a storage
+  adapter that implements the `polars-hist-db` contract.
+
+The XTDB spike should reuse lessons and test fixtures from that repo, not
+replace `polars-hist-db` with the prototype directly.
+
+The first adapter slice in `polars-hist-db` exposes an experimental
+`XtdbBackend.dataframes(connection)` helper for raw SQL reads, table reads, and
+dataframe appends. Temporal upsert, delta/finality, schema management, audit
+tracking, and update visibility remain explicit unsupported operations until
+the parity tickets prove them.
+
+The first temporal parity slice shares backend-level system-time hint clause
+generation between MariaDB and XTDB for `none`, `all`, `asof`, and `span`.
+MariaDB still applies those hints through its existing SQLAlchemy/MariaDB
+`TimeHint.apply` path. XTDB applies the same clause string to experimental table
+reads. This is query-shape parity only; live XTDB result parity still requires
+the dedicated parity tests and fixture data in JRL-240.
+
+`XtdbBackend.table_configs(connection)` exists as the schema-management seam.
+Table reflection reads `information_schema.columns`, maps XTDB type names into
+`TableConfig`, filters XTDB system-time columns, and treats `_id` as the
+reflected key. Configured table creation declares XTDB's required `_id` plus
+the configured columns with XTDB's bare-column `CREATE TABLE schema.table (...)`
+form. For a table config with exactly one primary key, that key is mapped to
+XTDB's required `_id` document identifier. For composite primary keys, the
+adapter generates a deterministic text `_id` using the configured key order and
+the `xtdb-pk-v1:` encoding while preserving the original key columns as normal
+data columns. Table creation records the original primary-key list in an
+internal XTDB adapter metadata table so `from_table(...)` can recover composite
+keys when reflecting tables created by `polars-hist-db`. Legacy XTDB tables
+without that metadata still fall back to `_id` as the reflected key.
+
+The same mapping is applied on experimental dataframe appends when callers pass
+the `TableConfig` to `XtdbDataframeOps.table_insert(...)`: a configured key such
+as `id` is renamed to `_id` before Polars writes to XTDB, while composite-key
+tables receive a synthetic `_id` column and keep their original key columns.
+Existing MariaDB insert behaviour remains unchanged.
+
+This is schema declaration, not MariaDB-style type enforcement. Empty declared
+XTDB columns surface through `information_schema`, and XTDB widens column types
+from inserted data. The adapter therefore keeps Arrow/Polars and
+`TableConfig` as the typed boundary while the spike proves whether live XTDB
+ingestion preserves the precision and nullability guarantees required by
+Private consumer.
+
+The first live pgwire round trip passes against `ghcr.io/xtdb/xtdb:nightly`:
+
+```bash
+POLARS_HIST_DB_XTDB_LIVE=1 uv run --extra xtdb \
+  python -m pytest tests/backends/test_xtdb_live.py -m integration -q
+```
+
+The live test exposed important pgwire compatibility details:
+
+- The SQLAlchemy PostgreSQL dialect needs small XTDB-specific startup
+  adjustments: connect to the `xtdb` database, disable native hstore probing,
+  and skip the `SHOW standard_conforming_strings` dialect probe.
+- XTDB separates query and DML transactions more strictly than PostgreSQL.
+  The adapter leaves reads in normal read-only transactions and wraps DML in
+  explicit `BEGIN READ WRITE` blocks.
+- Psycopg parameter OIDs are not sufficient for the current DML path, so the
+  spike emits typed SQL literals for inserts. This proves create/append/read
+  viability, but bulk ingestion should move to XTDB ADBC because it is the
+  Arrow-native path documented by XTDB and avoids row-by-row SQL literal work.
+
+The first live ADBC/FlightSQL round trip also passes against the same nightly
+image:
+
+```bash
+POLARS_HIST_DB_XTDB_LIVE=1 uv run --extra xtdb \
+  python -m pytest tests/backends/test_xtdb_adbc_live.py -m integration -q
+```
+
+The current adapter keeps this as an explicit sidecar path:
+
+- `XtdbBackend.create_engine(...)` remains the pgwire/SQLAlchemy path for
+  existing query and control-plane compatibility.
+- `XtdbBackend.create_adbc_connection(...)` opens `grpc://host:adbc_port`,
+  defaulting XTDB `adbc_port` to `9832`.
+- `XtdbBackend.adbc_dataframes(connection)` ingests Polars dataframes through
+  Arrow/ADBC and reads query results back through `fetch_arrow_table()`.
+- XTDB FlightSQL accepts schema-targeted ingest through ADBC's
+  `db_schema_name` option, so the ADBC path can preserve configured table
+  schemas.
+- Polars emits Arrow `large_string` columns. The current XTDB nightly rejects
+  `large_string` on ingest, so the adapter normalises large string and
+  dictionary-large-string columns to Arrow `string` at the XTDB ingest
+  boundary. This preserves values while avoiding the pgwire literal path.
+
+The first temporal upsert parity slice now uses XTDB's native insert-as-upsert
+behaviour:
+
+- `XtdbBackend.temporal_upsert(...)` delegates to the configured dataframe
+  insert path. XTDB creates a new temporal version when an existing `_id`
+  changes.
+- A live ADBC test proves latest state and `FOR SYSTEM_TIME AS OF` both work:
+  after two upserts for the same configured primary key, latest reads the new
+  value and an as-of checkpoint between commits reads the previous value.
+- MariaDB's synthetic system-versioning time (`SET @@timestamp`) maps to
+  XTDB's transaction-level `BEGIN READ WRITE WITH (SYSTEM_TIME = ...)` option
+  on the SQL/pgwire path. This is intended for initial backfills and must be
+  monotonic: XTDB rejects a transaction system-time earlier than the current
+  database transaction time.
+- A live pgwire test proves `update_time` is stored as XTDB system-time. The
+  test imports two future system-time versions and queries with explicit
+  `FOR VALID_TIME AS OF ... FOR SYSTEM_TIME AS OF ...` bases to account for
+  XTDB's independent valid-time and system-time axes.
+- ADBC bulk ingest does not yet support `update_time` in this adapter. It still
+  works for commit-time system history, but imported system-time currently uses
+  pgwire SQL transactions.
+- The current delta parity slice supports `DeltaConfig(drop_unchanged_rows=True)`,
+  `on_duplicate_key`, and `row_finality` values `disabled` and `dropout` for
+  single-key XTDB tables. The adapter applies the source duplicate policy before
+  writing: the default `error` mode rejects duplicate source keys, while
+  `take_first` and `take_last` preserve the selected source row. For dropout
+  finality it temporally deletes current rows whose `_id` is missing from the
+  incoming snapshot. It then compares incoming rows against the current row at
+  the same temporal basis and skips rows whose configured values are unchanged.
+- A live test proves the unchanged update returns zero changed rows and does
+  not create a transaction at the unchanged `update_time`; the subsequent
+  changed update remains visible through as-of valid-time/system-time queries.
+  Full `FOR VALID_TIME ALL FOR SYSTEM_TIME ALL` history can show more rows than
+  the count of submitted changes because XTDB exposes the full bitemporal
+  matrix. Tests should assert transaction/system-time and as-of state
+  invariants, not assume one displayed row per logical source update.
+- A live test proves dropout finality removes a missing row from later
+  valid-time/system-time as-of reads while preserving the earlier as-of
+  snapshot.
+- Explicit XTDB valid-time columns are supported on the pgwire insert path:
+  `_valid_from` / `_valid_to` pass through dataframe upserts, and
+  unchanged-row filtering treats source valid-window changes as meaningful
+  changes. A live test proves a row with an explicit valid-time window is only
+  visible inside that window.
+- Dataset configs can declare per-table valid-time mappings:
+  `valid_time: [{table: records, from_column: msg_timestamp}]`. The XTDB
+  temporal upsert path copies the configured `from_column` to `_valid_from`
+  and optional `to_column` to `_valid_to`, preserving the original source
+  columns. This keeps feed semantics YAML-controlled: record snapshots can use
+  message/as-of time, entity vectors can use source position time, and future
+  rate feeds can use explicit validity windows.
+- Dataset ingestion keeps an explicit staging phase for XTDB. The adapter
+  writes each partition to a retained internal table named
+  `__<dataset>_stage`, keyed by `stage_run_id` and `stage_row_index`, then
+  deletes only that `stage_run_id` after the upload finishes. This mirrors the
+  MariaDB pattern of reusing the staging schema while keeping staged data scoped
+  to one upload.
+- XTDB staging preserves pipeline source-to-target column mapping, duplicate
+  removal, default filling, `update_time` system-time import, per-table
+  valid-time mapping, and `deduce_foreign_key` normalization for textual target
+  key columns. Missing normalized rows get deterministic IDs of the form
+  `xtdb-fk-v1:<schema>.<table>:<natural-key-json>`. Numeric generated IDs need
+  a separate allocator before they can be supported safely.
+- MariaDB continues to treat `__valid_from` / `__valid_to` as system-version
+  history. Dataset valid-time mappings are XTDB business valid-time inputs and
+  are not equivalent to MariaDB's generated system-time columns.
+
+## Migration Decision
+
+Do not start by replacing MariaDB. Start by extracting the backend contract and
+building a minimal XTDB adapter behind it. The decision to migrate should be
+based on parity tests, representative benchmarks, and operational confidence.
+
+For Private consumer, the practical default is:
+
+- Keep MariaDB as the production backend while the adapter boundary is created.
+- Build XTDB as an experimental backend.
+- Compare both backends with record, entity, netbacks, and pipe/storage-shaped
+  datasets.
+- Migrate only after typed temporal reads, writes, update visibility, and
+  operational recovery are proven.

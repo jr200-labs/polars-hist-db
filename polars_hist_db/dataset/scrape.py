@@ -1,7 +1,9 @@
 from datetime import datetime
+from contextlib import nullcontext
 import logging
 from time import sleep
-from typing import Awaitable, Callable, List, Optional, Set, Tuple
+from typing import Any, Awaitable, Callable, List, Optional, Set, Tuple
+from uuid import uuid4
 
 import polars as pl
 from sqlalchemy import Connection, Engine
@@ -16,6 +18,12 @@ from .primary_item import scrape_primary_item
 LOGGER = logging.getLogger(__name__)
 
 
+def _pipeline_transaction_context(connection: Connection, is_xtdb: bool):
+    if is_xtdb:
+        return nullcontext()
+    return connection.begin()
+
+
 def _scrape_pipeline_item(
     pipeline_id: int,
     dataset: DatasetConfig,
@@ -24,15 +32,36 @@ def _scrape_pipeline_item(
     tables: TableConfigs,
     upload_time: datetime,
     connection: Connection,
+    partition_df: Optional[pl.DataFrame] = None,
+    stage_run_id: Optional[str] = None,
+    staging: Any = None,
+    backend: Any = None,
 ) -> bool:
     item_type = dataset.pipeline.item_type(target_table)
     if item_type == "primary":
         return scrape_primary_item(
-            pipeline_id, dataset, tables, upload_time, connection
+            pipeline_id,
+            dataset,
+            tables,
+            upload_time,
+            connection,
+            partition_df=partition_df,
+            stage_run_id=stage_run_id,
+            staging=staging,
+            backend=backend,
         )
     elif item_type == "extract":
         return scrape_extract_item(
-            pipeline_id, dataset, target_table, tables, upload_time, connection
+            pipeline_id,
+            dataset,
+            target_table,
+            tables,
+            upload_time,
+            connection,
+            partition_df=partition_df,
+            stage_run_id=stage_run_id,
+            staging=staging,
+            backend=backend,
         )
     else:
         raise ValueError(f"unknown item type: {item_type}")
@@ -64,16 +93,19 @@ async def try_run_pipeline_as_transaction(
     num_retries: int = 3,
     seconds_between_retries: float = 60,
     delta_table_config: Optional[TableConfig] = None,
+    backend: Any = None,
 ):
     main_table_config: TableConfig = tables[dataset.pipeline.get_main_table_name()[1]]
     tbl_to_header_map = dataset.pipeline.get_header_map(main_table_config.name)
     header_keys = [tbl_to_header_map.get(k, k) for k in main_table_config.primary_keys]
+    is_xtdb = getattr(backend, "name", None) == "xtdb"
 
     while num_retries > 0:
         with engine.connect() as connection:
             try:
-                with connection.begin():
-                    if delta_table_config is not None:
+                with _pipeline_transaction_context(connection, is_xtdb):
+                    staging = backend.staging(connection) if is_xtdb else None
+                    if delta_table_config is not None and not is_xtdb:
                         _ensure_delta_table(
                             connection,
                             delta_table_config,
@@ -81,6 +113,7 @@ async def try_run_pipeline_as_transaction(
                         )
                     modified_tables: Set[Tuple[str, str]] = set()
                     for i, (ts, partition_df) in enumerate(partitions):
+                        stage_run_id = None
                         assert isinstance(ts, datetime), (
                             f"timestamp is not a datetime [{type(ts)}]"
                         )
@@ -92,32 +125,62 @@ async def try_run_pipeline_as_transaction(
                             len(partition_df),
                         )
 
-                        DataframeOps(connection).table_insert(
-                            partition_df,
-                            dataset.delta_table_schema,
-                            dataset.name,
-                            uniqueness_col_set=header_keys,
-                            prefill_nulls_with_default=True,
-                            clear_table_first=True,
-                        )
-
-                        for pipeline_id, (
-                            target_schema,
-                            target_table,
-                        ) in dataset.pipeline.get_pipeline_items().items():
-                            did_modify = _scrape_pipeline_item(
-                                pipeline_id,
-                                dataset,
-                                target_schema,
-                                target_table,
-                                tables,
+                        if not is_xtdb:
+                            DataframeOps(connection).table_insert(
+                                partition_df,
+                                dataset.delta_table_schema,
+                                dataset.name,
+                                uniqueness_col_set=header_keys,
+                                prefill_nulls_with_default=True,
+                                clear_table_first=True,
+                            )
+                        else:
+                            if delta_table_config is None:
+                                raise ValueError(
+                                    "XTDB ingest requires delta table config"
+                                )
+                            if staging is None:
+                                raise ValueError("XTDB ingest requires staging ops")
+                            stage_run_id = f"{dataset.name}:{uuid4()}"
+                            staging.ensure_table(delta_table_config)
+                            staging.insert_partition(
+                                partition_df,
+                                delta_table_config,
+                                stage_run_id,
                                 ts,
-                                connection,
+                                uniqueness_col_set=header_keys,
+                                prefill_nulls_with_default=True,
                             )
 
-                            if did_modify:
-                                modified_item = (target_schema, target_table)
-                                modified_tables.add(modified_item)
+                        try:
+                            for pipeline_id, (
+                                target_schema,
+                                target_table,
+                            ) in dataset.pipeline.get_pipeline_items().items():
+                                did_modify = _scrape_pipeline_item(
+                                    pipeline_id,
+                                    dataset,
+                                    target_schema,
+                                    target_table,
+                                    tables,
+                                    ts,
+                                    connection,
+                                    partition_df=partition_df,
+                                    stage_run_id=stage_run_id,
+                                    staging=staging,
+                                    backend=backend,
+                                )
+
+                                if did_modify:
+                                    modified_item = (target_schema, target_table)
+                                    modified_tables.add(modified_item)
+                        finally:
+                            if (
+                                is_xtdb
+                                and stage_run_id is not None
+                                and staging is not None
+                            ):
+                                staging.cleanup_run(stage_run_id, delta_table_config)
 
                     success = await commit_fn(connection, sorted(modified_tables))
                     if success:

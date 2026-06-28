@@ -1,21 +1,25 @@
 import pytest
 
-from polars_hist_db.core.table_config import TableConfigOps
 from polars_hist_db.config import TableConfig
-from polars_hist_db.core.table import TableOps
-from tests.utils.dsv_helper import setup_fixture_dataset
+from tests.utils.dsv_helper import (
+    backend_params,
+    setup_fixture_dataset,
+    connection_context_for_engine,
+    commit_xtdb_connection,
+    table_config_ops_for_engine,
+)
 
 pytestmark = pytest.mark.integration
 
 
-@pytest.fixture
-def fixture_with_column_selection():
-    yield from setup_fixture_dataset("trading_pairs.yaml")
+@pytest.fixture(params=backend_params())
+def fixture_with_column_selection(request):
+    yield from setup_fixture_dataset("trading_pairs.yaml", request.param)
 
 
-@pytest.fixture
-def fixture_with_linked_tables():
-    yield from setup_fixture_dataset("trading_pairs.yaml")
+@pytest.fixture(params=backend_params())
+def fixture_with_linked_tables(request):
+    yield from setup_fixture_dataset("trading_pairs.yaml", request.param)
 
 
 def test_foreign_keys(fixture_with_linked_tables):
@@ -27,16 +31,16 @@ def test_foreign_keys(fixture_with_linked_tables):
     expected_cryptocurrency_config = table_configs["cryptocurrencies"]
     expected_trading_pair_configs = table_configs["trading_pairs"]
 
-    with engine.begin() as connection:
-        read_exchange_config = TableConfigOps(connection).from_table(
-            table_schema, "exchanges"
-        )
-        read_cryptocurrencies_config = TableConfigOps(connection).from_table(
+    with connection_context_for_engine(engine)() as connection:
+        table_config_ops = table_config_ops_for_engine(engine, connection)
+        read_exchange_config = table_config_ops.from_table(table_schema, "exchanges")
+        read_cryptocurrencies_config = table_config_ops.from_table(
             table_schema, "cryptocurrencies"
         )
-        read_trading_pair_config = TableConfigOps(connection).from_table(
+        read_trading_pair_config = table_config_ops.from_table(
             table_schema, "trading_pairs"
         )
+        commit_xtdb_connection(engine, connection)
 
     assert isinstance(read_exchange_config, TableConfig)
     assert isinstance(read_cryptocurrencies_config, TableConfig)
@@ -72,9 +76,12 @@ def test_column_selection(fixture_with_column_selection):
 
     all_column_defs = table_config.columns
 
-    with engine.begin() as connection:
-        tbo = TableOps(table_schema, table_config.name, connection)
-        tbl = tbo.get_table_metadata()
-        read_cols = tbl.columns
+    with connection_context_for_engine(engine)() as connection:
+        read_config = table_config_ops_for_engine(engine, connection).from_table(
+            table_schema,
+            table_config.name,
+        )
+        commit_xtdb_connection(engine, connection)
+        read_cols = read_config.columns
 
     assert len(all_column_defs) == len(read_cols) == 5

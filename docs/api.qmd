@@ -49,6 +49,20 @@ Database connection and engine settings.
 - `get_engine() -> Engine` — returns a cached SQLAlchemy engine
 - `dispose()` — disposes the cached engine
 
+### Backends (`polars_hist_db.backends`)
+
+Backend adapters provide the storage boundary used to keep MariaDB support while
+adding experimental XTDB support and future database engines.
+
+- `DbEngineConfig.from_mapping(cfg) -> DbEngineConfig`
+- `get_backend(name="mariadb") -> HistoricalDbBackend`
+- `backend_from_config(config: DbEngineConfig) -> HistoricalDbBackend`
+- `backend.time_hint_clause(time_hint: TimeHint) -> str | None`
+- `MariaDbBackend` — complete adapter that delegates to existing core ops
+- `XtdbBackend` — experimental adapter with typed dataframe read/append helpers;
+  unsupported temporal and delta methods fail explicitly until parity work is
+  complete
+
 ### TableConfig
 
 Defines a single database table.

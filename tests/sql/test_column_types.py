@@ -5,6 +5,7 @@ from polars.testing import assert_frame_equal
 from polars_hist_db.utils.compare import compare_dataframes
 
 from ..utils.dsv_helper import (
+    backend_params,
     from_test_result,
     modify_and_read,
     setup_fixture_dataset,
@@ -13,14 +14,14 @@ from ..utils.dsv_helper import (
 pytestmark = pytest.mark.integration
 
 
-@pytest.fixture
-def fixture_with_nullable():
-    yield from setup_fixture_dataset("all_col_types_nullable.yaml")
+@pytest.fixture(params=backend_params())
+def fixture_with_nullable(request):
+    yield from setup_fixture_dataset("all_col_types_nullable.yaml", request.param)
 
 
-@pytest.fixture
-def fixture_with_defaults():
-    yield from setup_fixture_dataset("all_col_types_defaults.yaml")
+@pytest.fixture(params=backend_params())
+def fixture_with_defaults(request):
+    yield from setup_fixture_dataset("all_col_types_defaults.yaml", request.param)
 
 
 def test_types_nullable(fixture_with_nullable):

@@ -1,11 +1,12 @@
 from datetime import datetime
 import logging
-from typing import Mapping
+from typing import Any, Mapping, Optional
 
 import polars as pl
 from sqlalchemy import Connection
 
 from .foreign_key_helper import deduce_foreign_keys
+from .primary_item import scrape_xtdb_pipeline_item
 
 from ..config import TableConfig, TableConfigs, DatasetConfig
 from ..core import TableConfigOps, DeltaTableOps, TableOps
@@ -22,11 +23,27 @@ def scrape_extract_item(
     tables: TableConfigs,
     upload_time: datetime,
     connection: Connection,
+    partition_df: Optional[pl.DataFrame] = None,
+    stage_run_id: Optional[str] = None,
+    staging: Any = None,
+    backend: Any = None,
 ) -> bool:
     pipeline = dataset.pipeline
     delta_table_name = dataset.name
 
     target_table_config: TableConfig = tables[target_table]
+    if getattr(backend, "name", None) == "xtdb":
+        return scrape_xtdb_pipeline_item(
+            pipeline_id,
+            dataset,
+            target_table_config,
+            upload_time,
+            connection,
+            stage_run_id,
+            staging,
+            backend,
+        )
+
     if target_table_config.is_temporal:
         raise NotImplementedError("temporal tables are not supported yet")
 

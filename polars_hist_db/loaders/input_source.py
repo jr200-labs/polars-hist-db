@@ -17,6 +17,12 @@ LOGGER = logging.getLogger(__name__)
 TConfig = TypeVar("TConfig", bound=InputConfig)
 
 
+def _file_filter_connection_context(engine: Engine):
+    if getattr(getattr(engine, "dialect", None), "name", None) == "postgresql":
+        return engine.connect()
+    return engine.begin()
+
+
 class InputSource(ABC, Generic[TConfig]):
     def __init__(
         self,
@@ -146,7 +152,7 @@ class InputSource(ABC, Generic[TConfig]):
         assert "__created_at" in upload_candidates_df.columns
 
         aops = AuditOps(table_schema)
-        with engine.begin() as connection:
+        with _file_filter_connection_context(engine) as connection:
             filtered_items_df = aops.filter_items(
                 upload_candidates_df, "__path", "__created_at", table_name, connection
             ).sort("__created_at")

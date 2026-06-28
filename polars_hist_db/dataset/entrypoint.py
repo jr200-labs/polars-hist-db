@@ -7,12 +7,12 @@ from nats.js.client import JetStreamContext
 import polars as pl
 from sqlalchemy import Engine
 
+from ..backends import backend_from_config
 from ..loaders.input_source_factory import InputSourceFactory
 from ..utils.clock import Clock
 
 from ..config import PolarsHistDbConfig, DatasetConfig, TableConfig, TableConfigs
 from ..config.input.input_source import InputConfig
-from ..core import TableConfigOps
 from .scrape import try_run_pipeline_as_transaction
 
 LOGGER = logging.getLogger(__name__)
@@ -20,11 +20,16 @@ LOGGER = logging.getLogger(__name__)
 
 async def run_datasets(
     config: PolarsHistDbConfig,
-    engine: Engine,
+    engine: Optional[Engine] = None,
     dataset_name: Optional[str] = None,
     debug_capture_output: Optional[List[Tuple[datetime, pl.DataFrame]]] = None,
     js: Optional[JetStreamContext] = None,
+    raise_on_error: bool = False,
 ):
+    backend = backend_from_config(config.db_config)
+    if engine is None:
+        engine = backend.create_engine(config.db_config)
+
     num_datasets_processed = 0
     for dataset in config.datasets.datasets:
         if dataset_name is None or dataset.name == dataset_name:
@@ -36,17 +41,25 @@ async def run_datasets(
                 config.tables,
                 engine,
                 debug_capture_output,
+                backend,
                 js=js,
+                raise_on_error=raise_on_error,
             )
 
     if num_datasets_processed == 0:
         LOGGER.error("no datasets processed for %s", dataset_name)
 
 
-def _create_config_tables(engine: Engine, tables: TableConfigs):
+def _create_config_tables(engine: Engine, tables: TableConfigs, backend):
     """Create permanent config tables (idempotent)."""
+    if getattr(backend, "name", None) == "xtdb":
+        with engine.connect() as connection:
+            backend.table_configs(connection).create_all(tables)
+            connection.commit()
+        return
+
     with engine.begin() as connection:
-        TableConfigOps(connection).create_all(tables)
+        backend.table_configs(connection).create_all(tables)
 
 
 def _build_delta_table_config(
@@ -69,11 +82,13 @@ async def _run_dataset(
     tables: TableConfigs,
     engine: Engine,
     debug_capture_output: Optional[List[Tuple[datetime, pl.DataFrame]]],
+    backend,
     js: Optional[JetStreamContext] = None,
+    raise_on_error: bool = False,
 ):
     LOGGER.info("starting %s ingest for %s", input_config.type, dataset.name)
 
-    _create_config_tables(engine, tables)
+    _create_config_tables(engine, tables, backend)
     delta_table_config = _build_delta_table_config(tables, dataset)
 
     start_time = time.perf_counter()
@@ -93,10 +108,13 @@ async def _run_dataset(
                 engine,
                 commit_fn,
                 delta_table_config=delta_table_config,
+                backend=backend,
             )
 
     except Exception as e:
         LOGGER.error("error while processing InputSource: %s", e, exc_info=e)
+        if raise_on_error:
+            raise
     finally:
         await input_source.cleanup()
 

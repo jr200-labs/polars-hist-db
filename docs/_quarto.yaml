@@ -29,6 +29,7 @@ website:
       contents:
       - configuration.qmd
       - api.qmd
+      - backend-contract.qmd
       - examples.qmd
 
   page-footer:

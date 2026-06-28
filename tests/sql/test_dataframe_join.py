@@ -3,23 +3,26 @@ import pytest
 import polars as pl
 from polars.testing import assert_frame_equal
 
-from polars_hist_db.core.dataframe import TimeHint, DataframeOps
+from polars_hist_db.core.dataframe import TimeHint
 
 from ..utils.dsv_helper import (
     add_random_row,
+    backend_params,
     from_test_result,
     modify_and_read,
     read_df_from_db,
     set_random_seed,
     setup_fixture_dataset,
+    connection_context_for_engine,
+    dataframe_ops_for_engine,
 )
 
 pytestmark = pytest.mark.integration
 
 
-@pytest.fixture
-def temp_table():
-    yield from setup_fixture_dataset("all_col_types_nullable.yaml")
+@pytest.fixture(params=backend_params())
+def temp_table(request):
+    yield from setup_fixture_dataset("all_col_types_nullable.yaml", request.param)
 
 
 def test_time_hints(temp_table):
@@ -54,12 +57,12 @@ def test_time_hints(temp_table):
     assert df_read_history.shape == (6, 24)
 
     # no hint -- current table only
-    with engine.begin() as connection:
+    with connection_context_for_engine(engine)() as connection:
         query_df = pl.from_dict({"id": 1}, schema_overrides={"id": pl.Int32})
         asof_utc = df_read_history[3]["__valid_from"][0]
         asof_utc = None
         df_1 = (
-            DataframeOps(connection)
+            dataframe_ops_for_engine(engine, connection)
             .table_query(  # noqa: F821
                 table_schema,
                 table_configs.items[0].name,
@@ -72,11 +75,11 @@ def test_time_hints(temp_table):
     assert_frame_equal(df_1, df_read)
 
     # asof a particualr date, no history
-    with engine.begin() as connection:
+    with connection_context_for_engine(engine)() as connection:
         query_df = pl.from_dict({"id": 1}, schema_overrides={"id": pl.Int32})
         asof_utc = df_read_history[3]["__valid_from"][0]
         df_2 = (
-            DataframeOps(connection)
+            dataframe_ops_for_engine(engine, connection)
             .table_query(
                 table_schema,
                 table_configs.items[0].name,
@@ -90,11 +93,11 @@ def test_time_hints(temp_table):
     assert_frame_equal(df_2, df_read_history[3])
 
     # asof a particualr date, 0 days history
-    with engine.begin() as connection:
+    with connection_context_for_engine(engine)() as connection:
         query_df = pl.from_dict({"id": 1}, schema_overrides={"id": pl.Int32})
         asof_utc = df_read_history[3]["__valid_from"][0]
         df_3 = (
-            DataframeOps(connection)
+            dataframe_ops_for_engine(engine, connection)
             .table_query(
                 table_schema,
                 table_configs.items[0].name,
@@ -110,11 +113,11 @@ def test_time_hints(temp_table):
     assert_frame_equal(df_3, df_read_history[3])
 
     # asof a particualr date, 2 days history
-    with engine.begin() as connection:
+    with connection_context_for_engine(engine)() as connection:
         query_df = pl.from_dict({"id": 1}, schema_overrides={"id": pl.Int32})
         asof_utc = df_read_history[5]["__valid_from"][0]
         df_4 = (
-            DataframeOps(connection)
+            dataframe_ops_for_engine(engine, connection)
             .table_query(
                 table_schema,
                 table_configs.items[0].name,
