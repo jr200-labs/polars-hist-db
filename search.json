@@ -1,109 +1,5 @@
 [
   {
-    "objectID": "configuration.html",
-    "href": "configuration.html",
-    "title": "Configuration",
-    "section": "",
-    "text": "The components of a configuration file are:",
-    "crumbs": [
-      "Overview",
-      "Polars Hist DB",
-      "Configuration"
-    ]
-  },
-  {
-    "objectID": "configuration.html#db",
-    "href": "configuration.html#db",
-    "title": "Configuration",
-    "section": "db",
-    "text": "db\nConnection details for the target database. Example:\ndb:\n  backend: mariadb\n  hostname: 127.0.0.1\n  port: 3306\n  username: root\n  password: admin",
-    "crumbs": [
-      "Overview",
-      "Polars Hist DB",
-      "Configuration"
-    ]
-  },
-  {
-    "objectID": "configuration.html#table_configs",
-    "href": "configuration.html#table_configs",
-    "title": "Configuration",
-    "section": "table_configs",
-    "text": "table_configs\nA collection of tables that will be managed by this configuration. Example:\ntable_configs:\n- schema: test\n  name: simple_table\n  columns:\n  - id\n  - another_id\n  - [ col_double, col_varchar ]\n  primary_keys:\n  - id\n  foreign_keys:\n  - name: another_id\n    references:\n      table: another_table\n      column: id\n  is_temporal: true\n  delta_config:\n    drop_unchanged_rows: true\n    on_duplicate_key: take_last\n    prefill_nulls_with_default: false\n    row_finality: dropout\nThe main section defines usual properties of the table, including the name of the table, the column names, plus any primary and foreign keys.\nA flag is_temporal indicates whether the table uses system versioning. Uploading of temporal data is done in two parts. First the data is staged to a temporary table, allowing some computations to be done before modifying the target table. Specifically:\n\nrows can be dropped from the staged table if they have not changed, meaning the as-of date of the associated data would not be modified.\nsometimes within a single batch of data, multiple versions of the same row may be present. The primary_key defines how rows are tested for ‘equality’ and the on_duplicate_key option controls how duplicates are handled.\nthe row_finality option controls what happens when a row is no longer present in the data-batch.",
-    "crumbs": [
-      "Overview",
-      "Polars Hist DB",
-      "Configuration"
-    ]
-  },
-  {
-    "objectID": "configuration.html#column_definitions",
-    "href": "configuration.html#column_definitions",
-    "title": "Configuration",
-    "section": "column_definitions",
-    "text": "column_definitions\nA set of typed column definitions referenced by table_configs and datasets section of the files.\ncolumn_definitions:\n- { name: rating, data_type: INT, header: Rating, nullable: false, default_value: 0 }\n- {\n    name: price_usd,\n    data_type: 'DECIMAL(10,4)',\n    transforms: {\n        try_to_usd: [ 'Price', 'Year' ]\n    }\n  }\n- { name: month, data_type: VARCHAR(2), header: Month }\n- { name: year, data_type: INT, header: Year }\nEach column definition defines a column to be created in the staging table. This is either a mapping from a column in the source data file (called header when the name is different), or a derived column according to some user-defined transformation. An example of how to define a transformation is the price_usd column above, with full details given in the example notebook.",
-    "crumbs": [
-      "Overview",
-      "Polars Hist DB",
-      "Configuration"
-    ]
-  },
-  {
-    "objectID": "configuration.html#datasets",
-    "href": "configuration.html#datasets",
-    "title": "Configuration",
-    "section": "datasets",
-    "text": "datasets\nThis is a set of data sources and pipelines, describing where to look for new data, and how to process it into the defined tables. Example:\ndatasets:\n- name: turkey_food_prices\n  delta_table_schema: test\n  scrape_limit: ~\n  search_paths:\n  - root_path: ../_testdata_dataset_data\n    file_include: ['turkey_food_prices.csv']\n    is_enabled: true\n    timestamp:\n        source_tz: Europe/London\n        method: mtime\n   - ...\n\n  pipeline:\n  - table: unit_info\n    columns:\n    - id&lt;um_id!\n    - name&lt;um_name!\n\n  - table: food_prices\n    type: primary\n    columns:\n    - product_id!\n    - um_id!\n    - price!\n    - price_usd!\nThe search_paths section defines where to find the data. The example above uses the timestamp.method of mtime to set the as-of date of the data.\nThe pipeline section contains a sequence of tasks that are run in order. The example above demonstrates two tasks:\nTask 1: Unit Info Table\nThis task populates the unit_info table:\n\nReads um_id and um_name columns from the staging table\nRenames them using &lt; operator:\n\num_id to id\num_name to name\n\nBoth columns are required (marked with !)\n\nTask 2: Food Prices Table\nThis task populates the food_prices table:\n\nReads product_id, um_id, price, and price_usd columns\nMaps directly to matching column names (no renaming needed)\nAll columns are required (marked with !)\nTable is marked as type: primary for system versioning\nNote: Currently only one primary task is allowed per pipeline",
-    "crumbs": [
-      "Overview",
-      "Polars Hist DB",
-      "Configuration"
-    ]
-  },
-  {
-    "objectID": "index.html",
-    "href": "index.html",
-    "title": "Polars Hist DB",
-    "section": "",
-    "text": "A Python library for building bitemporal data pipelines with Polars and MariaDB.\nIt ingests data from DSV files or NATS JetStream subjects, tracks history using MariaDB’s system-versioned tables, and exposes everything as strongly-typed Polars DataFrames.\n\n\n\nTyped uploads — push Polars DataFrames into MariaDB with automatic type mapping between Polars, SQL, and SQLAlchemy.\nTyped queries — read tables back into DataFrames with column types inferred from the database schema. Temporal query hints (asof, span, all) let you slice history without writing SQL.\nYAML-driven pipelines — define scrape specifications that handle column typing, enrichment via custom transform functions, normalization across tables, and foreign-key deduction.\nDeduplication — an audit log tracks what has already been ingested so re-runs skip previously processed files or messages.\nTransactional ingestion — each file or message is processed in its own transaction; failures roll back cleanly without affecting other items.\nDual input sources — crawl directories for DSV files, or consume messages from NATS JetStream with configurable fetch/subscription strategies.\nDelta upserts — staging tables detect changed rows, handle duplicates (take_first, take_last, error), and optionally mark disappeared rows as dropped.\n\nFull documentation: jr200.github.io/polars-hist-db\n\n\n\nuv sync\nmake test\n\n\n\nmake check       # ruff + mypy\nmake docs        # render and preview quarto docs\nmake bump PART=patch\nmake release\n\n\n\nThis project is licensed under the MIT license.",
-    "crumbs": [
-      "Overview",
-      "Polars Hist DB"
-    ]
-  },
-  {
-    "objectID": "index.html#quick-start",
-    "href": "index.html#quick-start",
-    "title": "Polars Hist DB",
-    "section": "",
-    "text": "uv sync\nmake test",
-    "crumbs": [
-      "Overview",
-      "Polars Hist DB"
-    ]
-  },
-  {
-    "objectID": "index.html#development",
-    "href": "index.html#development",
-    "title": "Polars Hist DB",
-    "section": "",
-    "text": "make check       # ruff + mypy\nmake docs        # render and preview quarto docs\nmake bump PART=patch\nmake release",
-    "crumbs": [
-      "Overview",
-      "Polars Hist DB"
-    ]
-  },
-  {
-    "objectID": "index.html#license",
-    "href": "index.html#license",
-    "title": "Polars Hist DB",
-    "section": "",
-    "text": "This project is licensed under the MIT license.",
-    "crumbs": [
-      "Overview",
-      "Polars Hist DB"
-    ]
-  },
-  {
     "objectID": "examples/basic_example.html",
     "href": "examples/basic_example.html",
     "title": "Basic Usage Example",
@@ -160,25 +56,6 @@
     "text": "Delete the data associated with the dataset\nReset the example. Subsequent attempts to upload the same data (or past data) into the database will fail.\n\nwith engine.begin() as connection:\n    TableConfigOps(connection).drop_all(config.tables)\n    AuditOps(config.tables.schemas()[0]).drop(connection)"
   },
   {
-    "objectID": "examples/scratch.html",
-    "href": "examples/scratch.html",
-    "title": "Polars Hist DB",
-    "section": "",
-    "text": "import polars as pl\nfrom sqlalchemy import select, text\n\nfrom polars_hist_db.core import DataframeOps, TableOps, make_engine\n\n\nengine = make_engine(\n    backend=\"mariadb\",\n    hostname=\"127.0.0.1\",\n    port=3306,\n    username=\"root\",\n    password=\"admin\",\n)\n\n\nwith engine.begin() as connection:\n    res = connection.execute(text(\"select * from information_schema.users\"))\n    rows = res.fetchall()\n\npl.from_records(rows)\n\n\nwith engine.begin() as connection:\n    tbl = TableOps(\"information_schema\", \"users\", connection).get_table_metadata()\n    query = select(tbl).limit(5)\n    df = DataframeOps(connection).from_selectable(\n        query, {\"PASSWORD_EXPIRATION_TIME\": pl.String}\n    )\n\n\nprint(df)"
-  },
-  {
-    "objectID": "examples.html",
-    "href": "examples.html",
-    "title": "Examples",
-    "section": "",
-    "text": "This section contains example notebooks demonstrating how to use polars-hist-db.\n\nBasic Example\nDataset Example",
-    "crumbs": [
-      "Overview",
-      "Polars Hist DB",
-      "Examples"
-    ]
-  },
-  {
     "objectID": "api.html",
     "href": "api.html",
     "title": "API Reference",
@@ -207,7 +84,7 @@
     "href": "api.html#configuration-polars_hist_db.config",
     "title": "API Reference",
     "section": "Configuration (polars_hist_db.config)",
-    "text": "Configuration (polars_hist_db.config)\nObjects to access the configuration structure instantiated from YAML.\n\nPolarsHistDbConfig\nRoot configuration object.\nPolarsHistDbConfig.from_yaml(\n    filename: str,\n    table_configs_path: str = \"table_configs\",\n    datasets_path: str = \"datasets\",\n    db_config_path: str = \"db\",\n) -&gt; PolarsHistDbConfig\n\n\n\nAttribute\nType\nDescription\n\n\n\n\ntables\nTableConfigs\nCollection of table configurations\n\n\ndb_config\nDbEngineConfig\nDatabase connection settings\n\n\ndatasets\nDatasetsConfig\nDataset definitions\n\n\n\n\n\nDbEngineConfig\nDatabase connection and engine settings.\n\n\n\nField\nType\nDefault\nDescription\n\n\n\n\nhostname\nstr\n—\nDatabase host\n\n\nbackend\nstr\n\"mariadb\"\nDatabase backend\n\n\nport\nint\n3306\nConnection port\n\n\nusername\nstr\n—\nDatabase user\n\n\npassword\nstr\n—\nDatabase password\n\n\nssl_config\nSslConfig\nNone\nOptional SSL configuration\n\n\npool_size\nint\n3\nConnection pool size\n\n\nmax_overflow\nint\n2\nMax overflow connections\n\n\n\n\nget_engine() -&gt; Engine — returns a cached SQLAlchemy engine\ndispose() — disposes the cached engine\n\n\n\nTableConfig\nDefines a single database table.\n\n\n\n\n\n\n\n\n\nField\nType\nDefault\nDescription\n\n\n\n\nname\nstr\n—\nTable name\n\n\nschema\nstr\n—\nDatabase schema\n\n\ncolumns\nList[TableColumnConfig]\n—\nColumn definitions\n\n\nprimary_keys\nList[str]\n—\nPrimary key columns\n\n\nforeign_keys\nList[ForeignKeyConfig]\n[]\nForeign key constraints\n\n\nis_temporal\nbool\nFalse\nWhether table uses system versioning\n\n\nforbid_drop_table\nbool\nFalse\nPrevent table drops\n\n\n\n\nfrom_yaml(file_path: str) -&gt; TableConfig\nfrom_dataframe(df, table_schema, table_name, primary_keys, default_categorical_length) -&gt; TableConfig\ncolumns_df() -&gt; pl.DataFrame\ntable_names() -&gt; List[str]\ndtypes() -&gt; Mapping[str, pl.DataType]\nbuild_sqlalchemy_columns(is_delta_table: bool) -&gt; List[Column]\nto_df() -&gt; pl.DataFrame\n\n\n\nTableColumnConfig\nDefines a single column.\n\n\n\nField\nType\nDefault\nDescription\n\n\n\n\ntable\nstr\n—\nOwning table name\n\n\nname\nstr\n—\nColumn name\n\n\ndata_type\nstr\n—\nSQL data type\n\n\ndefault_value\nstr\nNone\nDefault value\n\n\nautoincrement\nbool\nFalse\nAuto-increment\n\n\nnullable\nbool\nTrue\nAllow nulls\n\n\nunique_constraint\nList[str]\n[]\nUnique constraints\n\n\n\n\n\nTableConfigs\nCollection of TableConfig objects.\n\n__getitem__(name: str) -&gt; TableConfig — lookup by table name\nnames() -&gt; List[str]\nschemas() -&gt; List[str]\nfrom_yamls(*file_path: str) -&gt; TableConfigs\n\n\n\nDatasetConfig\nDefines a data source and its ingestion pipeline.\n\n\n\n\n\n\n\n\n\nField\nType\nDefault\nDescription\n\n\n\n\nname\nstr\n—\nDataset name\n\n\ndelta_table_schema\nstr\n—\nTarget schema\n\n\ninput_config\nInputConfig\n—\nInput source configuration\n\n\npipeline\nPipeline\n—\nIngestion pipeline definition\n\n\nscrape_limit\nint\n-1\nMax items to scrape (-1 = unlimited)\n\n\ntime_partition\nTimePartition\nNone\nOptional time partitioning\n\n\nnull_values\nSequence[str]\nNone\nStrings treated as null\n\n\ndelta_config\nDeltaConfig\n—\nDelta/upsert behaviour\n\n\n\n\n\nDeltaConfig\nControls temporal upsert behaviour.\n\n\n\n\n\n\n\n\n\nField\nType\nDefault\nDescription\n\n\n\n\ndrop_unchanged_rows\nbool\nFalse\nSkip rows that haven’t changed\n\n\non_duplicate_key\nLiteral[\"error\", \"take_last\", \"take_first\"]\n\"error\"\nDuplicate handling strategy\n\n\nprefill_nulls_with_default\nbool\nFalse\nFill nulls with defaults\n\n\nrow_finality\nLiteral[\"disabled\", \"dropout\", \"manual\"]\n\"disabled\"\nHandling of disappeared rows\n\n\nis_temporary_table\nbool\nTrue\nUse temporary staging table\n\n\n\n\n\nTransformFnRegistry\nSingleton registry for column transformation functions.\n\nregister_function(name: str, fn: TransformFnSignature, allow_overwrite: bool = False)\ndelete_function(name: str)\ncall_function(name: str, df: pl.DataFrame, result_col: str, args: List[Any]) -&gt; pl.DataFrame\nlist_functions() -&gt; List[str]\n\nBuilt-in transforms: null_if_gte, apply_type_casts, combine_columns, map_to_true, parse_date\nTransformFnSignature = Callable[[pl.DataFrame, str, List[Any]], pl.DataFrame]\n\n\nIngestFnRegistry\nSingleton registry for ingestion functions.\n\nregister_function(name: str, fn: IngestFnSignature, allow_overwrite: bool = False)\ndelete_function(name: str)\ncall_function(payload: Any, ts: datetime, name: str, args: Dict[str, Any]) -&gt; pl.DataFrame\nlist_functions() -&gt; List[str]\n\nIngestFnSignature = Callable[[Any, datetime, Dict[str, Any]], pl.DataFrame]\n\n\nInput Sources\nInput configuration is polymorphic via InputConfig.from_dict(config).\nDsvCrawlerInputConfig — file-based ingestion via search paths.\nJetStreamInputConfig — NATS JetStream ingestion with fields:\n\njetstream: JetStreamConfig\nnats: NatsConfig\npayload_ingest: JetstreamIngestConfig\nrun_until: Literal[\"empty\", \"forever\"]",
+    "text": "Configuration (polars_hist_db.config)\nObjects to access the configuration structure instantiated from YAML.\n\nPolarsHistDbConfig\nRoot configuration object.\nPolarsHistDbConfig.from_yaml(\n    filename: str,\n    table_configs_path: str = \"table_configs\",\n    datasets_path: str = \"datasets\",\n    db_config_path: str = \"db\",\n) -&gt; PolarsHistDbConfig\n\n\n\nAttribute\nType\nDescription\n\n\n\n\ntables\nTableConfigs\nCollection of table configurations\n\n\ndb_config\nDbEngineConfig\nDatabase connection settings\n\n\ndatasets\nDatasetsConfig\nDataset definitions\n\n\n\n\n\nDbEngineConfig\nDatabase connection and engine settings.\n\n\n\nField\nType\nDefault\nDescription\n\n\n\n\nhostname\nstr\n—\nDatabase host\n\n\nbackend\nstr\n\"mariadb\"\nDatabase backend\n\n\nport\nint\n3306\nConnection port\n\n\nusername\nstr\n—\nDatabase user\n\n\npassword\nstr\n—\nDatabase password\n\n\nssl_config\nSslConfig\nNone\nOptional SSL configuration\n\n\npool_size\nint\n3\nConnection pool size\n\n\nmax_overflow\nint\n2\nMax overflow connections\n\n\n\n\nget_engine() -&gt; Engine — returns a cached SQLAlchemy engine\ndispose() — disposes the cached engine\n\n\n\nBackends (polars_hist_db.backends)\nBackend adapters provide the storage boundary used to keep MariaDB support while adding experimental XTDB support and future database engines.\n\nDbEngineConfig.from_mapping(cfg) -&gt; DbEngineConfig\nget_backend(name=\"mariadb\") -&gt; HistoricalDbBackend\nbackend_from_config(config: DbEngineConfig) -&gt; HistoricalDbBackend\nbackend.time_hint_clause(time_hint: TimeHint) -&gt; str | None\nMariaDbBackend — complete adapter that delegates to existing core ops\nXtdbBackend — experimental adapter with typed dataframe read/append helpers; unsupported temporal and delta methods fail explicitly until parity work is complete\n\n\n\nTableConfig\nDefines a single database table.\n\n\n\n\n\n\n\n\n\nField\nType\nDefault\nDescription\n\n\n\n\nname\nstr\n—\nTable name\n\n\nschema\nstr\n—\nDatabase schema\n\n\ncolumns\nList[TableColumnConfig]\n—\nColumn definitions\n\n\nprimary_keys\nList[str]\n—\nPrimary key columns\n\n\nforeign_keys\nList[ForeignKeyConfig]\n[]\nForeign key constraints\n\n\nis_temporal\nbool\nFalse\nWhether table uses system versioning\n\n\nforbid_drop_table\nbool\nFalse\nPrevent table drops\n\n\n\n\nfrom_yaml(file_path: str) -&gt; TableConfig\nfrom_dataframe(df, table_schema, table_name, primary_keys, default_categorical_length) -&gt; TableConfig\ncolumns_df() -&gt; pl.DataFrame\ntable_names() -&gt; List[str]\ndtypes() -&gt; Mapping[str, pl.DataType]\nbuild_sqlalchemy_columns(is_delta_table: bool) -&gt; List[Column]\nto_df() -&gt; pl.DataFrame\n\n\n\nTableColumnConfig\nDefines a single column.\n\n\n\nField\nType\nDefault\nDescription\n\n\n\n\ntable\nstr\n—\nOwning table name\n\n\nname\nstr\n—\nColumn name\n\n\ndata_type\nstr\n—\nSQL data type\n\n\ndefault_value\nstr\nNone\nDefault value\n\n\nautoincrement\nbool\nFalse\nAuto-increment\n\n\nnullable\nbool\nTrue\nAllow nulls\n\n\nunique_constraint\nList[str]\n[]\nUnique constraints\n\n\n\n\n\nTableConfigs\nCollection of TableConfig objects.\n\n__getitem__(name: str) -&gt; TableConfig — lookup by table name\nnames() -&gt; List[str]\nschemas() -&gt; List[str]\nfrom_yamls(*file_path: str) -&gt; TableConfigs\n\n\n\nDatasetConfig\nDefines a data source and its ingestion pipeline.\n\n\n\n\n\n\n\n\n\nField\nType\nDefault\nDescription\n\n\n\n\nname\nstr\n—\nDataset name\n\n\ndelta_table_schema\nstr\n—\nTarget schema\n\n\ninput_config\nInputConfig\n—\nInput source configuration\n\n\npipeline\nPipeline\n—\nIngestion pipeline definition\n\n\nscrape_limit\nint\n-1\nMax items to scrape (-1 = unlimited)\n\n\ntime_partition\nTimePartition\nNone\nOptional time partitioning\n\n\nnull_values\nSequence[str]\nNone\nStrings treated as null\n\n\ndelta_config\nDeltaConfig\n—\nDelta/upsert behaviour\n\n\n\n\n\nDeltaConfig\nControls temporal upsert behaviour.\n\n\n\n\n\n\n\n\n\nField\nType\nDefault\nDescription\n\n\n\n\ndrop_unchanged_rows\nbool\nFalse\nSkip rows that haven’t changed\n\n\non_duplicate_key\nLiteral[\"error\", \"take_last\", \"take_first\"]\n\"error\"\nDuplicate handling strategy\n\n\nprefill_nulls_with_default\nbool\nFalse\nFill nulls with defaults\n\n\nrow_finality\nLiteral[\"disabled\", \"dropout\", \"manual\"]\n\"disabled\"\nHandling of disappeared rows\n\n\nis_temporary_table\nbool\nTrue\nUse temporary staging table\n\n\n\n\n\nTransformFnRegistry\nSingleton registry for column transformation functions.\n\nregister_function(name: str, fn: TransformFnSignature, allow_overwrite: bool = False)\ndelete_function(name: str)\ncall_function(name: str, df: pl.DataFrame, result_col: str, args: List[Any]) -&gt; pl.DataFrame\nlist_functions() -&gt; List[str]\n\nBuilt-in transforms: null_if_gte, apply_type_casts, combine_columns, map_to_true, parse_date\nTransformFnSignature = Callable[[pl.DataFrame, str, List[Any]], pl.DataFrame]\n\n\nIngestFnRegistry\nSingleton registry for ingestion functions.\n\nregister_function(name: str, fn: IngestFnSignature, allow_overwrite: bool = False)\ndelete_function(name: str)\ncall_function(payload: Any, ts: datetime, name: str, args: Dict[str, Any]) -&gt; pl.DataFrame\nlist_functions() -&gt; List[str]\n\nIngestFnSignature = Callable[[Any, datetime, Dict[str, Any]], pl.DataFrame]\n\n\nInput Sources\nInput configuration is polymorphic via InputConfig.from_dict(config).\nDsvCrawlerInputConfig — file-based ingestion via search paths.\nJetStreamInputConfig — NATS JetStream ingestion with fields:\n\njetstream: JetStreamConfig\nnats: NatsConfig\npayload_ingest: JetstreamIngestConfig\nrun_until: Literal[\"empty\", \"forever\"]",
     "crumbs": [
       "Overview",
       "Polars Hist DB",
@@ -285,5 +162,224 @@
       "Polars Hist DB",
       "API Reference"
     ]
+  },
+  {
+    "objectID": "configuration.html",
+    "href": "configuration.html",
+    "title": "Configuration",
+    "section": "",
+    "text": "The components of a configuration file are:",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Configuration"
+    ]
+  },
+  {
+    "objectID": "configuration.html#db",
+    "href": "configuration.html#db",
+    "title": "Configuration",
+    "section": "db",
+    "text": "db\nConnection details for the target database. Example:\ndb:\n  backend: mariadb\n  hostname: 127.0.0.1\n  port: 3306\n  username: root\n  password: admin\nbackend defaults to mariadb when omitted. Supported backend names are:\n\nmariadb - the default and currently complete production backend.\nxtdb - experimental backend path for the XTDB spike. Install with the xtdb optional dependency before creating an XTDB engine. The optional dependency includes the binary psycopg wrapper for pgwire and the ADBC FlightSQL driver for Arrow-native bulk ingest.\nmssql - reserved for a future MS SQL adapter.\n\nXTDB uses two ports when both backend paths are enabled:\n\nport defaults to 5432 for the pgwire/SQLAlchemy path.\nadbc_port defaults to 9832 for the ADBC/FlightSQL path.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Configuration"
+    ]
+  },
+  {
+    "objectID": "configuration.html#table_configs",
+    "href": "configuration.html#table_configs",
+    "title": "Configuration",
+    "section": "table_configs",
+    "text": "table_configs\nA collection of tables that will be managed by this configuration. Example:\ntable_configs:\n- schema: test\n  name: simple_table\n  columns:\n  - id\n  - another_id\n  - [ col_double, col_varchar ]\n  primary_keys:\n  - id\n  foreign_keys:\n  - name: another_id\n    references:\n      table: another_table\n      column: id\n  is_temporal: true\n  delta_config:\n    drop_unchanged_rows: true\n    on_duplicate_key: take_last\n    prefill_nulls_with_default: false\n    row_finality: dropout\nThe main section defines usual properties of the table, including the name of the table, the column names, plus any primary and foreign keys.\nA flag is_temporal indicates whether the table uses system versioning. Uploading of temporal data is done in two parts. First the data is staged to a temporary table, allowing some computations to be done before modifying the target table. Specifically:\n\nrows can be dropped from the staged table if they have not changed, meaning the as-of date of the associated data would not be modified.\nsometimes within a single batch of data, multiple versions of the same row may be present. The primary_key defines how rows are tested for ‘equality’ and the on_duplicate_key option controls how duplicates are handled.\nthe row_finality option controls what happens when a row is no longer present in the data-batch.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Configuration"
+    ]
+  },
+  {
+    "objectID": "configuration.html#column_definitions",
+    "href": "configuration.html#column_definitions",
+    "title": "Configuration",
+    "section": "column_definitions",
+    "text": "column_definitions\nA set of typed column definitions referenced by table_configs and datasets section of the files.\ncolumn_definitions:\n- { name: rating, data_type: INT, header: Rating, nullable: false, default_value: 0 }\n- {\n    name: price_usd,\n    data_type: 'DECIMAL(10,4)',\n    transforms: {\n        try_to_usd: [ 'Price', 'Year' ]\n    }\n  }\n- { name: month, data_type: VARCHAR(2), header: Month }\n- { name: year, data_type: INT, header: Year }\nEach column definition defines a column to be created in the staging table. This is either a mapping from a column in the source data file (called header when the name is different), or a derived column according to some user-defined transformation. An example of how to define a transformation is the price_usd column above, with full details given in the example notebook.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Configuration"
+    ]
+  },
+  {
+    "objectID": "configuration.html#datasets",
+    "href": "configuration.html#datasets",
+    "title": "Configuration",
+    "section": "datasets",
+    "text": "datasets\nThis is a set of data sources and pipelines, describing where to look for new data, and how to process it into the defined tables. Example:\ndatasets:\n- name: turkey_food_prices\n  delta_table_schema: test\n  scrape_limit: ~\n  search_paths:\n  - root_path: ../_testdata_dataset_data\n    file_include: ['turkey_food_prices.csv']\n    is_enabled: true\n    timestamp:\n        source_tz: Europe/London\n        method: mtime\n   - ...\n\n  pipeline:\n  - table: unit_info\n    columns:\n    - id&lt;um_id!\n    - name&lt;um_name!\n\n  - table: food_prices\n    type: primary\n    columns:\n    - product_id!\n    - um_id!\n    - price!\n    - price_usd!\nThe search_paths section defines where to find the data. The example above uses the timestamp.method of mtime to set the as-of date of the data.\nThe pipeline section contains a sequence of tasks that are run in order. The example above demonstrates two tasks:\nTask 1: Unit Info Table\nThis task populates the unit_info table:\n\nReads um_id and um_name columns from the staging table\nRenames them using &lt; operator:\n\num_id to id\num_name to name\n\nBoth columns are required (marked with !)\n\nTask 2: Food Prices Table\nThis task populates the food_prices table:\n\nReads product_id, um_id, price, and price_usd columns\nMaps directly to matching column names (no renaming needed)\nAll columns are required (marked with !)\nTable is marked as type: primary for system versioning\nNote: Currently only one primary task is allowed per pipeline",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Configuration"
+    ]
+  },
+  {
+    "objectID": "backend-contract.html",
+    "href": "backend-contract.html",
+    "title": "Backend Contract",
+    "section": "",
+    "text": "This document defines the storage-backend contract for polars-hist-db. The current implementation uses MariaDB system-versioned tables, but Whengas should treat the stable product surface as typed Polars dataframes over temporal tables. A second backend, such as XTDB, should be evaluated against this contract before any migration is attempted.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Backend Contract"
+    ]
+  },
+  {
+    "objectID": "backend-contract.html#goal",
+    "href": "backend-contract.html#goal",
+    "title": "Backend Contract",
+    "section": "Goal",
+    "text": "Goal\nThe backend layer must support repeatable ingestion of raw and derived data, typed dataframe reads and writes, and point-in-time views of historical state. It must also provide enough update visibility for downstream services to invalidate caches, publish events, and build user-facing projections.\nThe goal of an XTDB spike is not to reproduce MariaDB SQL mechanics. The goal is to prove that the same polars-hist-db behaviours can be implemented with equivalent or better correctness, performance, and operability.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Backend Contract"
+    ]
+  },
+  {
+    "objectID": "backend-contract.html#public-behaviour",
+    "href": "backend-contract.html#public-behaviour",
+    "title": "Backend Contract",
+    "section": "Public Behaviour",
+    "text": "Public Behaviour\nBackend implementations must preserve these behaviours:\n\nRead a whole table into a strongly typed polars.DataFrame.\nRead query results into a strongly typed polars.DataFrame.\nWrite dataframes into configured tables using the configured schema.\nCreate configured tables idempotently.\nAdd missing configured columns without silently dropping existing data.\nApply default values in the same places as the current dataframe insert path.\nUpsert temporal data using configured primary keys and delta semantics.\nDelete rows temporally when the source marks rows as final or removed.\nQuery latest state, all historical states, an as-of state, and a bounded historical span through TimeHint.\nTrack ingestion audit entries so repeated scrapes skip already-ingested source items.\nExpose table-update signals that downstream services can poll or publish.\nPreserve transaction boundaries for each file or message partition.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Backend Contract"
+    ]
+  },
+  {
+    "objectID": "backend-contract.html#current-mariadb-coupling",
+    "href": "backend-contract.html#current-mariadb-coupling",
+    "title": "Backend Contract",
+    "section": "Current MariaDB Coupling",
+    "text": "Current MariaDB Coupling\nThe existing implementation mixes the public behaviour above with several MariaDB-specific details:\n\nTemporal history is implemented with hidden __valid_from and __valid_to columns created as a PERIOD FOR SYSTEM_TIME.\nHistorical reads are expressed with MariaDB FOR SYSTEM_TIME hints.\nUpsert timestamps are controlled with SET @@timestamp through DbOps.set_system_versioning_time.\nTable metadata is loaded with SQLAlchemy reflection and MariaDB SQL types.\nDelta upserts are implemented with temporary SQL tables, SQLAlchemy UPDATE ... WHERE, and INSERT ... SELECT statements.\nSome current query surfaces accept SQLAlchemy Selectable objects, so they implicitly assume a SQLAlchemy-compatible backend.\nAudit tables live in the same relational database as the target tables.\n\nThese details are valid for the MariaDB adapter, but they should not leak into the storage-neutral contract.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Backend Contract"
+    ]
+  },
+  {
+    "objectID": "backend-contract.html#backend-interface-shape",
+    "href": "backend-contract.html#backend-interface-shape",
+    "title": "Backend Contract",
+    "section": "Backend Interface Shape",
+    "text": "Backend Interface Shape\nA backend adapter should own the operations below. Naming can change during implementation, but the boundary should remain explicit.\nBackends are selected through the parsed db.backend configuration field. mariadb is the default and complete backend. xtdb is experimental while the spike proves parity. mssql is reserved for a future MS SQL adapter because MS SQL also has temporal-table support, but it should not be exposed as implemented until it passes the same contract tests.\n\nConnection and Transactions\n\nBuild and dispose backend connections from DbEngineConfig.\nProvide a transaction context compatible with dataset ingestion.\nAllow backend-specific tuning without changing dataset configuration shape.\n\n\n\nSchema Management\n\nCreate schemas or namespaces.\nCreate configured tables from TableConfig.\nReflect an existing table into TableConfig.\nAdd missing configured columns.\nReport primary keys, nullable columns, default values, and backend-native type information.\n\n\n\nType Mapping\n\nMap configured SQL-like types to Polars dtypes.\nMap Polars dtypes to backend-native storage types.\nRound-trip dates, datetimes, decimals, booleans, categoricals, integers, floats, strings, and nulls without lossy conversion.\nPreserve decimal precision needed by finance and gas-volume data.\n\n\n\nReads\n\nRead table latest state.\nRead table history with TimeHint(mode=\"all\").\nRead an as-of state with TimeHint(mode=\"asof\").\nRead a bounded history with TimeHint(mode=\"span\").\nRead filtered/query results without forcing callers to hand-write backend SQL where a dataframe-key lookup would be sufficient.\n\n\n\nWrites\n\nInsert dataframes.\nUpdate dataframes by primary key.\nUpsert temporal dataframes by primary key.\nDelete rows temporally.\nReturn changed-row counts where they are meaningful.\nKeep one source partition or message inside one atomic commit unit.\n\n\n\nDelta and Finality Semantics\nThe adapter must support the existing DeltaConfig behaviours:\n\nDrop unchanged rows when configured.\nHandle duplicate source keys with error, take_first, or take_last.\nApply row_finality=\"disabled\" without deleting missing rows.\nApply row_finality=\"dropout\" by temporally deleting rows missing from the incoming source snapshot.\nLeave room for row_finality=\"manual\" behaviour without blocking future implementation.\n\n\n\nAudit and Update Visibility\n\nRecord source-item audit entries.\nFilter already-ingested source items.\nQuery latest audit entry by table and source timestamp.\nSupport table-update callbacks used by API services for cache invalidation and event publication.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Backend Contract"
+    ]
+  },
+  {
+    "objectID": "backend-contract.html#xtdb-evaluation-requirements",
+    "href": "backend-contract.html#xtdb-evaluation-requirements",
+    "title": "Backend Contract",
+    "section": "XTDB Evaluation Requirements",
+    "text": "XTDB Evaluation Requirements\nOfficial XTDB materials describe XTDB as an open-source immutable SQL database with comprehensive time-travel, bitemporal records, a columnar engine built on Apache Arrow, and object-storage-oriented architecture:\n\nhttps://github.com/xtdb/xtdb\nhttps://docs.xtdb.com/intro/what-is-xtdb.html\n\nThose properties are directly relevant to Whengas because the data platform is already Polars/Arrow-oriented and needs historical views. The same materials also describe a strongly ordered transaction path, with writes for a database processed through a single leader. That is a valuable consistency model, but it means write throughput and batching must be measured on representative feeds.\nXTDB should only move beyond spike status if it passes the following gates:\n\nThe adapter can run representative polars-hist-db ingestion tests without weakening type checks.\nTemporal query parity tests pass against MariaDB and XTDB for latest, all, as-of, and span reads.\nDelta upsert parity tests pass for inserts, updates, duplicate handling, unchanged-row dropping, and row-finality dropout.\nFinance-shaped data preserves decimal precision and timestamp semantics.\nWhengas-shaped cargo and vessel tables can be read into Arrow/Polars without row-by-row conversion becoming the bottleneck.\nNetbacks-style high-frequency update streams can be batched without violating freshness requirements.\nOperational work is understood: deployment, backup, restore, object storage, schema evolution, monitoring, and failure recovery.\nMigration can be run table-by-table with dual-read or dual-write validation.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Backend Contract"
+    ]
+  },
+  {
+    "objectID": "backend-contract.html#reuse-from-polars-xtdb",
+    "href": "backend-contract.html#reuse-from-polars-xtdb",
+    "title": "Backend Contract",
+    "section": "Reuse From polars-xtdb",
+    "text": "Reuse From polars-xtdb\nThe existing polars-xtdb prototype is useful prior art, but it should not be treated as a completed backend. It already explores XTDB reads, system-time columns, and basic type mapping. The current gaps are the important parts for Whengas:\n\nType mapping is incomplete for the schemas now used by polars-hist-db.\nDataset ingestion, audit tracking, delta upserts, and finality are not wired into the prototype.\nThe prototype exposes XTDB-specific helper functions rather than a storage adapter that implements the polars-hist-db contract.\n\nThe XTDB spike should reuse lessons and test fixtures from that repo, not replace polars-hist-db with the prototype directly.\nThe first adapter slice in polars-hist-db exposes an experimental XtdbBackend.dataframes(connection) helper for raw SQL reads, table reads, and dataframe appends. Temporal upsert, delta/finality, schema management, audit tracking, and update visibility remain explicit unsupported operations until the parity tickets prove them.\nThe first temporal parity slice shares backend-level system-time hint clause generation between MariaDB and XTDB for none, all, asof, and span. MariaDB still applies those hints through its existing SQLAlchemy/MariaDB TimeHint.apply path. XTDB applies the same clause string to experimental table reads. This is query-shape parity only; live XTDB result parity still requires the dedicated parity tests and fixture data in WG-240.\nXtdbBackend.table_configs(connection) exists as the schema-management seam. Table reflection reads information_schema.columns, maps XTDB type names into TableConfig, filters XTDB system-time columns, and treats _id as the reflected key. Configured table creation declares XTDB’s required _id plus the configured columns with XTDB’s bare-column CREATE TABLE schema.table (...) form. For a table config with exactly one primary key, that key is mapped to XTDB’s required _id document identifier. For composite primary keys, the adapter generates a deterministic text _id using the configured key order and the xtdb-pk-v1: encoding while preserving the original key columns as normal data columns. Table creation records the original primary-key list in an internal XTDB adapter metadata table so from_table(...) can recover composite keys when reflecting tables created by polars-hist-db. Legacy XTDB tables without that metadata still fall back to _id as the reflected key.\nThe same mapping is applied on experimental dataframe appends when callers pass the TableConfig to XtdbDataframeOps.table_insert(...): a configured key such as id is renamed to _id before Polars writes to XTDB, while composite-key tables receive a synthetic _id column and keep their original key columns. Existing MariaDB insert behaviour remains unchanged.\nThis is schema declaration, not MariaDB-style type enforcement. Empty declared XTDB columns surface through information_schema, and XTDB widens column types from inserted data. The adapter therefore keeps Arrow/Polars and TableConfig as the typed boundary while the spike proves whether live XTDB ingestion preserves the precision and nullability guarantees required by Whengas.\nThe first live pgwire round trip passes against ghcr.io/xtdb/xtdb:nightly:\nPOLARS_HIST_DB_XTDB_LIVE=1 uv run --extra xtdb \\\n  python -m pytest tests/backends/test_xtdb_live.py -m integration -q\nThe live test exposed important pgwire compatibility details:\n\nThe SQLAlchemy PostgreSQL dialect needs small XTDB-specific startup adjustments: connect to the xtdb database, disable native hstore probing, and skip the SHOW standard_conforming_strings dialect probe.\nXTDB separates query and DML transactions more strictly than PostgreSQL. The adapter leaves reads in normal read-only transactions and wraps DML in explicit BEGIN READ WRITE blocks.\nPsycopg parameter OIDs are not sufficient for the current DML path, so the spike emits typed SQL literals for inserts. This proves create/append/read viability, but bulk ingestion should move to XTDB ADBC because it is the Arrow-native path documented by XTDB and avoids row-by-row SQL literal work.\n\nThe first live ADBC/FlightSQL round trip also passes against the same nightly image:\nPOLARS_HIST_DB_XTDB_LIVE=1 uv run --extra xtdb \\\n  python -m pytest tests/backends/test_xtdb_adbc_live.py -m integration -q\nThe current adapter keeps this as an explicit sidecar path:\n\nXtdbBackend.create_engine(...) remains the pgwire/SQLAlchemy path for existing query and control-plane compatibility.\nXtdbBackend.create_adbc_connection(...) opens grpc://host:adbc_port, defaulting XTDB adbc_port to 9832.\nXtdbBackend.adbc_dataframes(connection) ingests Polars dataframes through Arrow/ADBC and reads query results back through fetch_arrow_table().\nXTDB FlightSQL accepts schema-targeted ingest through ADBC’s db_schema_name option, so the ADBC path can preserve configured table schemas.\nPolars emits Arrow large_string columns. The current XTDB nightly rejects large_string on ingest, so the adapter normalises large string and dictionary-large-string columns to Arrow string at the XTDB ingest boundary. This preserves values while avoiding the pgwire literal path.\n\nThe first temporal upsert parity slice now uses XTDB’s native insert-as-upsert behaviour:\n\nXtdbBackend.temporal_upsert(...) delegates to the configured dataframe insert path. XTDB creates a new temporal version when an existing _id changes.\nA live ADBC test proves latest state and FOR SYSTEM_TIME AS OF both work: after two upserts for the same configured primary key, latest reads the new value and an as-of checkpoint between commits reads the previous value.\nMariaDB’s synthetic system-versioning time (SET @@timestamp) maps to XTDB’s transaction-level BEGIN READ WRITE WITH (SYSTEM_TIME = ...) option on the SQL/pgwire path. This is intended for initial backfills and must be monotonic: XTDB rejects a transaction system-time earlier than the current database transaction time.\nA live pgwire test proves update_time is stored as XTDB system-time. The test imports two future system-time versions and queries with explicit FOR VALID_TIME AS OF ... FOR SYSTEM_TIME AS OF ... bases to account for XTDB’s independent valid-time and system-time axes.\nADBC bulk ingest does not yet support update_time in this adapter. It still works for commit-time system history, but imported system-time currently uses pgwire SQL transactions.\nThe current delta parity slice supports DeltaConfig(drop_unchanged_rows=True), on_duplicate_key, and row_finality values disabled and dropout for single-key XTDB tables. The adapter applies the source duplicate policy before writing: the default error mode rejects duplicate source keys, while take_first and take_last preserve the selected source row. For dropout finality it temporally deletes current rows whose _id is missing from the incoming snapshot. It then compares incoming rows against the current row at the same temporal basis and skips rows whose configured values are unchanged.\nA live test proves the unchanged update returns zero changed rows and does not create a transaction at the unchanged update_time; the subsequent changed update remains visible through as-of valid-time/system-time queries. Full FOR VALID_TIME ALL FOR SYSTEM_TIME ALL history can show more rows than the count of submitted changes because XTDB exposes the full bitemporal matrix. Tests should assert transaction/system-time and as-of state invariants, not assume one displayed row per logical source update.\nA live test proves dropout finality removes a missing row from later valid-time/system-time as-of reads while preserving the earlier as-of snapshot.\nExplicit XTDB valid-time columns are supported on the pgwire insert path: _valid_from / _valid_to pass through dataframe upserts, and unchanged-row filtering treats source valid-window changes as meaningful changes. A live test proves a row with an explicit valid-time window is only visible inside that window.\nDataset configs can declare per-table valid-time mappings: valid_time: [{table: cargos, from_column: msg_timestamp}]. The XTDB temporal upsert path copies the configured from_column to _valid_from and optional to_column to _valid_to, preserving the original source columns. This keeps feed semantics YAML-controlled: cargo snapshots can use message/as-of time, vessel vectors can use source position time, and future rate feeds can use explicit validity windows.\nDataset ingestion keeps an explicit staging phase for XTDB. The adapter writes each partition to a retained internal table named __&lt;dataset&gt;_stage, keyed by stage_run_id and stage_row_index, then deletes only that stage_run_id after the upload finishes. This mirrors the MariaDB pattern of reusing the staging schema while keeping staged data scoped to one upload.\nXTDB staging preserves pipeline source-to-target column mapping, duplicate removal, default filling, update_time system-time import, per-table valid-time mapping, and deduce_foreign_key normalization for textual target key columns. Missing normalized rows get deterministic IDs of the form xtdb-fk-v1:&lt;schema&gt;.&lt;table&gt;:&lt;natural-key-json&gt;. Numeric generated IDs need a separate allocator before they can be supported safely.\nMariaDB continues to treat __valid_from / __valid_to as system-version history. Dataset valid-time mappings are XTDB business valid-time inputs and are not equivalent to MariaDB’s generated system-time columns.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Backend Contract"
+    ]
+  },
+  {
+    "objectID": "backend-contract.html#migration-decision",
+    "href": "backend-contract.html#migration-decision",
+    "title": "Backend Contract",
+    "section": "Migration Decision",
+    "text": "Migration Decision\nDo not start by replacing MariaDB. Start by extracting the backend contract and building a minimal XTDB adapter behind it. The decision to migrate should be based on parity tests, representative benchmarks, and operational confidence.\nFor Whengas, the practical default is:\n\nKeep MariaDB as the production backend while the adapter boundary is created.\nBuild XTDB as an experimental backend.\nCompare both backends with cargo, vessel, netbacks, and pipe/storage-shaped datasets.\nMigrate only after typed temporal reads, writes, update visibility, and operational recovery are proven.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Backend Contract"
+    ]
+  },
+  {
+    "objectID": "examples.html",
+    "href": "examples.html",
+    "title": "Examples",
+    "section": "",
+    "text": "This section contains example notebooks demonstrating how to use polars-hist-db.\n\nBasic Example\nDataset Example",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Examples"
+    ]
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "Polars Hist DB",
+    "section": "",
+    "text": "A Python library for building bitemporal data pipelines with Polars and MariaDB.\nIt ingests data from DSV files or NATS JetStream subjects, tracks history using MariaDB’s system-versioned tables, and exposes everything as strongly-typed Polars DataFrames.\n\n\n\nTyped uploads — push Polars DataFrames into MariaDB with automatic type mapping between Polars, SQL, and SQLAlchemy.\nTyped queries — read tables back into DataFrames with column types inferred from the database schema. Temporal query hints (asof, span, all) let you slice history without writing SQL.\nYAML-driven pipelines — define scrape specifications that handle column typing, enrichment via custom transform functions, normalization across tables, and foreign-key deduction.\nDeduplication — an audit log tracks what has already been ingested so re-runs skip previously processed files or messages.\nTransactional ingestion — each file or message is processed in its own transaction; failures roll back cleanly without affecting other items.\nDual input sources — crawl directories for DSV files, or consume messages from NATS JetStream with configurable fetch/subscription strategies.\nDelta upserts — staging tables detect changed rows, handle duplicates (take_first, take_last, error), and optionally mark disappeared rows as dropped.\n\nFull documentation: jr200.github.io/polars-hist-db\n\n\n\nuv sync\nmake test\n\n\n\nmake check       # ruff + mypy\nmake docs        # render and preview quarto docs\nmake bump PART=patch\nmake release\n\n\n\nThis project is licensed under the MIT license.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB"
+    ]
+  },
+  {
+    "objectID": "index.html#quick-start",
+    "href": "index.html#quick-start",
+    "title": "Polars Hist DB",
+    "section": "",
+    "text": "uv sync\nmake test",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB"
+    ]
+  },
+  {
+    "objectID": "index.html#development",
+    "href": "index.html#development",
+    "title": "Polars Hist DB",
+    "section": "",
+    "text": "make check       # ruff + mypy\nmake docs        # render and preview quarto docs\nmake bump PART=patch\nmake release",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB"
+    ]
+  },
+  {
+    "objectID": "index.html#license",
+    "href": "index.html#license",
+    "title": "Polars Hist DB",
+    "section": "",
+    "text": "This project is licensed under the MIT license.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB"
+    ]
+  },
+  {
+    "objectID": "examples/scratch.html",
+    "href": "examples/scratch.html",
+    "title": "Polars Hist DB",
+    "section": "",
+    "text": "import polars as pl\nfrom sqlalchemy import select, text\n\nfrom polars_hist_db.core import DataframeOps, TableOps, make_engine\n\n\nengine = make_engine(\n    backend=\"mariadb\",\n    hostname=\"127.0.0.1\",\n    port=3306,\n    username=\"root\",\n    password=\"admin\",\n)\n\n\nwith engine.begin() as connection:\n    res = connection.execute(text(\"select * from information_schema.users\"))\n    rows = res.fetchall()\n\npl.from_records(rows)\n\n\nwith engine.begin() as connection:\n    tbl = TableOps(\"information_schema\", \"users\", connection).get_table_metadata()\n    query = select(tbl).limit(5)\n    df = DataframeOps(connection).from_selectable(\n        query, {\"PASSWORD_EXPIRATION_TIME\": pl.String}\n    )\n\n\nprint(df)"
   }
 ]
