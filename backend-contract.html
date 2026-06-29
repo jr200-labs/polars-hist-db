@@ -422,7 +422,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </header>
 
 
-<p>This document defines the storage-backend contract for <code>polars-hist-db</code>. The current implementation uses MariaDB system-versioned tables, but Whengas should treat the stable product surface as typed Polars dataframes over temporal tables. A second backend, such as XTDB, should be evaluated against this contract before any migration is attempted.</p>
+<p>This document defines the storage-backend contract for <code>polars-hist-db</code>. The current implementation uses MariaDB system-versioned tables, but the consuming application should treat the stable product surface as typed Polars dataframes over temporal tables. A second backend, such as XTDB, should be evaluated against this contract before any migration is attempted.</p>
 <section id="goal" class="level2">
 <h2 class="anchored" data-anchor-id="goal">Goal</h2>
 <p>The backend layer must support repeatable ingestion of raw and derived data, typed dataframe reads and writes, and point-in-time views of historical state. It must also provide enough update visibility for downstream services to invalidate caches, publish events, and build user-facing projections.</p>
@@ -488,7 +488,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li>Map configured SQL-like types to Polars dtypes.</li>
 <li>Map Polars dtypes to backend-native storage types.</li>
 <li>Round-trip dates, datetimes, decimals, booleans, categoricals, integers, floats, strings, and nulls without lossy conversion.</li>
-<li>Preserve decimal precision needed by finance and gas-volume data.</li>
+<li>Preserve decimal precision needed by finance and commodity-volume data.</li>
 </ul>
 </section>
 <section id="reads" class="level3">
@@ -540,14 +540,14 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li><a href="https://github.com/xtdb/xtdb" class="uri">https://github.com/xtdb/xtdb</a></li>
 <li><a href="https://docs.xtdb.com/intro/what-is-xtdb.html" class="uri">https://docs.xtdb.com/intro/what-is-xtdb.html</a></li>
 </ul>
-<p>Those properties are directly relevant to Whengas because the data platform is already Polars/Arrow-oriented and needs historical views. The same materials also describe a strongly ordered transaction path, with writes for a database processed through a single leader. That is a valuable consistency model, but it means write throughput and batching must be measured on representative feeds.</p>
+<p>Those properties are directly relevant to the consuming application because the data platform is already Polars/Arrow-oriented and needs historical views. The same materials also describe a strongly ordered transaction path, with writes for a database processed through a single leader. That is a valuable consistency model, but it means write throughput and batching must be measured on representative feeds.</p>
 <p>XTDB should only move beyond spike status if it passes the following gates:</p>
 <ul>
 <li>The adapter can run representative <code>polars-hist-db</code> ingestion tests without weakening type checks.</li>
 <li>Temporal query parity tests pass against MariaDB and XTDB for latest, all, as-of, and span reads.</li>
 <li>Delta upsert parity tests pass for inserts, updates, duplicate handling, unchanged-row dropping, and row-finality dropout.</li>
 <li>Finance-shaped data preserves decimal precision and timestamp semantics.</li>
-<li>Whengas-shaped cargo and vessel tables can be read into Arrow/Polars without row-by-row conversion becoming the bottleneck.</li>
+<li>application-shaped record and entity tables can be read into Arrow/Polars without row-by-row conversion becoming the bottleneck.</li>
 <li>Netbacks-style high-frequency update streams can be batched without violating freshness requirements.</li>
 <li>Operational work is understood: deployment, backup, restore, object storage, schema evolution, monitoring, and failure recovery.</li>
 <li>Migration can be run table-by-table with dual-read or dual-write validation.</li>
@@ -555,7 +555,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="reuse-from-polars-xtdb" class="level2">
 <h2 class="anchored" data-anchor-id="reuse-from-polars-xtdb">Reuse From <code>polars-xtdb</code></h2>
-<p>The existing <code>polars-xtdb</code> prototype is useful prior art, but it should not be treated as a completed backend. It already explores XTDB reads, system-time columns, and basic type mapping. The current gaps are the important parts for Whengas:</p>
+<p>The existing <code>polars-xtdb</code> prototype is useful prior art, but it should not be treated as a completed backend. It already explores XTDB reads, system-time columns, and basic type mapping. The current gaps are the important parts for the consuming application:</p>
 <ul>
 <li>Type mapping is incomplete for the schemas now used by <code>polars-hist-db</code>.</li>
 <li>Dataset ingestion, audit tracking, delta upserts, and finality are not wired into the prototype.</li>
@@ -566,7 +566,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>The first temporal parity slice shares backend-level system-time hint clause generation between MariaDB and XTDB for <code>none</code>, <code>all</code>, <code>asof</code>, and <code>span</code>. MariaDB still applies those hints through its existing SQLAlchemy/MariaDB <code>TimeHint.apply</code> path. XTDB applies the same clause string to experimental table reads. This is query-shape parity only; live XTDB result parity still requires the dedicated parity tests and fixture data in WG-240.</p>
 <p><code>XtdbBackend.table_configs(connection)</code> exists as the schema-management seam. Table reflection reads <code>information_schema.columns</code>, maps XTDB type names into <code>TableConfig</code>, filters XTDB system-time columns, and treats <code>_id</code> as the reflected key. Configured table creation declares XTDB’s required <code>_id</code> plus the configured columns with XTDB’s bare-column <code>CREATE TABLE schema.table (...)</code> form. For a table config with exactly one primary key, that key is mapped to XTDB’s required <code>_id</code> document identifier. For composite primary keys, the adapter generates a deterministic text <code>_id</code> using the configured key order and the <code>xtdb-pk-v1:</code> encoding while preserving the original key columns as normal data columns. Table creation records the original primary-key list in an internal XTDB adapter metadata table so <code>from_table(...)</code> can recover composite keys when reflecting tables created by <code>polars-hist-db</code>. Legacy XTDB tables without that metadata still fall back to <code>_id</code> as the reflected key.</p>
 <p>The same mapping is applied on experimental dataframe appends when callers pass the <code>TableConfig</code> to <code>XtdbDataframeOps.table_insert(...)</code>: a configured key such as <code>id</code> is renamed to <code>_id</code> before Polars writes to XTDB, while composite-key tables receive a synthetic <code>_id</code> column and keep their original key columns. Existing MariaDB insert behaviour remains unchanged.</p>
-<p>This is schema declaration, not MariaDB-style type enforcement. Empty declared XTDB columns surface through <code>information_schema</code>, and XTDB widens column types from inserted data. The adapter therefore keeps Arrow/Polars and <code>TableConfig</code> as the typed boundary while the spike proves whether live XTDB ingestion preserves the precision and nullability guarantees required by Whengas.</p>
+<p>This is schema declaration, not MariaDB-style type enforcement. Empty declared XTDB columns surface through <code>information_schema</code>, and XTDB widens column types from inserted data. The adapter therefore keeps Arrow/Polars and <code>TableConfig</code> as the typed boundary while the spike proves whether live XTDB ingestion preserves the precision and nullability guarantees required by the consuming application.</p>
 <p>The first live pgwire round trip passes against <code>ghcr.io/xtdb/xtdb:nightly</code>:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="va">POLARS_HIST_DB_XTDB_LIVE</span><span class="op">=</span>1 <span class="ex">uv</span> run <span class="at">--extra</span> xtdb <span class="dt">\</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  python <span class="at">-m</span> pytest tests/backends/test_xtdb_live.py <span class="at">-m</span> integration <span class="at">-q</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
@@ -598,7 +598,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li>A live test proves the unchanged update returns zero changed rows and does not create a transaction at the unchanged <code>update_time</code>; the subsequent changed update remains visible through as-of valid-time/system-time queries. Full <code>FOR VALID_TIME ALL FOR SYSTEM_TIME ALL</code> history can show more rows than the count of submitted changes because XTDB exposes the full bitemporal matrix. Tests should assert transaction/system-time and as-of state invariants, not assume one displayed row per logical source update.</li>
 <li>A live test proves dropout finality removes a missing row from later valid-time/system-time as-of reads while preserving the earlier as-of snapshot.</li>
 <li>Explicit XTDB valid-time columns are supported on the pgwire insert path: <code>_valid_from</code> / <code>_valid_to</code> pass through dataframe upserts, and unchanged-row filtering treats source valid-window changes as meaningful changes. A live test proves a row with an explicit valid-time window is only visible inside that window.</li>
-<li>Dataset configs can declare per-table valid-time mappings: <code>valid_time: [{table: cargos, from_column: msg_timestamp}]</code>. The XTDB temporal upsert path copies the configured <code>from_column</code> to <code>_valid_from</code> and optional <code>to_column</code> to <code>_valid_to</code>, preserving the original source columns. This keeps feed semantics YAML-controlled: cargo snapshots can use message/as-of time, vessel vectors can use source position time, and future rate feeds can use explicit validity windows.</li>
+<li>Dataset configs can declare per-table valid-time mappings: <code>valid_time: [{table: records, from_column: msg_timestamp}]</code>. The XTDB temporal upsert path copies the configured <code>from_column</code> to <code>_valid_from</code> and optional <code>to_column</code> to <code>_valid_to</code>, preserving the original source columns. This keeps feed semantics YAML-controlled: record snapshots can use message/as-of time, entity vectors can use source position time, and future rate feeds can use explicit validity windows.</li>
 <li>Dataset ingestion keeps an explicit staging phase for XTDB. The adapter writes each partition to a retained internal table named <code>__&lt;dataset&gt;_stage</code>, keyed by <code>stage_run_id</code> and <code>stage_row_index</code>, then deletes only that <code>stage_run_id</code> after the upload finishes. This mirrors the MariaDB pattern of reusing the staging schema while keeping staged data scoped to one upload.</li>
 <li>XTDB staging preserves pipeline source-to-target column mapping, duplicate removal, default filling, <code>update_time</code> system-time import, per-table valid-time mapping, and <code>deduce_foreign_key</code> normalization for textual target key columns. Missing normalized rows get deterministic IDs of the form <code>xtdb-fk-v1:&lt;schema&gt;.&lt;table&gt;:&lt;natural-key-json&gt;</code>. Numeric generated IDs need a separate allocator before they can be supported safely.</li>
 <li>MariaDB continues to treat <code>__valid_from</code> / <code>__valid_to</code> as system-version history. Dataset valid-time mappings are XTDB business valid-time inputs and are not equivalent to MariaDB’s generated system-time columns.</li>
@@ -607,11 +607,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="migration-decision" class="level2">
 <h2 class="anchored" data-anchor-id="migration-decision">Migration Decision</h2>
 <p>Do not start by replacing MariaDB. Start by extracting the backend contract and building a minimal XTDB adapter behind it. The decision to migrate should be based on parity tests, representative benchmarks, and operational confidence.</p>
-<p>For Whengas, the practical default is:</p>
+<p>For the consuming application, the practical default is:</p>
 <ul>
 <li>Keep MariaDB as the production backend while the adapter boundary is created.</li>
 <li>Build XTDB as an experimental backend.</li>
-<li>Compare both backends with cargo, vessel, netbacks, and pipe/storage-shaped datasets.</li>
+<li>Compare both backends with record, entity, netbacks, and pipe/storage-shaped datasets.</li>
 <li>Migrate only after typed temporal reads, writes, update visibility, and operational recovery are proven.</li>
 </ul>
 
