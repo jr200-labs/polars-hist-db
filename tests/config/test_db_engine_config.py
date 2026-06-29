@@ -52,3 +52,15 @@ def test_db_engine_config_defaults_xtdb_adbc_port():
     config = DbEngineConfig.from_mapping({"backend": "xtdb"})
 
     assert config.adbc_port == 9832
+    assert config.max_rows_per_insert == 10_000
+
+
+def test_db_engine_config_parses_max_rows_per_insert():
+    config = DbEngineConfig.from_mapping(
+        {
+            "backend": "xtdb",
+            "max_rows_per_insert": "2500",
+        }
+    )
+
+    assert config.max_rows_per_insert == 2500
