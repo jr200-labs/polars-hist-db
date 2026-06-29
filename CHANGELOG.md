@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.14](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.13...v0.12.14) (2026-06-29)
+
+
+### Bug Fixes
+
+* unblock XTDB upload smoke path ([#93](https://github.com/jr200-labs/polars-hist-db/issues/93)) ([ff04754](https://github.com/jr200-labs/polars-hist-db/commit/ff04754aa133357552e7a10422cfbc36e090307b))
+
 ## [0.12.13](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.12...v0.12.13) (2026-06-28)
 
 
