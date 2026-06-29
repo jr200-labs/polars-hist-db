@@ -90,7 +90,7 @@ def test_xtdb_primary_ingest_uses_staged_dataframe_for_temporal_upsert():
     staged_df = pl.DataFrame(
         {
             "record_id": [1],
-            "destination": ["Tokyo"],
+            "destination": ["Alpha"],
             "msg_timestamp": [msg_timestamp],
         }
     )
@@ -126,7 +126,7 @@ def test_xtdb_primary_ingest_uses_staged_dataframe_for_temporal_upsert():
     assert args[1:] == ("fakedata", "records")
     assert args[0].to_dict(as_series=False) == {
         "record_id": [1],
-        "destination": ["Tokyo"],
+        "destination": ["Alpha"],
         "msg_timestamp": [msg_timestamp],
     }
     assert kwargs["table_config"] == record_table
@@ -143,21 +143,21 @@ def test_xtdb_extract_ingest_uses_staged_dataframe_for_temporal_upsert():
     tables = TableConfigs(
         items=[
             {
-                "schema": "spire",
+                "schema": "source_a",
                 "name": "vectors",
-                "primary_keys": ["entity_number"],
+                "primary_keys": ["entity_id"],
                 "columns": [
-                    {"name": "entity_number", "data_type": "INT", "nullable": False},
+                    {"name": "entity_id", "data_type": "INT", "nullable": False},
                     {"name": "latitude", "data_type": "DOUBLE"},
                 ],
                 "is_temporal": True,
             },
             {
-                "schema": "spire",
+                "schema": "source_a",
                 "name": "entity_info",
-                "primary_keys": ["entity_number"],
+                "primary_keys": ["entity_id"],
                 "columns": [
-                    {"name": "entity_number", "data_type": "INT", "nullable": False},
+                    {"name": "entity_id", "data_type": "INT", "nullable": False},
                     {"name": "name", "data_type": "VARCHAR(64)"},
                 ],
             },
@@ -165,24 +165,24 @@ def test_xtdb_extract_ingest_uses_staged_dataframe_for_temporal_upsert():
     )
     entity_info = tables["entity_info"]
     dataset = DatasetConfig(
-        name="spire_stream",
-        delta_table_schema="spire",
+        name="source_a_stream",
+        delta_table_schema="source_a",
         input_config={"type": "dsv", "search_paths": []},
         pipeline=[
             {
-                "schema": "spire",
+                "schema": "source_a",
                 "table": "vectors",
                 "type": "primary",
                 "columns": [
-                    {"source": "source_entity_number", "target": "entity_number"},
+                    {"source": "source_entity_id", "target": "entity_id"},
                     {"source": "source_latitude", "target": "latitude"},
                 ],
             },
             {
-                "schema": "spire",
+                "schema": "source_a",
                 "table": "entity_info",
                 "columns": [
-                    {"source": "source_entity_number", "target": "entity_number"},
+                    {"source": "source_entity_id", "target": "entity_id"},
                     {"source": "source_name", "target": "name"},
                 ],
             },
@@ -191,8 +191,8 @@ def test_xtdb_extract_ingest_uses_staged_dataframe_for_temporal_upsert():
     update_time = datetime(2030, 1, 1, 12, 5, tzinfo=timezone.utc)
     staged_df = pl.DataFrame(
         {
-            "entity_number": [123],
-            "name": ["Sample Test"],
+            "entity_id": [123],
+            "name": ["Commodity Test"],
         }
     )
     backend = _FakeXtdbBackend()
@@ -216,10 +216,10 @@ def test_xtdb_extract_ingest_uses_staged_dataframe_for_temporal_upsert():
         (("stage-1", dataset, 1, entity_info), {"valid_time": None})
     ]
     args, kwargs = backend.temporal_upsert_calls[0]
-    assert args[1:] == ("spire", "entity_info")
+    assert args[1:] == ("source_a", "entity_info")
     assert args[0].to_dict(as_series=False) == {
-        "entity_number": [123],
-        "name": ["Sample Test"],
+        "entity_id": [123],
+        "name": ["Commodity Test"],
     }
     assert kwargs["table_config"] == entity_info
     assert kwargs["delta_config"] == dataset.delta_config

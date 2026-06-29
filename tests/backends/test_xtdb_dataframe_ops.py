@@ -121,7 +121,7 @@ def test_xtdb_dataframe_ops_reads_table_with_configured_schema_overrides(monkeyp
         columns=[
             TableColumnConfig("records", "id", "BIGINT", nullable=False),
             TableColumnConfig("records", "destination_date", "DATETIME"),
-            TableColumnConfig("records", "record_mcm", "DOUBLE"),
+            TableColumnConfig("records", "amount_value", "DOUBLE"),
         ],
     )
     monkeypatch.setattr(
@@ -140,7 +140,7 @@ def test_xtdb_dataframe_ops_reads_table_with_configured_schema_overrides(monkeyp
         schema_overrides={
             "_id": pl.Int64,
             "destination_date": pl.Datetime(),
-            "record_mcm": pl.Float64,
+            "amount_value": pl.Float64,
             "_valid_from": pl.Datetime("us", "UTC"),
             "_valid_to": pl.Datetime("us", "UTC"),
         },
@@ -215,7 +215,7 @@ def test_xtdb_dataframe_ops_maps_composite_primary_key_to_synthetic_id(monkeypat
         {
             "entity_id": [10, 10],
             "record_id": ["A", "B"],
-            "destination": ["Tokyo", "Osaka"],
+            "destination": ["Alpha", "Beta"],
         }
     )
     table_config = TableConfig(
@@ -242,7 +242,7 @@ def test_xtdb_dataframe_ops_maps_composite_primary_key_to_synthetic_id(monkeypat
         ],
         "entity_id": [10, 10],
         "record_id": ["A", "B"],
-        "destination": ["Tokyo", "Osaka"],
+        "destination": ["Alpha", "Beta"],
     }
     assert captured["kwargs"] == {
         "table_name": "test.records",
@@ -259,7 +259,7 @@ def test_xtdb_dataframe_ops_uses_system_time_transaction_for_update_time():
     ops = XtdbDataframeOps(connection)
 
     result = ops.table_insert(
-        pl.DataFrame({"_id": [1], "destination": ["Tokyo"]}),
+        pl.DataFrame({"_id": [1], "destination": ["Alpha"]}),
         "test",
         "records",
         update_time=datetime(2030, 1, 1, 12, 0, tzinfo=timezone.utc),
@@ -380,7 +380,7 @@ def test_xtdb_dataframe_ops_casts_null_values_to_configured_types():
         columns=[
             TableColumnConfig("records", "id", "BIGINT", nullable=False),
             TableColumnConfig("records", "destination_date", "DATETIME"),
-            TableColumnConfig("records", "record_mcm", "DOUBLE"),
+            TableColumnConfig("records", "amount_value", "DOUBLE"),
         ],
     )
 
@@ -389,7 +389,7 @@ def test_xtdb_dataframe_ops_casts_null_values_to_configured_types():
             {
                 "id": [1],
                 "destination_date": [None],
-                "record_mcm": [None],
+                "amount_value": [None],
             }
         ),
         "test",
@@ -400,6 +400,40 @@ def test_xtdb_dataframe_ops_casts_null_values_to_configured_types():
     insert_sql = driver_connection.execute.call_args_list[1].args[0]
     assert "NULL::TIMESTAMP" in insert_sql
     assert "NULL::DOUBLE PRECISION" in insert_sql
+
+
+def test_xtdb_dataframe_ops_quotes_reserved_insert_columns():
+    driver_connection = Mock()
+    connection = Mock()
+    connection.connection.driver_connection = driver_connection
+    connection.in_transaction.return_value = False
+    ops = XtdbDataframeOps(connection)
+    table_config = TableConfig(
+        schema="source_a",
+        name="entity_info",
+        primary_keys=["entity_id"],
+        columns=[
+            TableColumnConfig("entity_info", "entity_id", "INT", nullable=False),
+            TableColumnConfig("entity_info", "name", "VARCHAR(64)"),
+            TableColumnConfig("entity_info", "flag", "VARCHAR(64)"),
+        ],
+    )
+
+    ops.table_insert(
+        pl.DataFrame(
+            {
+                "entity_id": [311038700],
+                "name": ["ALPHA"],
+                "flag": ["BS"],
+            }
+        ),
+        "source_a",
+        "entity_info",
+        table_config=table_config,
+    )
+
+    insert_sql = driver_connection.execute.call_args_list[1].args[0]
+    assert 'INSERT INTO source_a.entity_info (_id, name, "flag")' in insert_sql
 
 
 def test_xtdb_backend_returns_xtdb_dataframe_ops():

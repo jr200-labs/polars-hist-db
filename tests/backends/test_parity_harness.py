@@ -39,7 +39,7 @@ class _InputConfig:
 class _Config:
     def __init__(self):
         self.db_config = DbEngineConfig(backend="mariadb")
-        self.datasets = {"record_dataset": SimpleNamespace(input_config=_InputConfig())}
+        self.datasets = {"sample_dataset": SimpleNamespace(input_config=_InputConfig())}
 
 
 def test_prepare_parity_config_overrides_backend_without_mutating_source_config():
@@ -53,8 +53,8 @@ def test_prepare_parity_config_overrides_backend_without_mutating_source_config(
     prepared = prepare_parity_config(
         source,
         target,
-        dataset_name="record_dataset",
-        payload="id,name\n1,Bonny\n",
+        dataset_name="sample_dataset",
+        payload="id,name\n1,Alpha\n",
         payload_time=payload_time,
     )
 
@@ -62,25 +62,25 @@ def test_prepare_parity_config_overrides_backend_without_mutating_source_config(
     assert prepared.db_config.backend == "xtdb"
     assert source.db_config.backend == "mariadb"
     assert (
-        prepared.datasets["record_dataset"].input_config.payload == "id,name\n1,Bonny\n"
+        prepared.datasets["sample_dataset"].input_config.payload == "id,name\n1,Alpha\n"
     )
-    assert prepared.datasets["record_dataset"].input_config.payload_time == payload_time
-    assert source.datasets["record_dataset"].input_config.payload is None
+    assert prepared.datasets["sample_dataset"].input_config.payload_time == payload_time
+    assert source.datasets["sample_dataset"].input_config.payload is None
 
 
 def test_compare_backend_tables_reports_row_count_and_value_mismatches():
     left_tables = {
-        "kpler.trades": pl.DataFrame(
+        "sample.trades": pl.DataFrame(
             {"id": [1, 2], "trade_status": ["Delivered", "Loaded"]}
         ),
-        "kpler.entity_info": pl.DataFrame({"id": [501], "name": ["A"]}),
+        "sample.entity_info": pl.DataFrame({"id": [501], "name": ["A"]}),
     }
     right_tables = {
-        "kpler.trades": pl.DataFrame(
+        "sample.trades": pl.DataFrame(
             {"id": [1, 2], "trade_status": ["Delivered", "Ballast"]}
         ),
-        "kpler.entity_info": pl.DataFrame({"id": [501], "name": ["A"]}),
-        "kpler.location_info": pl.DataFrame({"id": [101]}),
+        "sample.entity_info": pl.DataFrame({"id": [501], "name": ["A"]}),
+        "sample.location_info": pl.DataFrame({"id": [101]}),
     }
 
     result = compare_backend_tables(
@@ -88,14 +88,14 @@ def test_compare_backend_tables_reports_row_count_and_value_mismatches():
         right_name="xtdb",
         left_tables=left_tables,
         right_tables=right_tables,
-        table_order=["kpler.trades", "kpler.entity_info", "kpler.location_info"],
+        table_order=["sample.trades", "sample.entity_info", "sample.location_info"],
     )
 
     assert not result.is_match
-    assert result.matches == ["kpler.entity_info"]
+    assert result.matches == ["sample.entity_info"]
     assert result.mismatches == [
         TableParityMismatch(
-            table="kpler.trades",
+            table="sample.trades",
             reason="data mismatch",
             left_rows=2,
             right_rows=2,
@@ -106,7 +106,7 @@ def test_compare_backend_tables_reports_row_count_and_value_mismatches():
             ),
         ),
         TableParityMismatch(
-            table="kpler.location_info",
+            table="sample.location_info",
             reason="missing table result",
             left_rows=None,
             right_rows=1,
@@ -119,16 +119,16 @@ def test_compare_backend_tables_caps_value_mismatch_samples():
         left_name="mariadb",
         right_name="xtdb",
         left_tables={
-            "kpler.trades": pl.DataFrame(
+            "sample.trades": pl.DataFrame(
                 {"id": [1, 2, 3], "trade_status": ["A", "B", "C"]}
             )
         },
         right_tables={
-            "kpler.trades": pl.DataFrame(
+            "sample.trades": pl.DataFrame(
                 {"id": [1, 2, 3], "trade_status": ["X", "Y", "Z"]}
             )
         },
-        table_order=["kpler.trades"],
+        table_order=["sample.trades"],
         mismatch_sample_limit=2,
     )
 
@@ -147,23 +147,23 @@ def test_compare_backend_tables_reports_unresolved_semantic_foreign_keys():
         left_name="mariadb",
         right_name="xtdb",
         left_tables={
-            "kpler.location_info": pl.DataFrame({"id": [1], "name": ["Bonny Island"]}),
-            "kpler.trades": pl.DataFrame(
+            "sample.location_info": pl.DataFrame({"id": [1], "name": ["Alpha Site"]}),
+            "sample.trades": pl.DataFrame(
                 {"id": [10, 11], "origin_location_id": [1, 999]}
             ),
         },
         right_tables={
-            "kpler.location_info": pl.DataFrame({"id": [1], "name": ["Bonny Island"]}),
-            "kpler.trades": pl.DataFrame(
+            "sample.location_info": pl.DataFrame({"id": [1], "name": ["Alpha Site"]}),
+            "sample.trades": pl.DataFrame(
                 {"id": [10, 11], "origin_location_id": [1, 999]}
             ),
         },
-        table_order=["kpler.trades"],
+        table_order=["sample.trades"],
         semantic_foreign_keys=(
             SemanticForeignKey(
-                source_table="kpler.trades",
+                source_table="sample.trades",
                 source_column="origin_location_id",
-                target_table="kpler.location_info",
+                target_table="sample.location_info",
                 target_column="id",
                 target_columns=("name",),
             ),
@@ -172,10 +172,10 @@ def test_compare_backend_tables_reports_unresolved_semantic_foreign_keys():
 
     assert result.semantic_foreign_key_diagnostics == (
         "mariadb unresolved semantic_fk "
-        "kpler.trades.origin_location_id -> kpler.location_info.id "
+        "sample.trades.origin_location_id -> sample.location_info.id "
         "using name: 1/2 source rows",
         "xtdb unresolved semantic_fk "
-        "kpler.trades.origin_location_id -> kpler.location_info.id "
+        "sample.trades.origin_location_id -> sample.location_info.id "
         "using name: 1/2 source rows",
     )
 
@@ -184,10 +184,10 @@ def test_format_backend_parity_result_includes_details_and_diagnostics():
     result = BackendParityResult(
         left_name="mariadb",
         right_name="xtdb",
-        matches=["kpler.entity_info"],
+        matches=["sample.entity_info"],
         mismatches=[
             TableParityMismatch(
-                table="kpler.trades",
+                table="sample.trades",
                 reason="data mismatch",
                 left_rows=1,
                 right_rows=1,
@@ -196,31 +196,31 @@ def test_format_backend_parity_result_includes_details_and_diagnostics():
         ],
         semantic_foreign_key_diagnostics=(
             "xtdb unresolved semantic_fk "
-            "kpler.trades.origin_location_id -> kpler.location_info.id "
+            "sample.trades.origin_location_id -> sample.location_info.id "
             "using name: 1/2 source rows",
         ),
     )
 
     assert list(format_backend_parity_result(result)) == [
-        "PASS kpler.entity_info",
+        "PASS sample.entity_info",
         "WARN xtdb unresolved semantic_fk "
-        "kpler.trades.origin_location_id -> kpler.location_info.id "
+        "sample.trades.origin_location_id -> sample.location_info.id "
         "using name: 1/2 source rows",
-        "FAIL kpler.trades: data mismatch (mariadb=1, xtdb=1)",
+        "FAIL sample.trades: data mismatch (mariadb=1, xtdb=1)",
         "  differing_columns=trade_status",
     ]
 
 
 def test_compare_backend_tables_can_resolve_backend_local_surrogate_keys():
     left_tables = {
-        "kpler.location_info": pl.DataFrame(
+        "sample.location_info": pl.DataFrame(
             {
                 "id": [1, 2],
-                "name": ["Bonny Island", "#Unspecified"],
+                "name": ["Alpha Site", "#Unspecified"],
                 "country": ["Nigeria", "#Unspecified"],
             }
         ),
-        "kpler.trades": pl.DataFrame(
+        "sample.trades": pl.DataFrame(
             {
                 "id": [308025, 308327],
                 "origin_location_id": [1, 2],
@@ -229,14 +229,14 @@ def test_compare_backend_tables_can_resolve_backend_local_surrogate_keys():
         ),
     }
     right_tables = {
-        "kpler.location_info": pl.DataFrame(
+        "sample.location_info": pl.DataFrame(
             {
                 "id": [1701, -1408044658],
-                "name": ["Bonny Island", "#Unspecified"],
+                "name": ["Alpha Site", "#Unspecified"],
                 "country": ["Nigeria", "#Unspecified"],
             }
         ),
-        "kpler.trades": pl.DataFrame(
+        "sample.trades": pl.DataFrame(
             {
                 "id": [308025, 308327],
                 "origin_location_id": [1701, -1408044658],
@@ -250,20 +250,20 @@ def test_compare_backend_tables_can_resolve_backend_local_surrogate_keys():
         right_name="xtdb",
         left_tables=left_tables,
         right_tables=right_tables,
-        table_order=["kpler.location_info", "kpler.trades"],
-        ignored_columns_by_table={"kpler.location_info": frozenset({"id"})},
+        table_order=["sample.location_info", "sample.trades"],
+        ignored_columns_by_table={"sample.location_info": frozenset({"id"})},
         semantic_foreign_keys=(
             SemanticForeignKey(
-                source_table="kpler.trades",
+                source_table="sample.trades",
                 source_column="origin_location_id",
-                target_table="kpler.location_info",
+                target_table="sample.location_info",
                 target_column="id",
                 target_columns=("name", "country"),
             ),
             SemanticForeignKey(
-                source_table="kpler.trades",
+                source_table="sample.trades",
                 source_column="destination_location_id",
-                target_table="kpler.location_info",
+                target_table="sample.location_info",
                 target_column="id",
                 target_columns=("name", "country"),
             ),
@@ -271,27 +271,27 @@ def test_compare_backend_tables_can_resolve_backend_local_surrogate_keys():
     )
 
     assert result.is_match
-    assert result.matches == ["kpler.location_info", "kpler.trades"]
+    assert result.matches == ["sample.location_info", "sample.trades"]
     assert result.mismatches == []
 
 
 def test_parse_semantic_foreign_key_accepts_cli_mapping():
     semantic_fk = _parse_semantic_foreign_key(
-        "kpler.trades.origin_location_id=kpler.location_info.id:name,country"
+        "sample.trades.origin_location_id=sample.location_info.id:name,country"
     )
 
     assert semantic_fk == SemanticForeignKey(
-        source_table="kpler.trades",
+        source_table="sample.trades",
         source_column="origin_location_id",
-        target_table="kpler.location_info",
+        target_table="sample.location_info",
         target_column="id",
         target_columns=("name", "country"),
     )
 
 
 def test_parse_ignore_column_accepts_qualified_column():
-    assert _parse_ignore_column("kpler.location_info.id") == (
-        "kpler.location_info",
+    assert _parse_ignore_column("sample.location_info.id") == (
+        "sample.location_info",
         "id",
     )
 
@@ -300,7 +300,7 @@ def test_parse_args_leaves_payload_time_unset_for_file_based_runs(monkeypatch):
     monkeypatch.setattr(
         sys,
         "argv",
-        ["polars-hist-db-parity", "--config", "configs/kpler.yaml"],
+        ["polars-hist-db-parity", "--config", "configs/sample.yaml"],
     )
 
     args = _parse_args()
@@ -313,11 +313,11 @@ def test_main_passes_cli_parity_rules_to_backend_parity(monkeypatch):
 
     class _Config:
         parity = SimpleNamespace(
-            ignore_columns=("kpler.location_info.id",),
+            ignore_columns=("sample.location_info.id",),
             semantic_foreign_keys=(
                 SimpleNamespace(
-                    source="kpler.trades.origin_location_id",
-                    target="kpler.location_info.id",
+                    source="sample.trades.origin_location_id",
+                    target="sample.location_info.id",
                     columns=("name", "country"),
                 ),
             ),
@@ -338,11 +338,11 @@ def test_main_passes_cli_parity_rules_to_backend_parity(monkeypatch):
         [
             "polars-hist-db-parity",
             "--config",
-            "configs/kpler.yaml",
+            "configs/sample.yaml",
             "--ignore-column",
-            "kpler.location_info.created_at",
+            "sample.location_info.created_at",
             "--semantic-fk",
-            "kpler.trades.origin_location_id=kpler.location_info.id:name,country",
+            "sample.trades.origin_location_id=sample.location_info.id:name,country",
         ],
     )
     monkeypatch.setattr(
@@ -357,13 +357,13 @@ def test_main_passes_cli_parity_rules_to_backend_parity(monkeypatch):
     main()
 
     assert captured["ignored_columns_by_table"] == {
-        "kpler.location_info": frozenset({"created_at"})
+        "sample.location_info": frozenset({"created_at"})
     }
     assert captured["semantic_foreign_keys"] == (
         SemanticForeignKey(
-            source_table="kpler.trades",
+            source_table="sample.trades",
             source_column="origin_location_id",
-            target_table="kpler.location_info",
+            target_table="sample.location_info",
             target_column="id",
             target_columns=("name", "country"),
         ),
@@ -392,7 +392,7 @@ def test_run_backend_parity_uses_parity_rules_from_config(monkeypatch):
         tables=SimpleNamespace(
             items=[
                 TableConfig(
-                    schema="kpler",
+                    schema="sample",
                     name="location_info",
                     is_temporal=False,
                     primary_keys=["id"],
@@ -403,7 +403,7 @@ def test_run_backend_parity_uses_parity_rules_from_config(monkeypatch):
                     ],
                 ),
                 TableConfig(
-                    schema="kpler",
+                    schema="sample",
                     name="trades",
                     is_temporal=True,
                     primary_keys=["id"],
@@ -420,16 +420,16 @@ def test_run_backend_parity_uses_parity_rules_from_config(monkeypatch):
             ]
         ),
         parity=SimpleNamespace(
-            ignore_columns=("kpler.location_info.id",),
+            ignore_columns=("sample.location_info.id",),
             semantic_foreign_keys=(
                 SimpleNamespace(
-                    source="kpler.trades.origin_location_id",
-                    target="kpler.location_info.id",
+                    source="sample.trades.origin_location_id",
+                    target="sample.location_info.id",
                     columns=("name", "country"),
                 ),
                 SimpleNamespace(
-                    source="kpler.trades.destination_location_id",
-                    target="kpler.location_info.id",
+                    source="sample.trades.destination_location_id",
+                    target="sample.location_info.id",
                     columns=("name", "country"),
                 ),
             ),
@@ -437,14 +437,14 @@ def test_run_backend_parity_uses_parity_rules_from_config(monkeypatch):
     )
     tables_by_backend = {
         "mariadb": {
-            "kpler.location_info": pl.DataFrame(
+            "sample.location_info": pl.DataFrame(
                 {
                     "id": [1, 2],
-                    "name": ["Bonny Island", "#Unspecified"],
+                    "name": ["Alpha Site", "#Unspecified"],
                     "country": ["Nigeria", "#Unspecified"],
                 }
             ),
-            "kpler.trades": pl.DataFrame(
+            "sample.trades": pl.DataFrame(
                 {
                     "id": [308025, 308327],
                     "origin_location_id": [1, 2],
@@ -453,14 +453,14 @@ def test_run_backend_parity_uses_parity_rules_from_config(monkeypatch):
             ),
         },
         "xtdb": {
-            "kpler.location_info": pl.DataFrame(
+            "sample.location_info": pl.DataFrame(
                 {
                     "id": [1701, -1408044658],
-                    "name": ["Bonny Island", "#Unspecified"],
+                    "name": ["Alpha Site", "#Unspecified"],
                     "country": ["Nigeria", "#Unspecified"],
                 }
             ),
-            "kpler.trades": pl.DataFrame(
+            "sample.trades": pl.DataFrame(
                 {
                     "id": [308025, 308327],
                     "origin_location_id": [1701, -1408044658],
@@ -503,7 +503,7 @@ def test_run_backend_parity_uses_parity_rules_from_config(monkeypatch):
     )
 
     assert result.is_match
-    assert result.matches == ["kpler.location_info", "kpler.trades"]
+    assert result.matches == ["sample.location_info", "sample.trades"]
 
 
 def test_parse_backend_target_accepts_named_connection_options():
@@ -530,7 +530,7 @@ def test_parse_backend_target_accepts_unnamed_connection_options():
 
 def test_table_read_sql_uses_valid_time_all_for_xtdb_tables():
     table_config = TableConfig(
-        schema="kpler",
+        schema="sample",
         name="trades",
         is_temporal=True,
         primary_keys=["id"],
@@ -540,7 +540,7 @@ def test_table_read_sql_uses_valid_time_all_for_xtdb_tables():
     system_time = datetime(2035, 1, 1, 0, 0, 1)
 
     assert _table_read_sql("xtdb", table_config, system_time=system_time) == (
-        "SELECT * FROM kpler.trades FOR VALID_TIME ALL "
+        "SELECT * FROM sample.trades FOR VALID_TIME ALL "
         "FOR SYSTEM_TIME AS OF TIMESTAMP '2035-01-01T00:00:01'"
     )
     assert _table_read_sql("mariadb", table_config, system_time=system_time) is None
@@ -548,7 +548,7 @@ def test_table_read_sql_uses_valid_time_all_for_xtdb_tables():
 
 def test_table_read_sql_uses_valid_time_asof_for_xtdb_non_temporal_tables():
     table_config = TableConfig(
-        schema="kpler",
+        schema="sample",
         name="entity_info",
         is_temporal=False,
         primary_keys=["id"],
@@ -557,7 +557,7 @@ def test_table_read_sql_uses_valid_time_asof_for_xtdb_non_temporal_tables():
     system_time = datetime(2035, 1, 1, 0, 0, 1)
 
     assert _table_read_sql("xtdb", table_config, system_time=system_time) == (
-        "SELECT * FROM kpler.entity_info "
+        "SELECT * FROM sample.entity_info "
         "FOR VALID_TIME AS OF TIMESTAMP '2035-01-01T00:00:01' "
         "FOR SYSTEM_TIME AS OF TIMESTAMP '2035-01-01T00:00:01'"
     )

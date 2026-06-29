@@ -86,7 +86,7 @@ def test_xtdb_live_create_append_read_roundtrip():
         columns=[
             TableColumnConfig("records", "id", "BIGINT", nullable=False),
             TableColumnConfig("records", "destination", "VARCHAR(255)"),
-            TableColumnConfig("records", "record_mcm", "DOUBLE"),
+            TableColumnConfig("records", "amount_value", "DOUBLE"),
         ],
     )
 
@@ -99,8 +99,8 @@ def test_xtdb_live_create_append_read_roundtrip():
                 pl.DataFrame(
                     {
                         "id": [1, 2],
-                        "destination": ["Tokyo", "Osaka"],
-                        "record_mcm": [10.5, 20.25],
+                        "destination": ["Alpha", "Beta"],
+                        "amount_value": [10.5, 20.25],
                     }
                 ),
                 table_config.schema,
@@ -113,12 +113,56 @@ def test_xtdb_live_create_append_read_roundtrip():
                 table_config.name,
             )
 
-    assert result.sort("_id").select(["_id", "destination", "record_mcm"]).to_dict(
+    assert result.sort("_id").select(["_id", "destination", "amount_value"]).to_dict(
         as_series=False
     ) == {
         "_id": [1, 2],
-        "destination": ["Tokyo", "Osaka"],
-        "record_mcm": [10.5, 20.25],
+        "destination": ["Alpha", "Beta"],
+        "amount_value": [10.5, 20.25],
+    }
+
+
+def test_xtdb_live_insert_non_public_table_with_reserved_column_name():
+    table_config = TableConfig(
+        schema="source_a",
+        name=f"live_entity_info_{int(time.time())}",
+        primary_keys=["entity_id"],
+        columns=[
+            TableColumnConfig("entity_info", "entity_id", "INT", nullable=False),
+            TableColumnConfig("entity_info", "name", "VARCHAR(64)"),
+            TableColumnConfig("entity_info", "flag", "VARCHAR(64)"),
+        ],
+    )
+
+    with _xtdb_engine() as engine:
+        with engine.connect() as connection:
+            backend = XtdbBackend()
+            backend.table_configs(connection).create(table_config)
+
+            backend.dataframes(connection).table_insert(
+                pl.DataFrame(
+                    {
+                        "entity_id": [311038700],
+                        "name": ["ALPHA"],
+                        "flag": ["BS"],
+                    }
+                ),
+                table_config.schema,
+                table_config.name,
+                table_config=table_config,
+            )
+
+            result = backend.dataframes(connection).from_table(
+                table_config.schema,
+                table_config.name,
+            )
+
+    assert result.sort("_id").select(["_id", "name", "flag"]).to_dict(
+        as_series=False
+    ) == {
+        "_id": [311038700],
+        "name": ["ALPHA"],
+        "flag": ["BS"],
     }
 
 
@@ -144,7 +188,7 @@ def test_xtdb_live_composite_primary_key_roundtrip():
                     {
                         "entity_id": [10, 10],
                         "record_id": ["A", "B"],
-                        "destination": ["Tokyo", "Osaka"],
+                        "destination": ["Alpha", "Beta"],
                     }
                 ),
                 table_config.schema,
@@ -170,7 +214,7 @@ def test_xtdb_live_composite_primary_key_roundtrip():
         ],
         "entity_id": [10, 10],
         "record_id": ["A", "B"],
-        "destination": ["Tokyo", "Osaka"],
+        "destination": ["Alpha", "Beta"],
     }
     assert list(reflected_config.primary_keys) == ["entity_id", "record_id"]
 
@@ -183,7 +227,7 @@ def test_xtdb_live_temporal_upsert_honours_update_time_system_time():
         columns=[
             TableColumnConfig("records", "id", "BIGINT", nullable=False),
             TableColumnConfig("records", "destination", "VARCHAR(255)"),
-            TableColumnConfig("records", "record_mcm", "DOUBLE"),
+            TableColumnConfig("records", "amount_value", "DOUBLE"),
         ],
     )
 
@@ -196,8 +240,8 @@ def test_xtdb_live_temporal_upsert_honours_update_time_system_time():
                 pl.DataFrame(
                     {
                         "id": [1],
-                        "destination": ["Tokyo"],
-                        "record_mcm": [10.5],
+                        "destination": ["Alpha"],
+                        "amount_value": [10.5],
                     }
                 ),
                 table_config.schema,
@@ -210,8 +254,8 @@ def test_xtdb_live_temporal_upsert_honours_update_time_system_time():
                 pl.DataFrame(
                     {
                         "id": [1],
-                        "destination": ["Osaka"],
-                        "record_mcm": [20.25],
+                        "destination": ["Beta"],
+                        "amount_value": [20.25],
                     }
                 ),
                 table_config.schema,
@@ -226,7 +270,7 @@ def test_xtdb_live_temporal_upsert_honours_update_time_system_time():
             def read_at(asof: datetime) -> pl.DataFrame:
                 timestamp = asof.isoformat()
                 return backend.dataframes(connection).from_raw_sql(
-                    "SELECT _id, destination, record_mcm "
+                    "SELECT _id, destination, amount_value "
                     f"FROM {table_sql} "
                     f"FOR VALID_TIME AS OF TIMESTAMP '{timestamp}' "
                     f"FOR SYSTEM_TIME AS OF TIMESTAMP '{timestamp}'"
@@ -241,19 +285,19 @@ def test_xtdb_live_temporal_upsert_honours_update_time_system_time():
             )
 
     assert asof_before_first.is_empty()
-    assert asof_after_second.select(["_id", "destination", "record_mcm"]).to_dict(
+    assert asof_after_second.select(["_id", "destination", "amount_value"]).to_dict(
         as_series=False
     ) == {
         "_id": [1],
-        "destination": ["Osaka"],
-        "record_mcm": [20.25],
+        "destination": ["Beta"],
+        "amount_value": [20.25],
     }
-    assert asof_between_updates.select(["_id", "destination", "record_mcm"]).to_dict(
+    assert asof_between_updates.select(["_id", "destination", "amount_value"]).to_dict(
         as_series=False
     ) == {
         "_id": [1],
-        "destination": ["Tokyo"],
-        "record_mcm": [10.5],
+        "destination": ["Alpha"],
+        "amount_value": [10.5],
     }
 
 
@@ -265,7 +309,7 @@ def test_xtdb_live_delta_upsert_drops_unchanged_rows():
         columns=[
             TableColumnConfig("records", "id", "BIGINT", nullable=False),
             TableColumnConfig("records", "destination", "VARCHAR(255)"),
-            TableColumnConfig("records", "record_mcm", "DOUBLE"),
+            TableColumnConfig("records", "amount_value", "DOUBLE"),
         ],
     )
     delta_config = DeltaConfig(
@@ -282,8 +326,8 @@ def test_xtdb_live_delta_upsert_drops_unchanged_rows():
                 pl.DataFrame(
                     {
                         "id": [1],
-                        "destination": ["Tokyo"],
-                        "record_mcm": [10.5],
+                        "destination": ["Alpha"],
+                        "amount_value": [10.5],
                     }
                 ),
                 table_config.schema,
@@ -297,8 +341,8 @@ def test_xtdb_live_delta_upsert_drops_unchanged_rows():
                 pl.DataFrame(
                     {
                         "id": [1],
-                        "destination": ["Tokyo"],
-                        "record_mcm": [10.5],
+                        "destination": ["Alpha"],
+                        "amount_value": [10.5],
                     }
                 ),
                 table_config.schema,
@@ -312,8 +356,8 @@ def test_xtdb_live_delta_upsert_drops_unchanged_rows():
                 pl.DataFrame(
                     {
                         "id": [1],
-                        "destination": ["Osaka"],
-                        "record_mcm": [20.25],
+                        "destination": ["Beta"],
+                        "amount_value": [20.25],
                     }
                 ),
                 table_config.schema,
@@ -325,7 +369,7 @@ def test_xtdb_live_delta_upsert_drops_unchanged_rows():
             )
 
             history = backend.dataframes(connection).from_raw_sql(
-                "SELECT _id, destination, record_mcm, _system_from "
+                "SELECT _id, destination, amount_value, _system_from "
                 f"FROM {table_config.schema}.{table_config.name} "
                 "FOR VALID_TIME ALL FOR SYSTEM_TIME ALL "
                 "ORDER BY _system_from"
@@ -335,7 +379,7 @@ def test_xtdb_live_delta_upsert_drops_unchanged_rows():
             def read_at(asof: datetime) -> pl.DataFrame:
                 timestamp = asof.isoformat()
                 return backend.dataframes(connection).from_raw_sql(
-                    "SELECT _id, destination, record_mcm "
+                    "SELECT _id, destination, amount_value "
                     f"FROM {table_sql} "
                     f"FOR VALID_TIME AS OF TIMESTAMP '{timestamp}' "
                     f"FOR SYSTEM_TIME AS OF TIMESTAMP '{timestamp}'"
@@ -350,19 +394,19 @@ def test_xtdb_live_delta_upsert_drops_unchanged_rows():
     assert changed_count == 1
     system_from_values = [str(value) for value in history["_system_from"].to_list()]
     assert not any(value.startswith("2030-01-02") for value in system_from_values)
-    assert asof_after_unchanged.select(["_id", "destination", "record_mcm"]).to_dict(
+    assert asof_after_unchanged.select(["_id", "destination", "amount_value"]).to_dict(
         as_series=False
     ) == {
         "_id": [1],
-        "destination": ["Tokyo"],
-        "record_mcm": [10.5],
+        "destination": ["Alpha"],
+        "amount_value": [10.5],
     }
-    assert asof_after_changed.select(["_id", "destination", "record_mcm"]).to_dict(
+    assert asof_after_changed.select(["_id", "destination", "amount_value"]).to_dict(
         as_series=False
     ) == {
         "_id": [1],
-        "destination": ["Osaka"],
-        "record_mcm": [20.25],
+        "destination": ["Beta"],
+        "amount_value": [20.25],
     }
 
 
@@ -374,7 +418,7 @@ def test_xtdb_live_delta_upsert_takes_last_duplicate_source_key():
         columns=[
             TableColumnConfig("records", "id", "BIGINT", nullable=False),
             TableColumnConfig("records", "destination", "VARCHAR(255)"),
-            TableColumnConfig("records", "record_mcm", "DOUBLE"),
+            TableColumnConfig("records", "amount_value", "DOUBLE"),
         ],
     )
     delta_config = DeltaConfig(
@@ -391,8 +435,8 @@ def test_xtdb_live_delta_upsert_takes_last_duplicate_source_key():
                 pl.DataFrame(
                     {
                         "id": [1, 1],
-                        "destination": ["Tokyo", "Osaka"],
-                        "record_mcm": [10.5, 20.25],
+                        "destination": ["Alpha", "Beta"],
+                        "amount_value": [10.5, 20.25],
                     }
                 ),
                 table_config.schema,
@@ -405,19 +449,19 @@ def test_xtdb_live_delta_upsert_takes_last_duplicate_source_key():
 
             timestamp = datetime(2030, 1, 2, tzinfo=timezone.utc).isoformat()
             result = backend.dataframes(connection).from_raw_sql(
-                "SELECT _id, destination, record_mcm "
+                "SELECT _id, destination, amount_value "
                 f"FROM {table_config.schema}.{table_config.name} "
                 f"FOR VALID_TIME AS OF TIMESTAMP '{timestamp}' "
                 f"FOR SYSTEM_TIME AS OF TIMESTAMP '{timestamp}'"
             )
 
     assert row_count == 1
-    assert result.select(["_id", "destination", "record_mcm"]).to_dict(
+    assert result.select(["_id", "destination", "amount_value"]).to_dict(
         as_series=False
     ) == {
         "_id": [1],
-        "destination": ["Osaka"],
-        "record_mcm": [20.25],
+        "destination": ["Beta"],
+        "amount_value": [20.25],
     }
 
 
@@ -429,7 +473,7 @@ def test_xtdb_live_delta_upsert_dropout_deletes_missing_rows():
         columns=[
             TableColumnConfig("records", "id", "BIGINT", nullable=False),
             TableColumnConfig("records", "destination", "VARCHAR(255)"),
-            TableColumnConfig("records", "record_mcm", "DOUBLE"),
+            TableColumnConfig("records", "amount_value", "DOUBLE"),
         ],
     )
     delta_config = DeltaConfig(row_finality="dropout")
@@ -443,8 +487,8 @@ def test_xtdb_live_delta_upsert_dropout_deletes_missing_rows():
                 pl.DataFrame(
                     {
                         "id": [1, 2],
-                        "destination": ["Tokyo", "Osaka"],
-                        "record_mcm": [10.5, 20.25],
+                        "destination": ["Alpha", "Beta"],
+                        "amount_value": [10.5, 20.25],
                     }
                 ),
                 table_config.schema,
@@ -458,8 +502,8 @@ def test_xtdb_live_delta_upsert_dropout_deletes_missing_rows():
                 pl.DataFrame(
                     {
                         "id": [1],
-                        "destination": ["Tokyo"],
-                        "record_mcm": [10.5],
+                        "destination": ["Alpha"],
+                        "amount_value": [10.5],
                     }
                 ),
                 table_config.schema,
@@ -475,7 +519,7 @@ def test_xtdb_live_delta_upsert_dropout_deletes_missing_rows():
             def read_at(asof: datetime) -> pl.DataFrame:
                 timestamp = asof.isoformat()
                 return backend.dataframes(connection).from_raw_sql(
-                    "SELECT _id, destination, record_mcm "
+                    "SELECT _id, destination, amount_value "
                     f"FROM {table_sql} "
                     f"FOR VALID_TIME AS OF TIMESTAMP '{timestamp}' "
                     f"FOR SYSTEM_TIME AS OF TIMESTAMP '{timestamp}' "
@@ -486,19 +530,19 @@ def test_xtdb_live_delta_upsert_dropout_deletes_missing_rows():
             after_dropout = read_at(datetime(2030, 1, 3, tzinfo=timezone.utc))
 
     assert changed_count == 2
-    assert before_dropout.select(["_id", "destination", "record_mcm"]).to_dict(
+    assert before_dropout.select(["_id", "destination", "amount_value"]).to_dict(
         as_series=False
     ) == {
         "_id": [1, 2],
-        "destination": ["Tokyo", "Osaka"],
-        "record_mcm": [10.5, 20.25],
+        "destination": ["Alpha", "Beta"],
+        "amount_value": [10.5, 20.25],
     }
-    assert after_dropout.select(["_id", "destination", "record_mcm"]).to_dict(
+    assert after_dropout.select(["_id", "destination", "amount_value"]).to_dict(
         as_series=False
     ) == {
         "_id": [1],
-        "destination": ["Tokyo"],
-        "record_mcm": [10.5],
+        "destination": ["Alpha"],
+        "amount_value": [10.5],
     }
 
 
@@ -523,7 +567,7 @@ def test_xtdb_live_delta_upsert_dropout_closes_missing_rows_at_valid_time():
                 pl.DataFrame(
                     {
                         "id": [1, 2],
-                        "destination": ["Tokyo", "Osaka"],
+                        "destination": ["Alpha", "Beta"],
                         "_valid_from": [datetime(1985, 1, 1)] * 2,
                     }
                 ),
@@ -537,7 +581,7 @@ def test_xtdb_live_delta_upsert_dropout_closes_missing_rows_at_valid_time():
                 pl.DataFrame(
                     {
                         "id": [1],
-                        "destination": ["Tokyo"],
+                        "destination": ["Alpha"],
                         "_valid_from": [datetime(1986, 1, 1)],
                     }
                 ),
@@ -567,7 +611,7 @@ def test_xtdb_live_delta_upsert_dropout_closes_missing_rows_at_valid_time():
         as_series=False
     ) == {
         "_id": [2],
-        "destination": ["Osaka"],
+        "destination": ["Beta"],
         "_valid_from": [datetime(1985, 1, 1)],
         "_valid_to": [datetime(1986, 1, 1)],
     }
@@ -581,7 +625,7 @@ def test_xtdb_live_temporal_upsert_honours_explicit_valid_time_window():
         columns=[
             TableColumnConfig("records", "id", "BIGINT", nullable=False),
             TableColumnConfig("records", "destination", "VARCHAR(255)"),
-            TableColumnConfig("records", "record_mcm", "DOUBLE"),
+            TableColumnConfig("records", "amount_value", "DOUBLE"),
         ],
     )
 
@@ -594,8 +638,8 @@ def test_xtdb_live_temporal_upsert_honours_explicit_valid_time_window():
                 pl.DataFrame(
                     {
                         "id": [1],
-                        "destination": ["Tokyo"],
-                        "record_mcm": [10.5],
+                        "destination": ["Alpha"],
+                        "amount_value": [10.5],
                         "_valid_from": [datetime(2030, 1, 10, tzinfo=timezone.utc)],
                         "_valid_to": [datetime(2030, 1, 20, tzinfo=timezone.utc)],
                     }
@@ -613,7 +657,7 @@ def test_xtdb_live_temporal_upsert_honours_explicit_valid_time_window():
                 valid_timestamp = valid_asof.isoformat()
                 system_timestamp = datetime(2030, 1, 2, tzinfo=timezone.utc).isoformat()
                 return backend.dataframes(connection).from_raw_sql(
-                    "SELECT _id, destination, record_mcm "
+                    "SELECT _id, destination, amount_value "
                     f"FROM {table_sql} "
                     f"FOR VALID_TIME AS OF TIMESTAMP '{valid_timestamp}' "
                     f"FOR SYSTEM_TIME AS OF TIMESTAMP '{system_timestamp}'"
@@ -625,12 +669,12 @@ def test_xtdb_live_temporal_upsert_honours_explicit_valid_time_window():
 
     assert row_count == 1
     assert before_window.is_empty()
-    assert inside_window.select(["_id", "destination", "record_mcm"]).to_dict(
+    assert inside_window.select(["_id", "destination", "amount_value"]).to_dict(
         as_series=False
     ) == {
         "_id": [1],
-        "destination": ["Tokyo"],
-        "record_mcm": [10.5],
+        "destination": ["Alpha"],
+        "amount_value": [10.5],
     }
     assert after_window.is_empty()
 
@@ -684,7 +728,7 @@ def test_xtdb_live_staging_roundtrip_projects_and_cleans_batch():
                 pl.DataFrame(
                     {
                         "record_id": [1, 1],
-                        "destination_name": ["Osaka", "Tokyo"],
+                        "destination_name": ["Beta", "Alpha"],
                         "msg_timestamp": [partition_time, partition_time],
                     }
                 ),
@@ -714,7 +758,7 @@ def test_xtdb_live_staging_roundtrip_projects_and_cleans_batch():
     assert inserted_count == 1
     assert projected.to_dict(as_series=False) == {
         "record_id": [1],
-        "destination": ["Tokyo"],
+        "destination": ["Alpha"],
         "msg_timestamp": [projected_partition_time],
     }
     assert remaining.is_empty()

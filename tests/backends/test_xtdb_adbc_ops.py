@@ -12,7 +12,7 @@ class _FakeCursor:
     def __init__(self):
         self.ingests = []
         self.executed = []
-        self.arrow_result = pa.table({"_id": [1], "destination": ["Tokyo"]})
+        self.arrow_result = pa.table({"_id": [1], "destination": ["Alpha"]})
 
     def __enter__(self):
         return self
@@ -55,7 +55,7 @@ def test_xtdb_adbc_dataframe_ops_ingests_arrow_with_id_mapping():
     ops = XtdbAdbcDataframeOps(connection)
 
     result = ops.table_insert(
-        pl.DataFrame({"id": [1, 2], "destination": ["Tokyo", "Osaka"]}),
+        pl.DataFrame({"id": [1, 2], "destination": ["Alpha", "Beta"]}),
         "public",
         "records",
         table_config=_record_config(),
@@ -69,7 +69,7 @@ def test_xtdb_adbc_dataframe_ops_ingests_arrow_with_id_mapping():
     assert arrow_table.schema.field("destination").type == pa.string()
     assert arrow_table.to_pydict() == {
         "_id": [1, 2],
-        "destination": ["Tokyo", "Osaka"],
+        "destination": ["Alpha", "Beta"],
     }
 
 
@@ -83,7 +83,7 @@ def test_xtdb_adbc_dataframe_ops_ingests_null_columns_with_configured_arrow_type
         columns=[
             TableColumnConfig("records", "id", "BIGINT", nullable=False),
             TableColumnConfig("records", "destination_date", "DATETIME"),
-            TableColumnConfig("records", "record_mcm", "DOUBLE"),
+            TableColumnConfig("records", "amount_value", "DOUBLE"),
         ],
     )
 
@@ -92,7 +92,7 @@ def test_xtdb_adbc_dataframe_ops_ingests_null_columns_with_configured_arrow_type
             {
                 "id": [1],
                 "destination_date": [None],
-                "record_mcm": [None],
+                "amount_value": [None],
             }
         ),
         "public",
@@ -103,11 +103,11 @@ def test_xtdb_adbc_dataframe_ops_ingests_null_columns_with_configured_arrow_type
     assert result == 1
     _, arrow_table, _, _ = connection.cursor_instance.ingests[0]
     assert arrow_table.schema.field("destination_date").type == pa.timestamp("us")
-    assert arrow_table.schema.field("record_mcm").type == pa.float64()
+    assert arrow_table.schema.field("amount_value").type == pa.float64()
     assert arrow_table.to_pydict() == {
         "_id": [1],
         "destination_date": [None],
-        "record_mcm": [None],
+        "amount_value": [None],
     }
 
 
@@ -117,7 +117,7 @@ def test_xtdb_adbc_dataframe_ops_reads_arrow_into_polars():
 
     result = ops.from_table("public", "records")
 
-    assert result.to_dict(as_series=False) == {"_id": [1], "destination": ["Tokyo"]}
+    assert result.to_dict(as_series=False) == {"_id": [1], "destination": ["Alpha"]}
     assert connection.cursor_instance.executed == ["SELECT * FROM public.records"]
 
 

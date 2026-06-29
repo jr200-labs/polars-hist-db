@@ -86,7 +86,7 @@ def test_xtdb_adbc_live_arrow_ingest_read_roundtrip():
         columns=[
             TableColumnConfig("records", "id", "BIGINT", nullable=False),
             TableColumnConfig("records", "destination", "VARCHAR(255)"),
-            TableColumnConfig("records", "record_mcm", "DOUBLE"),
+            TableColumnConfig("records", "amount_value", "DOUBLE"),
         ],
     )
 
@@ -97,8 +97,8 @@ def test_xtdb_adbc_live_arrow_ingest_read_roundtrip():
             pl.DataFrame(
                 {
                     "id": [1, 2],
-                    "destination": ["Tokyo", "Osaka"],
-                    "record_mcm": [10.5, 20.25],
+                    "destination": ["Alpha", "Beta"],
+                    "amount_value": [10.5, 20.25],
                 }
             ),
             table_config.schema,
@@ -108,12 +108,12 @@ def test_xtdb_adbc_live_arrow_ingest_read_roundtrip():
 
         result = ops.from_table(table_config.schema, table_config.name)
 
-    assert result.sort("_id").select(["_id", "destination", "record_mcm"]).to_dict(
+    assert result.sort("_id").select(["_id", "destination", "amount_value"]).to_dict(
         as_series=False
     ) == {
         "_id": [1, 2],
-        "destination": ["Tokyo", "Osaka"],
-        "record_mcm": [10.5, 20.25],
+        "destination": ["Alpha", "Beta"],
+        "amount_value": [10.5, 20.25],
     }
 
 
@@ -125,7 +125,7 @@ def test_xtdb_adbc_live_temporal_upsert_supports_system_time_asof():
         columns=[
             TableColumnConfig("records", "id", "BIGINT", nullable=False),
             TableColumnConfig("records", "destination", "VARCHAR(255)"),
-            TableColumnConfig("records", "record_mcm", "DOUBLE"),
+            TableColumnConfig("records", "amount_value", "DOUBLE"),
         ],
     )
 
@@ -136,8 +136,8 @@ def test_xtdb_adbc_live_temporal_upsert_supports_system_time_asof():
             pl.DataFrame(
                 {
                     "id": [1],
-                    "destination": ["Tokyo"],
-                    "record_mcm": [10.5],
+                    "destination": ["Alpha"],
+                    "amount_value": [10.5],
                 }
             ),
             table_config.schema,
@@ -154,8 +154,8 @@ def test_xtdb_adbc_live_temporal_upsert_supports_system_time_asof():
             pl.DataFrame(
                 {
                     "id": [1],
-                    "destination": ["Osaka"],
-                    "record_mcm": [20.25],
+                    "destination": ["Beta"],
+                    "amount_value": [20.25],
                 }
             ),
             table_config.schema,
@@ -171,17 +171,17 @@ def test_xtdb_adbc_live_temporal_upsert_supports_system_time_asof():
             time_hint=TimeHint(mode="asof", asof_utc=checkpoint),
         )
 
-    assert latest.select(["_id", "destination", "record_mcm"]).to_dict(
+    assert latest.select(["_id", "destination", "amount_value"]).to_dict(
         as_series=False
     ) == {
         "_id": [1],
-        "destination": ["Osaka"],
-        "record_mcm": [20.25],
+        "destination": ["Beta"],
+        "amount_value": [20.25],
     }
-    assert asof_checkpoint.select(["_id", "destination", "record_mcm"]).to_dict(
+    assert asof_checkpoint.select(["_id", "destination", "amount_value"]).to_dict(
         as_series=False
     ) == {
         "_id": [1],
-        "destination": ["Tokyo"],
-        "record_mcm": [10.5],
+        "destination": ["Alpha"],
+        "amount_value": [10.5],
     }

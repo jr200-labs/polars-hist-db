@@ -64,17 +64,19 @@ def test_dataset_valid_time_lookup_allows_schema_omission():
 
 def test_parity_config_parses_ignore_columns_and_semantic_foreign_keys():
     parity = ParityConfig(
-        ignore_columns=["kpler.location_info.id"],
+        ignore_columns=["sample.location_info.id"],
         semantic_foreign_keys=[
             {
-                "source": "kpler.trades.origin_location_id",
-                "target": "kpler.location_info.id",
+                "source": "sample.trades.origin_location_id",
+                "target": "sample.location_info.id",
                 "columns": ["name", "country"],
             }
         ],
     )
 
-    assert parity.ignore_columns == ("kpler.location_info.id",)
-    assert parity.semantic_foreign_keys[0].source == ("kpler.trades.origin_location_id")
-    assert parity.semantic_foreign_keys[0].target == "kpler.location_info.id"
+    assert parity.ignore_columns == ("sample.location_info.id",)
+    assert parity.semantic_foreign_keys[0].source == (
+        "sample.trades.origin_location_id"
+    )
+    assert parity.semantic_foreign_keys[0].target == "sample.location_info.id"
     assert parity.semantic_foreign_keys[0].columns == ("name", "country")

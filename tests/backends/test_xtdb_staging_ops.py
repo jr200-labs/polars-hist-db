@@ -49,7 +49,7 @@ def test_xtdb_staging_insert_partition_uses_retained_stage_table(monkeypatch):
         pl.DataFrame(
             {
                 "record_id": [1, 1],
-                "destination_name": ["Osaka", "Tokyo"],
+                "destination_name": ["Beta", "Alpha"],
             }
         ),
         delta_table_config,
@@ -70,7 +70,7 @@ def test_xtdb_staging_insert_partition_uses_retained_stage_table(monkeypatch):
     assert inserted["df"].to_dict(as_series=False) == {
         "stage_row_index": [0],
         "record_id": [1],
-        "destination_name": ["Tokyo"],
+        "destination_name": ["Alpha"],
         "stage_run_id": ["stage-1"],
         "stage_partition_time": [partition_time],
     }
@@ -135,7 +135,7 @@ def test_xtdb_staging_projects_from_insert_cache_after_partition_insert(monkeypa
     staging = XtdbStagingOps(object())
 
     staging.insert_partition(
-        pl.DataFrame({"record_id": [1], "destination_name": ["Tokyo"]}),
+        pl.DataFrame({"record_id": [1], "destination_name": ["Alpha"]}),
         delta_table_config,
         "stage-1",
         datetime(2030, 1, 1, tzinfo=timezone.utc),
@@ -152,7 +152,7 @@ def test_xtdb_staging_projects_from_insert_cache_after_partition_insert(monkeypa
 
     assert result.to_dict(as_series=False) == {
         "record_id": [1],
-        "destination": ["Tokyo"],
+        "destination": ["Alpha"],
     }
     from_raw_sql.assert_not_called()
 
@@ -163,7 +163,7 @@ def test_xtdb_staging_projects_pipeline_item_with_valid_time_mapping(monkeypatch
             "stage_run_id": ["stage-1"],
             "stage_row_index": [0],
             "record_id": [1],
-            "destination_name": ["Tokyo"],
+            "destination_name": ["Alpha"],
             "msg_timestamp": [datetime(2030, 1, 1, tzinfo=timezone.utc)],
             "ignored": ["not written"],
         }
@@ -209,7 +209,7 @@ def test_xtdb_staging_projects_pipeline_item_with_valid_time_mapping(monkeypatch
 
     assert result.to_dict(as_series=False) == {
         "record_id": [1],
-        "destination": ["Tokyo"],
+        "destination": ["Alpha"],
         "msg_timestamp": [datetime(2030, 1, 1, tzinfo=timezone.utc)],
     }
     from_raw_sql.assert_called_once_with(
@@ -342,7 +342,7 @@ def test_xtdb_staging_deduces_explicit_numeric_foreign_keys(monkeypatch):
             "stage_run_id": ["stage-1"],
             "stage_row_index": [0],
             "origin_location_id": [1001],
-            "origin_name": ["Bonny"],
+            "origin_name": ["Alpha"],
             "origin_country": ["Nigeria"],
         }
     )
@@ -376,11 +376,11 @@ def test_xtdb_staging_deduces_explicit_numeric_foreign_keys(monkeypatch):
     )
     dataset = DatasetConfig(
         name="record_stream",
-        delta_table_schema="kpler",
+        delta_table_schema="sample",
         input_config={"type": "dsv", "search_paths": []},
         pipeline=[
             {
-                "schema": "kpler",
+                "schema": "sample",
                 "table": "location_info",
                 "type": "extract",
                 "columns": [
@@ -394,7 +394,7 @@ def test_xtdb_staging_deduces_explicit_numeric_foreign_keys(monkeypatch):
                 ],
             },
             {
-                "schema": "kpler",
+                "schema": "sample",
                 "table": "trades",
                 "type": "primary",
                 "columns": [
@@ -404,7 +404,7 @@ def test_xtdb_staging_deduces_explicit_numeric_foreign_keys(monkeypatch):
         ],
     )
     table_config = TableConfig(
-        schema="kpler",
+        schema="sample",
         name="location_info",
         primary_keys=["id"],
         columns=[
@@ -422,17 +422,17 @@ def test_xtdb_staging_deduces_explicit_numeric_foreign_keys(monkeypatch):
         valid_time=None,
     )
 
-    assert inserted["table_schema"] == "kpler"
+    assert inserted["table_schema"] == "sample"
     assert inserted["table_name"] == "location_info"
     assert inserted["table_config"] == table_config
     assert inserted["df"].to_dict(as_series=False) == {
         "id": [1001],
-        "name": ["Bonny"],
+        "name": ["Alpha"],
         "country": ["Nigeria"],
     }
     assert result.to_dict(as_series=False) == {
         "id": [1001],
-        "name": ["Bonny"],
+        "name": ["Alpha"],
         "country": ["Nigeria"],
     }
 
@@ -483,11 +483,11 @@ def test_xtdb_staging_generates_numeric_foreign_key_when_source_key_is_missing(
     )
     dataset = DatasetConfig(
         name="record_stream",
-        delta_table_schema="kpler",
+        delta_table_schema="sample",
         input_config={"type": "dsv", "search_paths": []},
         pipeline=[
             {
-                "schema": "kpler",
+                "schema": "sample",
                 "table": "location_info",
                 "type": "extract",
                 "columns": [
@@ -501,7 +501,7 @@ def test_xtdb_staging_generates_numeric_foreign_key_when_source_key_is_missing(
                 ],
             },
             {
-                "schema": "kpler",
+                "schema": "sample",
                 "table": "trades",
                 "type": "primary",
                 "columns": [
@@ -514,7 +514,7 @@ def test_xtdb_staging_generates_numeric_foreign_key_when_source_key_is_missing(
         ],
     )
     table_config = TableConfig(
-        schema="kpler",
+        schema="sample",
         name="location_info",
         primary_keys=["id"],
         columns=[
@@ -589,11 +589,11 @@ def test_xtdb_staging_reuses_deduced_foreign_key_for_later_primary_item(
     )
     dataset = DatasetConfig(
         name="record_stream",
-        delta_table_schema="kpler",
+        delta_table_schema="sample",
         input_config={"type": "dsv", "search_paths": []},
         pipeline=[
             {
-                "schema": "kpler",
+                "schema": "sample",
                 "table": "location_info",
                 "type": "extract",
                 "columns": [
@@ -607,7 +607,7 @@ def test_xtdb_staging_reuses_deduced_foreign_key_for_later_primary_item(
                 ],
             },
             {
-                "schema": "kpler",
+                "schema": "sample",
                 "table": "trades",
                 "type": "primary",
                 "columns": [
@@ -621,7 +621,7 @@ def test_xtdb_staging_reuses_deduced_foreign_key_for_later_primary_item(
         ],
     )
     location_config = TableConfig(
-        schema="kpler",
+        schema="sample",
         name="location_info",
         primary_keys=["id"],
         columns=[
@@ -631,7 +631,7 @@ def test_xtdb_staging_reuses_deduced_foreign_key_for_later_primary_item(
         ],
     )
     trades_config = TableConfig(
-        schema="kpler",
+        schema="sample",
         name="trades",
         primary_keys=["id"],
         columns=[
@@ -715,11 +715,11 @@ def test_xtdb_staging_does_not_insert_same_generated_parent_twice(
     )
     dataset = DatasetConfig(
         name="record_stream",
-        delta_table_schema="kpler",
+        delta_table_schema="sample",
         input_config={"type": "dsv", "search_paths": []},
         pipeline=[
             {
-                "schema": "kpler",
+                "schema": "sample",
                 "table": "location_info",
                 "type": "extract",
                 "columns": [
@@ -733,7 +733,7 @@ def test_xtdb_staging_does_not_insert_same_generated_parent_twice(
                 ],
             },
             {
-                "schema": "kpler",
+                "schema": "sample",
                 "table": "location_info",
                 "columns": [
                     {
@@ -746,7 +746,7 @@ def test_xtdb_staging_does_not_insert_same_generated_parent_twice(
                 ],
             },
             {
-                "schema": "kpler",
+                "schema": "sample",
                 "table": "trades",
                 "type": "primary",
                 "columns": [
@@ -756,7 +756,7 @@ def test_xtdb_staging_does_not_insert_same_generated_parent_twice(
         ],
     )
     location_config = TableConfig(
-        schema="kpler",
+        schema="sample",
         name="location_info",
         primary_keys=["id"],
         columns=[

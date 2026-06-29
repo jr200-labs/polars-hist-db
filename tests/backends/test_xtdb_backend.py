@@ -24,7 +24,7 @@ def test_xtdb_temporal_upsert_delegates_to_dataframe_insert():
     backend = XtdbBackend()
     ops = Mock()
     ops.table_insert.return_value = 2
-    df = pl.DataFrame({"id": [1, 2], "destination": ["Tokyo", "Osaka"]})
+    df = pl.DataFrame({"id": [1, 2], "destination": ["Alpha", "Beta"]})
     table_config = TableConfig(
         schema="test",
         name="records",
@@ -101,7 +101,7 @@ def test_xtdb_temporal_upsert_dropout_deletes_missing_current_keys():
         return_value=pl.DataFrame(
             {
                 "_id": [1, 2],
-                "destination": ["Tokyo", "Osaka"],
+                "destination": ["Alpha", "Beta"],
             }
         )
     )
@@ -116,7 +116,7 @@ def test_xtdb_temporal_upsert_dropout_deletes_missing_current_keys():
     )
 
     result = backend.temporal_upsert(
-        pl.DataFrame({"id": [1], "destination": ["Tokyo"]}),
+        pl.DataFrame({"id": [1], "destination": ["Alpha"]}),
         "test",
         "records",
         dataframe_ops=ops,
@@ -128,7 +128,7 @@ def test_xtdb_temporal_upsert_dropout_deletes_missing_current_keys():
     executed_sql = [call.args[0] for call in driver_connection.execute.call_args_list]
     assert executed_sql[1] == "DELETE FROM test.records WHERE _id IN (2::BIGINT)"
     assert executed_sql[3] == (
-        "INSERT INTO test.records (_id, destination) VALUES (1::BIGINT, 'Tokyo'::TEXT)"
+        "INSERT INTO test.records (_id, destination) VALUES (1::BIGINT, 'Alpha'::TEXT)"
     )
 
 
@@ -154,7 +154,7 @@ def test_xtdb_temporal_upsert_dropout_closes_missing_keys_at_valid_time():
         pl.DataFrame(
             {
                 "id": [1],
-                "destination": ["Tokyo"],
+                "destination": ["Alpha"],
                 "_valid_from": [datetime(2030, 1, 2, tzinfo=timezone.utc)],
             }
         ),
@@ -225,7 +225,7 @@ def test_xtdb_temporal_upsert_rejects_duplicate_source_keys_by_default():
 
     with pytest.raises(ValueError, match="duplicate source keys"):
         backend.temporal_upsert(
-            pl.DataFrame({"id": [1, 1], "destination": ["Tokyo", "Osaka"]}),
+            pl.DataFrame({"id": [1, 1], "destination": ["Alpha", "Beta"]}),
             "test",
             "records",
             dataframe_ops=Mock(),
@@ -249,7 +249,7 @@ def test_xtdb_temporal_upsert_takes_first_duplicate_source_key():
     )
 
     result = backend.temporal_upsert(
-        pl.DataFrame({"id": [1, 1], "destination": ["Tokyo", "Osaka"]}),
+        pl.DataFrame({"id": [1, 1], "destination": ["Alpha", "Beta"]}),
         "test",
         "records",
         dataframe_ops=ops,
@@ -261,7 +261,7 @@ def test_xtdb_temporal_upsert_takes_first_duplicate_source_key():
     written_df = ops.table_insert.call_args.args[0]
     assert written_df.to_dict(as_series=False) == {
         "id": [1],
-        "destination": ["Tokyo"],
+        "destination": ["Alpha"],
     }
 
 
@@ -280,7 +280,7 @@ def test_xtdb_temporal_upsert_takes_last_duplicate_source_key():
     )
 
     result = backend.temporal_upsert(
-        pl.DataFrame({"id": [1, 1], "destination": ["Tokyo", "Osaka"]}),
+        pl.DataFrame({"id": [1, 1], "destination": ["Alpha", "Beta"]}),
         "test",
         "records",
         dataframe_ops=ops,
@@ -292,7 +292,7 @@ def test_xtdb_temporal_upsert_takes_last_duplicate_source_key():
     written_df = ops.table_insert.call_args.args[0]
     assert written_df.to_dict(as_series=False) == {
         "id": [1],
-        "destination": ["Osaka"],
+        "destination": ["Beta"],
     }
 
 
@@ -302,7 +302,7 @@ def test_xtdb_temporal_upsert_treats_explicit_valid_time_change_as_changed():
     ops.from_raw_sql.return_value = pl.DataFrame(
         {
             "_id": [1],
-            "destination": ["Tokyo"],
+            "destination": ["Alpha"],
             "_valid_from": [datetime(2030, 1, 1, tzinfo=timezone.utc)],
             "_valid_to": [datetime(2030, 2, 1, tzinfo=timezone.utc)],
         }
@@ -322,7 +322,7 @@ def test_xtdb_temporal_upsert_treats_explicit_valid_time_change_as_changed():
         pl.DataFrame(
             {
                 "id": [1],
-                "destination": ["Tokyo"],
+                "destination": ["Alpha"],
                 "_valid_from": [datetime(2030, 1, 1, tzinfo=timezone.utc)],
                 "_valid_to": [datetime(2030, 3, 1, tzinfo=timezone.utc)],
             }
@@ -339,7 +339,7 @@ def test_xtdb_temporal_upsert_treats_explicit_valid_time_change_as_changed():
     written_df = ops.table_insert.call_args.args[0]
     assert written_df.to_dict(as_series=False) == {
         "id": [1],
-        "destination": ["Tokyo"],
+        "destination": ["Alpha"],
         "_valid_from": [datetime(2030, 1, 1, tzinfo=timezone.utc)],
         "_valid_to": [datetime(2030, 3, 1, tzinfo=timezone.utc)],
     }
@@ -351,7 +351,7 @@ def test_xtdb_temporal_upsert_ignores_valid_from_when_filtering_unchanged_rows()
     ops.from_raw_sql.return_value = pl.DataFrame(
         {
             "_id": [1],
-            "destination": ["Tokyo"],
+            "destination": ["Alpha"],
             "_valid_from": [datetime(2030, 1, 1, tzinfo=timezone.utc)],
         }
     )
@@ -370,7 +370,7 @@ def test_xtdb_temporal_upsert_ignores_valid_from_when_filtering_unchanged_rows()
         pl.DataFrame(
             {
                 "id": [1],
-                "destination": ["Tokyo"],
+                "destination": ["Alpha"],
                 "_valid_from": [datetime(2030, 2, 1, tzinfo=timezone.utc)],
             }
         ),
@@ -392,7 +392,7 @@ def test_xtdb_temporal_upsert_normalizes_types_when_filtering_unchanged_rows():
     ops.from_raw_sql.return_value = pl.DataFrame(
         {
             "_id": [1],
-            "destination": ["Tokyo"],
+            "destination": ["Alpha"],
             "float_col": [12.34],
         }
     )
@@ -412,7 +412,7 @@ def test_xtdb_temporal_upsert_normalizes_types_when_filtering_unchanged_rows():
         pl.DataFrame(
             {
                 "id": [1],
-                "destination": ["Tokyo"],
+                "destination": ["Alpha"],
                 "float_col": [12.34],
             },
             schema_overrides={"float_col": pl.Float32},
@@ -492,9 +492,9 @@ def test_xtdb_temporal_upsert_treats_null_to_value_as_changed():
     ops.from_raw_sql.return_value = pl.DataFrame(
         {
             "_id": [1],
-            "record_mcm": [None],
+            "amount_value": [None],
         },
-        schema_overrides={"record_mcm": pl.Float64},
+        schema_overrides={"amount_value": pl.Float64},
     )
     ops.table_insert.return_value = 1
     table_config = TableConfig(
@@ -503,12 +503,12 @@ def test_xtdb_temporal_upsert_treats_null_to_value_as_changed():
         primary_keys=["id"],
         columns=[
             TableColumnConfig("records", "id", "BIGINT", nullable=False),
-            TableColumnConfig("records", "record_mcm", "DOUBLE"),
+            TableColumnConfig("records", "amount_value", "DOUBLE"),
         ],
     )
 
     result = backend.temporal_upsert(
-        pl.DataFrame({"id": [1], "record_mcm": [330.33]}),
+        pl.DataFrame({"id": [1], "amount_value": [330.33]}),
         "test",
         "records",
         dataframe_ops=ops,
@@ -520,7 +520,7 @@ def test_xtdb_temporal_upsert_treats_null_to_value_as_changed():
     written_df = ops.table_insert.call_args.args[0]
     assert written_df.to_dict(as_series=False) == {
         "id": [1],
-        "record_mcm": [330.33],
+        "amount_value": [330.33],
     }
 
 
@@ -535,7 +535,7 @@ def test_xtdb_temporal_upsert_maps_configured_valid_time_columns():
         pl.DataFrame(
             {
                 "id": [1],
-                "destination": ["Tokyo"],
+                "destination": ["Alpha"],
                 "msg_timestamp": [asof_time],
                 "valid_until": [expiry_time],
             }
@@ -554,7 +554,7 @@ def test_xtdb_temporal_upsert_maps_configured_valid_time_columns():
     written_df = ops.table_insert.call_args.args[0]
     assert written_df.to_dict(as_series=False) == {
         "id": [1],
-        "destination": ["Tokyo"],
+        "destination": ["Alpha"],
         "msg_timestamp": [asof_time],
         "valid_until": [expiry_time],
         "_valid_from": [asof_time],
@@ -567,7 +567,7 @@ def test_xtdb_temporal_upsert_rejects_missing_valid_time_source_column():
 
     with pytest.raises(ValueError, match="missing source column"):
         backend.temporal_upsert(
-            pl.DataFrame({"id": [1], "destination": ["Tokyo"]}),
+            pl.DataFrame({"id": [1], "destination": ["Alpha"]}),
             "test",
             "records",
             dataframe_ops=Mock(),
@@ -817,7 +817,7 @@ def test_xtdb_table_creation_records_configured_columns_without_ddl(monkeypatch)
         columns=[
             TableColumnConfig("records", "id", "BIGINT", nullable=False),
             TableColumnConfig("records", "destination", "VARCHAR(255)"),
-            TableColumnConfig("records", "record_mcm", "DECIMAL(20,6)"),
+            TableColumnConfig("records", "amount_value", "DECIMAL(20,6)"),
         ],
     )
     result = ops.create(table_config)
@@ -836,7 +836,7 @@ def test_xtdb_table_creation_records_configured_columns_without_ddl(monkeypatch)
         '"unique_constraint":[]},{"table":"records","name":"destination",'
         '"data_type":"VARCHAR(255)","default_value":null,"autoincrement":false,'
         '"nullable":true,"unique_constraint":[]},{"table":"records",'
-        '"name":"record_mcm","data_type":"DECIMAL(20,6)","default_value":null,'
+        '"name":"amount_value","data_type":"DECIMAL(20,6)","default_value":null,'
         '"autoincrement":false,"nullable":true,"unique_constraint":[]}]'
         "'::TEXT, '[]'::TEXT)",
     ]
@@ -944,7 +944,7 @@ def test_xtdb_table_reflection_builds_table_config_from_information_schema(
                 "column_name": [
                     "_id",
                     "destination",
-                    "record_mcm",
+                    "amount_value",
                     "_system_from",
                     "_system_to",
                 ],
@@ -974,7 +974,7 @@ def test_xtdb_table_reflection_builds_table_config_from_information_schema(
     ] == [
         ("_id", "BIGINT", False),
         ("destination", "VARCHAR(255)", True),
-        ("record_mcm", "DECIMAL(10,4)", True),
+        ("amount_value", "DECIMAL(10,4)", True),
     ]
     assert read_database.call_args_list[0].args == (
         """
@@ -1135,14 +1135,14 @@ def test_xtdb_declared_columns_quotes_non_identifier_column_names():
     from polars_hist_db.backends.xtdb import _xtdb_declared_columns
 
     table_config = TableConfig(
-        schema="kpler",
+        schema="sample",
         name="__record_stage",
         primary_keys=["stage_run_id", "stage_row_index"],
         columns=[
             TableColumnConfig("__record_stage", "stage_run_id", "VARCHAR(128)"),
             TableColumnConfig("__record_stage", "stage_row_index", "BIGINT"),
             TableColumnConfig("__record_stage", "Entity", "VARCHAR(64)"),
-            TableColumnConfig("__record_stage", "IMO (entity)", "VARCHAR(16)"),
+            TableColumnConfig("__record_stage", "External Ref (entity)", "VARCHAR(16)"),
             TableColumnConfig("__record_stage", "timestamp", "DATETIME"),
         ],
     )
@@ -1152,6 +1152,6 @@ def test_xtdb_declared_columns_quotes_non_identifier_column_names():
         "stage_run_id",
         "stage_row_index",
         '"Entity"',
-        '"IMO (entity)"',
+        '"External Ref (entity)"',
         '"timestamp"',
     ]
