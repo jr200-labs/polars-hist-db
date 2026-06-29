@@ -431,6 +431,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li><code>port</code> defaults to <code>5432</code> for the pgwire/SQLAlchemy path.</li>
 <li><code>adbc_port</code> defaults to <code>9832</code> for the ADBC/FlightSQL path.</li>
 </ul>
+<p>XTDB writes are chunked by <code>max_rows_per_insert</code>, which defaults to <code>10000</code>. This bounds the size of each final insert/ingest transaction after staging, deduplication, transforms, foreign-key handling, and unchanged-row filtering have already run. Lower this value for smaller XTDB nodes or raise it only after load testing retained/replay workloads.</p>
 </section>
 <section id="table_configs" class="level2">
 <h2 class="anchored" data-anchor-id="table_configs">table_configs</h2>
