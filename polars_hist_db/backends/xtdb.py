@@ -433,11 +433,16 @@ def _apply_xtdb_configured_column_dtypes(
         return df
 
     configured_dtypes = _xtdb_configured_column_dtypes(table_config)
-    casts = [
-        pl.col(column).cast(dtype, strict=False)
-        for column, dtype in configured_dtypes.items()
-        if column in df.columns
-    ]
+    casts = []
+    for column, dtype in configured_dtypes.items():
+        if column not in df.columns:
+            continue
+
+        source_expr = pl.col(column)
+        if df.schema[column] == pl.Categorical and dtype not in {pl.String, pl.Utf8}:
+            source_expr = source_expr.cast(pl.String)
+        casts.append(source_expr.cast(dtype, strict=False))
+
     if not casts:
         return df
     return df.with_columns(casts)
