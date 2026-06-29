@@ -4,7 +4,11 @@ from types import SimpleNamespace
 
 import polars as pl
 
-from polars_hist_db.backends.xtdb import XtdbDataframeOps, _execute_xtdb_dml
+from polars_hist_db.backends.xtdb import (
+    XtdbDataframeOps,
+    XtdbTableConfigOps,
+    _execute_xtdb_dml,
+)
 from polars_hist_db.config import TableColumnConfig, TableConfig
 from polars_hist_db.core import TimeHint
 
@@ -104,6 +108,42 @@ def test_xtdb_dataframe_ops_applies_table_time_hint():
     ops.from_raw_sql.assert_called_once_with(
         "SELECT * FROM test.records FOR SYSTEM_TIME AS OF '2026-01-02T03:04:05+00:00'",
         {"id": pl.Int64},
+    )
+
+
+def test_xtdb_dataframe_ops_reads_table_with_configured_schema_overrides(monkeypatch):
+    read_database = Mock(return_value=pl.DataFrame())
+    monkeypatch.setattr(pl, "read_database", read_database)
+    table_config = TableConfig(
+        schema="test",
+        name="records",
+        primary_keys=["id"],
+        columns=[
+            TableColumnConfig("records", "id", "BIGINT", nullable=False),
+            TableColumnConfig("records", "destination_date", "DATETIME"),
+            TableColumnConfig("records", "record_mcm", "DOUBLE"),
+        ],
+    )
+    monkeypatch.setattr(
+        XtdbTableConfigOps,
+        "from_table",
+        lambda self, table_schema, table_name: table_config,
+    )
+    connection = object()
+    ops = XtdbDataframeOps(connection)
+
+    ops.from_table("test", "records")
+
+    read_database.assert_called_once_with(
+        "SELECT * FROM test.records",
+        connection,
+        schema_overrides={
+            "_id": pl.Int64,
+            "destination_date": pl.Datetime(),
+            "record_mcm": pl.Float64,
+            "_valid_from": pl.Datetime("us", "UTC"),
+            "_valid_to": pl.Datetime("us", "UTC"),
+        },
     )
 
 
@@ -325,6 +365,41 @@ def test_xtdb_dataframe_ops_uses_native_casts_for_mysql_compatibility_types():
     assert "4::INTEGER" in insert_sql
     assert "'2030-01-01T12:00:00'::TIMESTAMP" in insert_sql
     assert "'12:30:00'::TIME" in insert_sql
+
+
+def test_xtdb_dataframe_ops_casts_null_values_to_configured_types():
+    driver_connection = Mock()
+    connection = Mock()
+    connection.connection.driver_connection = driver_connection
+    connection.in_transaction.return_value = False
+    ops = XtdbDataframeOps(connection)
+    table_config = TableConfig(
+        schema="test",
+        name="records",
+        primary_keys=["id"],
+        columns=[
+            TableColumnConfig("records", "id", "BIGINT", nullable=False),
+            TableColumnConfig("records", "destination_date", "DATETIME"),
+            TableColumnConfig("records", "record_mcm", "DOUBLE"),
+        ],
+    )
+
+    ops.table_insert(
+        pl.DataFrame(
+            {
+                "id": [1],
+                "destination_date": [None],
+                "record_mcm": [None],
+            }
+        ),
+        "test",
+        "records",
+        table_config=table_config,
+    )
+
+    insert_sql = driver_connection.execute.call_args_list[1].args[0]
+    assert "NULL::TIMESTAMP" in insert_sql
+    assert "NULL::DOUBLE PRECISION" in insert_sql
 
 
 def test_xtdb_backend_returns_xtdb_dataframe_ops():
