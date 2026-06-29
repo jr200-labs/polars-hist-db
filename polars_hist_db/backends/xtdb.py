@@ -1335,11 +1335,11 @@ class XtdbTableConfigOps:
             self.drop(table_config)
 
     def drop(self, table_config: TableConfig) -> None:
-        if not self.table_exists(table_config.schema, table_config.name):
-            return
+        data_table_exists = self.table_exists(table_config.schema, table_config.name)
 
-        table_name = _qualified_table_name(table_config.schema, table_config.name)
-        _execute_xtdb_dml(self.connection, f"ERASE FROM {table_name} WHERE TRUE")
+        if data_table_exists:
+            table_name = _qualified_table_name(table_config.schema, table_config.name)
+            _execute_xtdb_dml(self.connection, f"ERASE FROM {table_name} WHERE TRUE")
 
         if self.table_exists(table_config.schema, _XTDB_TABLE_CONFIG_METADATA_TABLE):
             metadata_table = _xtdb_table_config_metadata_table(table_config.schema)
@@ -1360,25 +1360,10 @@ class XtdbTableConfigOps:
         if self.table_exists(table_config.schema, table_config.name):
             return self.from_table(table_config.schema, table_config.name)
 
-        table_name = _qualified_table_name(table_config.schema, table_config.name)
-        columns = ", ".join(_xtdb_declared_columns(table_config))
-        _execute_xtdb_dml(self.connection, f"CREATE TABLE {table_name} ({columns})")
         self._record_table_config_metadata(table_config)
         return table_config
 
     def _record_table_config_metadata(self, table_config: TableConfig) -> None:
-        if not self.table_exists(
-            table_config.schema,
-            _XTDB_TABLE_CONFIG_METADATA_TABLE,
-        ):
-            metadata_table = _xtdb_table_config_metadata_table(table_config.schema)
-            _execute_xtdb_dml(
-                self.connection,
-                f"CREATE TABLE {metadata_table} "
-                "(_id, table_schema, table_name, primary_keys_json, "
-                "id_policy, columns_json, foreign_keys_json)",
-            )
-
         primary_keys_json = json.dumps(
             list(table_config.primary_keys),
             separators=(",", ":"),
@@ -1566,12 +1551,15 @@ class XtdbStagingOps:
         )
 
         stage_config = self.stage_table_config(delta_table_config)
-        return XtdbDataframeOps(self.connection).table_insert(
+        inserted_count = XtdbDataframeOps(self.connection).table_insert(
             df,
             stage_config.schema,
             stage_config.name,
             table_config=stage_config,
         )
+        if inserted_count > 0:
+            self._stage_run_cache[stage_run_id] = df
+        return inserted_count
 
     def prepare_pipeline_item_dataframe(
         self,

@@ -80,6 +80,118 @@ def test_xtdb_audit_filter_items_creates_audit_table_without_sqlalchemy_inspecto
     assert [table.name for table in created_tables] == ["__audit_log"]
 
 
+def test_xtdb_audit_filter_items_returns_all_items_before_audit_data_table_exists(
+    monkeypatch,
+):
+    class _TableConfigOps:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def table_exists(self, table_schema, table_name):
+            return False
+
+        def create(self, table_config):
+            return table_config
+
+    class _DataframeOps:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def from_raw_sql(self, query, schema_overrides=None):
+            raise AssertionError("must not query a missing XTDB audit data table")
+
+    monkeypatch.setattr(
+        "polars_hist_db.core.audit._xtdb_table_config_ops",
+        _TableConfigOps,
+    )
+    monkeypatch.setattr("polars_hist_db.core.audit._xtdb_dataframe_ops", _DataframeOps)
+
+    source_items = pl.DataFrame(
+        {
+            "__path": ["trades.csv"],
+            "__created_at": [datetime(2026, 1, 1, tzinfo=timezone.utc)],
+        }
+    )
+    filtered_items = AuditOps("kpler").filter_items(
+        source_items,
+        "__path",
+        "__created_at",
+        "trades",
+        _XtdbConnection(),
+    )
+
+    assert filtered_items.equals(source_items)
+
+
+def test_xtdb_audit_latest_entry_is_empty_before_audit_data_table_exists(
+    monkeypatch,
+):
+    class _TableConfigOps:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def table_exists(self, table_schema, table_name):
+            return False
+
+        def create(self, table_config):
+            return table_config
+
+    class _DataframeOps:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def from_raw_sql(self, query, schema_overrides=None):
+            raise AssertionError("must not query a missing XTDB audit data table")
+
+    monkeypatch.setattr(
+        "polars_hist_db.core.audit._xtdb_table_config_ops",
+        _TableConfigOps,
+    )
+    monkeypatch.setattr("polars_hist_db.core.audit._xtdb_dataframe_ops", _DataframeOps)
+
+    latest_entry = AuditOps("kpler").get_latest_entry(_XtdbConnection())
+
+    assert latest_entry.is_empty()
+    assert latest_entry.schema["data_source"] == pl.Utf8
+    assert latest_entry.schema["data_source_ts"] == pl.Datetime("us", "UTC")
+
+
+def test_xtdb_audit_prevalidation_noops_before_audit_data_table_exists(monkeypatch):
+    class _TableConfigOps:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def table_exists(self, table_schema, table_name):
+            return False
+
+        def create(self, table_config):
+            return table_config
+
+    class _DataframeOps:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def from_raw_sql(self, query, schema_overrides=None):
+            raise AssertionError("must not query a missing XTDB audit data table")
+
+    monkeypatch.setattr(
+        "polars_hist_db.core.audit._xtdb_table_config_ops",
+        _TableConfigOps,
+    )
+    monkeypatch.setattr("polars_hist_db.core.audit._xtdb_dataframe_ops", _DataframeOps)
+
+    AuditOps("kpler").prevalidate_new_items(
+        "trades",
+        pl.DataFrame(
+            {
+                "__path": ["trades.csv"],
+                "__created_at": [datetime(2026, 1, 1, tzinfo=timezone.utc)],
+            }
+        ),
+        _XtdbConnection(),
+    )
+
+
 def test_xtdb_file_filter_uses_plain_connection_context(monkeypatch):
     class _InputSource(InputSource):
         async def next_df(self, engine):

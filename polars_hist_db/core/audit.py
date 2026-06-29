@@ -106,6 +106,24 @@ class AuditOps:
     def _table_sql(self) -> str:
         return f"{self.schema}.{self._table_name}"
 
+    def _xtdb_data_table_exists(self, connection: Connection) -> bool:
+        return _xtdb_table_config_ops(connection).table_exists(
+            self.schema,
+            self._table_name,
+        )
+
+    def _empty_xtdb_audit_df(self) -> pl.DataFrame:
+        return pl.DataFrame(
+            schema={
+                "audit_id": pl.Int64,
+                "table_name": pl.Utf8,
+                "data_source_type": pl.Utf8,
+                "data_source": pl.Utf8,
+                "data_source_ts": pl.Datetime("us", "UTC"),
+                "upload_ts": pl.Datetime("us", "UTC"),
+            }
+        )
+
     def create(self, connection: Connection) -> Table | TableConfig:
         if _is_xtdb_connection(connection):
             table_config = self._table_config()
@@ -183,6 +201,9 @@ class AuditOps:
     ):
         if _is_xtdb_connection(connection):
             self.create(connection)
+            if not self._xtdb_data_table_exists(connection):
+                return
+
             latest_log = _xtdb_dataframe_ops(connection).from_raw_sql(
                 "SELECT data_source_ts "
                 f"FROM {self._table_sql()} "
@@ -248,6 +269,9 @@ class AuditOps:
     ) -> pl.DataFrame:
         if _is_xtdb_connection(connection):
             self.create(connection)
+            if not self._xtdb_data_table_exists(connection):
+                return data_source_items
+
             existing_tbl_entries = (
                 _xtdb_dataframe_ops(connection)
                 .from_raw_sql(
@@ -406,6 +430,8 @@ class AuditOps:
     ) -> pl.DataFrame:
         if _is_xtdb_connection(connection):
             self.create(connection)
+            if not self._xtdb_data_table_exists(connection):
+                return self._empty_xtdb_audit_df()
 
             xtdb_filters: list[str] = []
             if target_table_name is not None:
