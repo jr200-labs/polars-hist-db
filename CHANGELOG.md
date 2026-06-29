@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.19](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.18...v0.12.19) (2026-06-29)
+
+
+### Bug Fixes
+
+* cast XTDB categorical values through strings ([#103](https://github.com/jr200-labs/polars-hist-db/issues/103)) ([35ee591](https://github.com/jr200-labs/polars-hist-db/commit/35ee5917419a460fb454b1f6e947641227d462a9))
+
 ## [0.12.18](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.17...v0.12.18) (2026-06-29)
 
 
