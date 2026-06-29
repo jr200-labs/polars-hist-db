@@ -45,7 +45,7 @@ def test_xtdb_audit_filter_items_creates_audit_table_without_sqlalchemy_inspecto
             self.connection = connection
 
         def from_raw_sql(self, query, schema_overrides=None):
-            assert "FROM kpler.__audit_log" in query
+            assert "FROM sample.__audit_log" in query
             return pl.DataFrame(
                 {
                     "data_source": [],
@@ -63,7 +63,7 @@ def test_xtdb_audit_filter_items_creates_audit_table_without_sqlalchemy_inspecto
     )
     monkeypatch.setattr("polars_hist_db.core.audit._xtdb_dataframe_ops", _DataframeOps)
 
-    filtered_items = AuditOps("kpler").filter_items(
+    filtered_items = AuditOps("sample").filter_items(
         pl.DataFrame(
             {
                 "__path": ["trades.csv"],
@@ -112,7 +112,7 @@ def test_xtdb_audit_filter_items_returns_all_items_before_audit_data_table_exist
             "__created_at": [datetime(2026, 1, 1, tzinfo=timezone.utc)],
         }
     )
-    filtered_items = AuditOps("kpler").filter_items(
+    filtered_items = AuditOps("sample").filter_items(
         source_items,
         "__path",
         "__created_at",
@@ -149,7 +149,7 @@ def test_xtdb_audit_latest_entry_is_empty_before_audit_data_table_exists(
     )
     monkeypatch.setattr("polars_hist_db.core.audit._xtdb_dataframe_ops", _DataframeOps)
 
-    latest_entry = AuditOps("kpler").get_latest_entry(_XtdbConnection())
+    latest_entry = AuditOps("sample").get_latest_entry(_XtdbConnection())
 
     assert latest_entry.is_empty()
     assert latest_entry.schema["data_source"] == pl.Utf8
@@ -180,7 +180,7 @@ def test_xtdb_audit_prevalidation_noops_before_audit_data_table_exists(monkeypat
     )
     monkeypatch.setattr("polars_hist_db.core.audit._xtdb_dataframe_ops", _DataframeOps)
 
-    AuditOps("kpler").prevalidate_new_items(
+    AuditOps("sample").prevalidate_new_items(
         "trades",
         pl.DataFrame(
             {
@@ -238,7 +238,7 @@ def test_xtdb_file_filter_uses_plain_connection_context(monkeypatch):
                 "__created_at": [datetime(2026, 1, 1, tzinfo=timezone.utc)],
             }
         ),
-        "kpler",
+        "sample",
         "trades",
         engine,
     )
@@ -274,7 +274,7 @@ def test_xtdb_audit_add_entry_writes_via_backend_dataframe_ops(monkeypatch):
     )
     monkeypatch.setattr("polars_hist_db.core.audit._xtdb_dataframe_ops", _DataframeOps)
 
-    did_insert = AuditOps("kpler").add_entry(
+    did_insert = AuditOps("sample").add_entry(
         "dsv",
         "trades.csv",
         "trades",
@@ -284,7 +284,7 @@ def test_xtdb_audit_add_entry_writes_via_backend_dataframe_ops(monkeypatch):
 
     assert did_insert is True
     [(inserted_df, table_schema, table_name, table_config)] = inserted
-    assert table_schema == "kpler"
+    assert table_schema == "sample"
     assert table_name == "__audit_log"
     assert table_config.name == "__audit_log"
     assert "audit_id" in inserted_df.columns

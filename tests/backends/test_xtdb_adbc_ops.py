@@ -12,7 +12,7 @@ class _FakeCursor:
     def __init__(self):
         self.ingests = []
         self.executed = []
-        self.arrow_result = pa.table({"_id": [1], "destination": ["Tokyo"]})
+        self.arrow_result = pa.table({"_id": [1], "destination": ["Alpha"]})
 
     def __enter__(self):
         return self
@@ -38,14 +38,14 @@ class _FakeAdbcConnection:
         return self.cursor_instance
 
 
-def _cargo_config(schema="public"):
+def _record_config(schema="public"):
     return TableConfig(
         schema=schema,
-        name="cargos",
+        name="records",
         primary_keys=["id"],
         columns=[
-            TableColumnConfig("cargos", "id", "BIGINT", nullable=False),
-            TableColumnConfig("cargos", "destination", "VARCHAR(255)"),
+            TableColumnConfig("records", "id", "BIGINT", nullable=False),
+            TableColumnConfig("records", "destination", "VARCHAR(255)"),
         ],
     )
 
@@ -55,21 +55,21 @@ def test_xtdb_adbc_dataframe_ops_ingests_arrow_with_id_mapping():
     ops = XtdbAdbcDataframeOps(connection)
 
     result = ops.table_insert(
-        pl.DataFrame({"id": [1, 2], "destination": ["Tokyo", "Osaka"]}),
+        pl.DataFrame({"id": [1, 2], "destination": ["Alpha", "Beta"]}),
         "public",
-        "cargos",
-        table_config=_cargo_config(),
+        "records",
+        table_config=_record_config(),
     )
 
     assert result == 2
     table_name, arrow_table, mode, kwargs = connection.cursor_instance.ingests[0]
-    assert table_name == "cargos"
+    assert table_name == "records"
     assert mode == "create_append"
     assert kwargs == {"db_schema_name": "public"}
     assert arrow_table.schema.field("destination").type == pa.string()
     assert arrow_table.to_pydict() == {
         "_id": [1, 2],
-        "destination": ["Tokyo", "Osaka"],
+        "destination": ["Alpha", "Beta"],
     }
 
 
@@ -78,12 +78,12 @@ def test_xtdb_adbc_dataframe_ops_ingests_null_columns_with_configured_arrow_type
     ops = XtdbAdbcDataframeOps(connection)
     table_config = TableConfig(
         schema="public",
-        name="cargos",
+        name="records",
         primary_keys=["id"],
         columns=[
-            TableColumnConfig("cargos", "id", "BIGINT", nullable=False),
-            TableColumnConfig("cargos", "destination_date", "DATETIME"),
-            TableColumnConfig("cargos", "cargo_mcm", "DOUBLE"),
+            TableColumnConfig("records", "id", "BIGINT", nullable=False),
+            TableColumnConfig("records", "destination_date", "DATETIME"),
+            TableColumnConfig("records", "amount_value", "DOUBLE"),
         ],
     )
 
@@ -92,22 +92,22 @@ def test_xtdb_adbc_dataframe_ops_ingests_null_columns_with_configured_arrow_type
             {
                 "id": [1],
                 "destination_date": [None],
-                "cargo_mcm": [None],
+                "amount_value": [None],
             }
         ),
         "public",
-        "cargos",
+        "records",
         table_config=table_config,
     )
 
     assert result == 1
     _, arrow_table, _, _ = connection.cursor_instance.ingests[0]
     assert arrow_table.schema.field("destination_date").type == pa.timestamp("us")
-    assert arrow_table.schema.field("cargo_mcm").type == pa.float64()
+    assert arrow_table.schema.field("amount_value").type == pa.float64()
     assert arrow_table.to_pydict() == {
         "_id": [1],
         "destination_date": [None],
-        "cargo_mcm": [None],
+        "amount_value": [None],
     }
 
 
@@ -115,10 +115,10 @@ def test_xtdb_adbc_dataframe_ops_reads_arrow_into_polars():
     connection = _FakeAdbcConnection()
     ops = XtdbAdbcDataframeOps(connection)
 
-    result = ops.from_table("public", "cargos")
+    result = ops.from_table("public", "records")
 
-    assert result.to_dict(as_series=False) == {"_id": [1], "destination": ["Tokyo"]}
-    assert connection.cursor_instance.executed == ["SELECT * FROM public.cargos"]
+    assert result.to_dict(as_series=False) == {"_id": [1], "destination": ["Alpha"]}
+    assert connection.cursor_instance.executed == ["SELECT * FROM public.records"]
 
 
 def test_xtdb_adbc_dataframe_ops_targets_configured_schema():
@@ -128,8 +128,8 @@ def test_xtdb_adbc_dataframe_ops_targets_configured_schema():
     ops.table_insert(
         pl.DataFrame({"id": [1]}),
         "analytics",
-        "cargos",
-        table_config=_cargo_config(schema="analytics"),
+        "records",
+        table_config=_record_config(schema="analytics"),
     )
 
     assert connection.cursor_instance.ingests[0][3] == {"db_schema_name": "analytics"}

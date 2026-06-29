@@ -21,11 +21,11 @@ def test_xtdb_dataframe_ops_reads_raw_sql_with_schema_overrides(monkeypatch):
     connection = object()
     ops = XtdbDataframeOps(connection)
 
-    result = ops.from_raw_sql("select * from test.cargos", {"id": pl.Int64})
+    result = ops.from_raw_sql("select * from test.records", {"id": pl.Int64})
 
     assert result is expected_df
     read_database.assert_called_once_with(
-        "select * from test.cargos",
+        "select * from test.records",
         connection,
         schema_overrides={"id": pl.Int64},
     )
@@ -61,7 +61,7 @@ def test_xtdb_dml_retries_with_append_time_when_system_time_is_too_old():
 
     row_count = _execute_xtdb_dml(
         connection,
-        "INSERT INTO test.cargos (_id) VALUES (1)",
+        "INSERT INTO test.records (_id) VALUES (1)",
         system_time=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -69,9 +69,9 @@ def test_xtdb_dml_retries_with_append_time_when_system_time_is_too_old():
     assert connection.connection.driver_connection.rollback_count == 1
     assert connection.connection.driver_connection.executed == [
         "BEGIN READ WRITE WITH (SYSTEM_TIME = TIMESTAMP '2025-01-01T00:00:00+00:00')",
-        "INSERT INTO test.cargos (_id) VALUES (1)",
+        "INSERT INTO test.records (_id) VALUES (1)",
         "BEGIN READ WRITE",
-        "INSERT INTO test.cargos (_id) VALUES (1)",
+        "INSERT INTO test.records (_id) VALUES (1)",
     ]
 
 
@@ -80,11 +80,11 @@ def test_xtdb_dataframe_ops_reads_table_as_sql():
     ops = XtdbDataframeOps(connection)
     ops.from_raw_sql = Mock(return_value=pl.DataFrame({"id": [1]}))
 
-    result = ops.from_table("test", "cargos", {"id": pl.Int64})
+    result = ops.from_table("test", "records", {"id": pl.Int64})
 
     assert result.to_dict(as_series=False) == {"id": [1]}
     ops.from_raw_sql.assert_called_once_with(
-        "SELECT * FROM test.cargos",
+        "SELECT * FROM test.records",
         {"id": pl.Int64},
     )
 
@@ -96,7 +96,7 @@ def test_xtdb_dataframe_ops_applies_table_time_hint():
 
     result = ops.from_table(
         "test",
-        "cargos",
+        "records",
         {"id": pl.Int64},
         time_hint=TimeHint(
             mode="asof",
@@ -106,7 +106,7 @@ def test_xtdb_dataframe_ops_applies_table_time_hint():
 
     assert result.to_dict(as_series=False) == {"id": [1]}
     ops.from_raw_sql.assert_called_once_with(
-        "SELECT * FROM test.cargos FOR SYSTEM_TIME AS OF '2026-01-02T03:04:05+00:00'",
+        "SELECT * FROM test.records FOR SYSTEM_TIME AS OF '2026-01-02T03:04:05+00:00'",
         {"id": pl.Int64},
     )
 
@@ -116,12 +116,12 @@ def test_xtdb_dataframe_ops_reads_table_with_configured_schema_overrides(monkeyp
     monkeypatch.setattr(pl, "read_database", read_database)
     table_config = TableConfig(
         schema="test",
-        name="cargos",
+        name="records",
         primary_keys=["id"],
         columns=[
-            TableColumnConfig("cargos", "id", "BIGINT", nullable=False),
-            TableColumnConfig("cargos", "destination_date", "DATETIME"),
-            TableColumnConfig("cargos", "cargo_mcm", "DOUBLE"),
+            TableColumnConfig("records", "id", "BIGINT", nullable=False),
+            TableColumnConfig("records", "destination_date", "DATETIME"),
+            TableColumnConfig("records", "amount_value", "DOUBLE"),
         ],
     )
     monkeypatch.setattr(
@@ -132,15 +132,15 @@ def test_xtdb_dataframe_ops_reads_table_with_configured_schema_overrides(monkeyp
     connection = object()
     ops = XtdbDataframeOps(connection)
 
-    ops.from_table("test", "cargos")
+    ops.from_table("test", "records")
 
     read_database.assert_called_once_with(
-        "SELECT * FROM test.cargos",
+        "SELECT * FROM test.records",
         connection,
         schema_overrides={
             "_id": pl.Int64,
             "destination_date": pl.Datetime(),
-            "cargo_mcm": pl.Float64,
+            "amount_value": pl.Float64,
             "_valid_from": pl.Datetime("us", "UTC"),
             "_valid_to": pl.Datetime("us", "UTC"),
         },
@@ -153,11 +153,11 @@ def test_xtdb_dataframe_ops_writes_dataframe_via_polars_write_database():
     connection = object()
     ops = XtdbDataframeOps(connection)
 
-    result = ops.table_insert(df, "test", "cargos")
+    result = ops.table_insert(df, "test", "records")
 
     assert result == 7
     df.write_database.assert_called_once_with(
-        table_name="test.cargos",
+        table_name="test.records",
         connection=connection,
         if_table_exists="append",
     )
@@ -176,17 +176,17 @@ def test_xtdb_dataframe_ops_maps_configured_primary_key_to_id(monkeypatch):
     df = pl.DataFrame({"id": [1, 2], "destination": ["A", "B"]})
     table_config = TableConfig(
         schema="test",
-        name="cargos",
+        name="records",
         primary_keys=["id"],
         columns=[
-            TableColumnConfig("cargos", "id", "BIGINT", nullable=False),
-            TableColumnConfig("cargos", "destination", "VARCHAR(255)"),
+            TableColumnConfig("records", "id", "BIGINT", nullable=False),
+            TableColumnConfig("records", "destination", "VARCHAR(255)"),
         ],
     )
     connection = object()
     ops = XtdbDataframeOps(connection)
 
-    result = ops.table_insert(df, "test", "cargos", table_config=table_config)
+    result = ops.table_insert(df, "test", "records", table_config=table_config)
 
     assert result == 2
     written_df = captured["df"]
@@ -195,7 +195,7 @@ def test_xtdb_dataframe_ops_maps_configured_primary_key_to_id(monkeypatch):
         "destination": ["A", "B"],
     }
     assert captured["kwargs"] == {
-        "table_name": "test.cargos",
+        "table_name": "test.records",
         "connection": connection,
         "if_table_exists": "append",
     }
@@ -213,39 +213,39 @@ def test_xtdb_dataframe_ops_maps_composite_primary_key_to_synthetic_id(monkeypat
 
     df = pl.DataFrame(
         {
-            "vessel_id": [10, 10],
-            "cargo_id": ["A", "B"],
-            "destination": ["Tokyo", "Osaka"],
+            "entity_id": [10, 10],
+            "record_id": ["A", "B"],
+            "destination": ["Alpha", "Beta"],
         }
     )
     table_config = TableConfig(
         schema="test",
-        name="cargos",
-        primary_keys=["vessel_id", "cargo_id"],
+        name="records",
+        primary_keys=["entity_id", "record_id"],
         columns=[
-            TableColumnConfig("cargos", "vessel_id", "BIGINT", nullable=False),
-            TableColumnConfig("cargos", "cargo_id", "VARCHAR(255)", nullable=False),
-            TableColumnConfig("cargos", "destination", "VARCHAR(255)"),
+            TableColumnConfig("records", "entity_id", "BIGINT", nullable=False),
+            TableColumnConfig("records", "record_id", "VARCHAR(255)", nullable=False),
+            TableColumnConfig("records", "destination", "VARCHAR(255)"),
         ],
     )
     connection = object()
     ops = XtdbDataframeOps(connection)
 
-    result = ops.table_insert(df, "test", "cargos", table_config=table_config)
+    result = ops.table_insert(df, "test", "records", table_config=table_config)
 
     assert result == 2
     written_df = captured["df"]
     assert written_df.to_dict(as_series=False) == {
         "_id": [
-            'xtdb-pk-v1:[["vessel_id",10],["cargo_id","A"]]',
-            'xtdb-pk-v1:[["vessel_id",10],["cargo_id","B"]]',
+            'xtdb-pk-v1:[["entity_id",10],["record_id","A"]]',
+            'xtdb-pk-v1:[["entity_id",10],["record_id","B"]]',
         ],
-        "vessel_id": [10, 10],
-        "cargo_id": ["A", "B"],
-        "destination": ["Tokyo", "Osaka"],
+        "entity_id": [10, 10],
+        "record_id": ["A", "B"],
+        "destination": ["Alpha", "Beta"],
     }
     assert captured["kwargs"] == {
-        "table_name": "test.cargos",
+        "table_name": "test.records",
         "connection": connection,
         "if_table_exists": "append",
     }
@@ -259,9 +259,9 @@ def test_xtdb_dataframe_ops_uses_system_time_transaction_for_update_time():
     ops = XtdbDataframeOps(connection)
 
     result = ops.table_insert(
-        pl.DataFrame({"_id": [1], "destination": ["Tokyo"]}),
+        pl.DataFrame({"_id": [1], "destination": ["Alpha"]}),
         "test",
-        "cargos",
+        "records",
         update_time=datetime(2030, 1, 1, 12, 0, tzinfo=timezone.utc),
     )
 
@@ -375,12 +375,12 @@ def test_xtdb_dataframe_ops_casts_null_values_to_configured_types():
     ops = XtdbDataframeOps(connection)
     table_config = TableConfig(
         schema="test",
-        name="cargos",
+        name="records",
         primary_keys=["id"],
         columns=[
-            TableColumnConfig("cargos", "id", "BIGINT", nullable=False),
-            TableColumnConfig("cargos", "destination_date", "DATETIME"),
-            TableColumnConfig("cargos", "cargo_mcm", "DOUBLE"),
+            TableColumnConfig("records", "id", "BIGINT", nullable=False),
+            TableColumnConfig("records", "destination_date", "DATETIME"),
+            TableColumnConfig("records", "amount_value", "DOUBLE"),
         ],
     )
 
@@ -389,17 +389,51 @@ def test_xtdb_dataframe_ops_casts_null_values_to_configured_types():
             {
                 "id": [1],
                 "destination_date": [None],
-                "cargo_mcm": [None],
+                "amount_value": [None],
             }
         ),
         "test",
-        "cargos",
+        "records",
         table_config=table_config,
     )
 
     insert_sql = driver_connection.execute.call_args_list[1].args[0]
     assert "NULL::TIMESTAMP" in insert_sql
     assert "NULL::DOUBLE PRECISION" in insert_sql
+
+
+def test_xtdb_dataframe_ops_quotes_reserved_insert_columns():
+    driver_connection = Mock()
+    connection = Mock()
+    connection.connection.driver_connection = driver_connection
+    connection.in_transaction.return_value = False
+    ops = XtdbDataframeOps(connection)
+    table_config = TableConfig(
+        schema="source_a",
+        name="entity_info",
+        primary_keys=["entity_id"],
+        columns=[
+            TableColumnConfig("entity_info", "entity_id", "INT", nullable=False),
+            TableColumnConfig("entity_info", "name", "VARCHAR(64)"),
+            TableColumnConfig("entity_info", "flag", "VARCHAR(64)"),
+        ],
+    )
+
+    ops.table_insert(
+        pl.DataFrame(
+            {
+                "entity_id": [311038700],
+                "name": ["ALPHA"],
+                "flag": ["BS"],
+            }
+        ),
+        "source_a",
+        "entity_info",
+        table_config=table_config,
+    )
+
+    insert_sql = driver_connection.execute.call_args_list[1].args[0]
+    assert 'INSERT INTO source_a.entity_info (_id, name, "flag")' in insert_sql
 
 
 def test_xtdb_backend_returns_xtdb_dataframe_ops():
