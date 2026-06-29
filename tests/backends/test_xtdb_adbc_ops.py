@@ -73,6 +73,44 @@ def test_xtdb_adbc_dataframe_ops_ingests_arrow_with_id_mapping():
     }
 
 
+def test_xtdb_adbc_dataframe_ops_ingests_null_columns_with_configured_arrow_types():
+    connection = _FakeAdbcConnection()
+    ops = XtdbAdbcDataframeOps(connection)
+    table_config = TableConfig(
+        schema="public",
+        name="cargos",
+        primary_keys=["id"],
+        columns=[
+            TableColumnConfig("cargos", "id", "BIGINT", nullable=False),
+            TableColumnConfig("cargos", "destination_date", "DATETIME"),
+            TableColumnConfig("cargos", "cargo_mcm", "DOUBLE"),
+        ],
+    )
+
+    result = ops.table_insert(
+        pl.DataFrame(
+            {
+                "id": [1],
+                "destination_date": [None],
+                "cargo_mcm": [None],
+            }
+        ),
+        "public",
+        "cargos",
+        table_config=table_config,
+    )
+
+    assert result == 1
+    _, arrow_table, _, _ = connection.cursor_instance.ingests[0]
+    assert arrow_table.schema.field("destination_date").type == pa.timestamp("us")
+    assert arrow_table.schema.field("cargo_mcm").type == pa.float64()
+    assert arrow_table.to_pydict() == {
+        "_id": [1],
+        "destination_date": [None],
+        "cargo_mcm": [None],
+    }
+
+
 def test_xtdb_adbc_dataframe_ops_reads_arrow_into_polars():
     connection = _FakeAdbcConnection()
     ops = XtdbAdbcDataframeOps(connection)

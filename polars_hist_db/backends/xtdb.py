@@ -400,6 +400,49 @@ def _xtdb_insert_casts(
     return casts
 
 
+def _xtdb_configured_column_dtypes(
+    table_config: TableConfig,
+) -> dict[str, pl.DataType]:
+    document_id_columns = _xtdb_document_id_columns(table_config)
+    uses_single_source_key = len(document_id_columns) == 1
+    dtypes: dict[str, pl.DataType] = {}
+
+    for column in table_config.columns:
+        dtype = _xtdb_polars_type_or_none(column.data_type)
+        if dtype is None:
+            continue
+        target_name = (
+            "_id"
+            if uses_single_source_key and column.name == document_id_columns[0]
+            else column.name
+        )
+        dtypes[target_name] = dtype
+
+    if len(document_id_columns) > 1:
+        dtypes["_id"] = pl.String()
+    dtypes["_valid_from"] = pl.Datetime("us", "UTC")
+    dtypes["_valid_to"] = pl.Datetime("us", "UTC")
+    return dtypes
+
+
+def _apply_xtdb_configured_column_dtypes(
+    df: pl.DataFrame,
+    table_config: Optional[TableConfig],
+) -> pl.DataFrame:
+    if table_config is None:
+        return df
+
+    configured_dtypes = _xtdb_configured_column_dtypes(table_config)
+    casts = [
+        pl.col(column).cast(dtype, strict=False)
+        for column, dtype in configured_dtypes.items()
+        if column in df.columns
+    ]
+    if not casts:
+        return df
+    return df.with_columns(casts)
+
+
 def _prepare_xtdb_insert_dataframe(
     df: pl.DataFrame,
     table_config: Optional[TableConfig],
@@ -634,7 +677,7 @@ def _execute_xtdb_dml(
 
 def _xtdb_sql_literal(value: Any, cast_type: str) -> str:
     if value is None:
-        return "NULL"
+        return f"NULL::{cast_type}"
     if isinstance(value, bool):
         return f"{'TRUE' if value else 'FALSE'}::{cast_type}"
     if isinstance(value, int):
@@ -1121,6 +1164,13 @@ class XtdbDataframeOps:
         schema_overrides: Optional[Mapping[str, pl.DataType]] = None,
         time_hint: Optional[TimeHint] = None,
     ) -> pl.DataFrame:
+        if schema_overrides is None:
+            table_config = XtdbTableConfigOps(self.connection).from_table(
+                table_schema,
+                table_name,
+            )
+            schema_overrides = _xtdb_configured_column_dtypes(table_config)
+
         hint_clause = system_time_hint_clause(time_hint)
         query = f"SELECT * FROM {table_schema}.{table_name}"
         if hint_clause:
@@ -1215,6 +1265,7 @@ class XtdbDataframeOps:
         update_time: Optional[datetime] = None,
     ) -> int:
         df = _prepare_xtdb_insert_dataframe(df, table_config)
+        df = _apply_xtdb_configured_column_dtypes(df, table_config)
         driver_connection = _driver_connection(self.connection)
         if driver_connection is not None:
             if df.is_empty():
@@ -1311,6 +1362,7 @@ class XtdbAdbcDataframeOps:
             return 0
 
         df = _prepare_xtdb_insert_dataframe(df, table_config)
+        df = _apply_xtdb_configured_column_dtypes(df, table_config)
         arrow_table = _normalize_xtdb_ingest_arrow(df.to_arrow())
         with self.connection.cursor() as cursor:
             cursor.adbc_ingest(
