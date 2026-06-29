@@ -1022,6 +1022,7 @@ def _project_xtdb_staged_pipeline_item_dataframe(
     stage_df: pl.DataFrame,
     dataset: Any,
     pipeline_id: int,
+    table_config: TableConfig,
     valid_time: Optional[ValidTimeConfig],
 ) -> pl.DataFrame:
     upload_items = dataset.pipeline.extract_items(pipeline_id)
@@ -1036,10 +1037,33 @@ def _project_xtdb_staged_pipeline_item_dataframe(
 
     missing_columns = sorted(set(selected_columns).difference(stage_df.columns))
     if missing_columns:
-        raise ValueError(
-            "column mismatch on "
-            f"{set(missing_columns)} in {upload_items['source'].to_list()}"
-        )
+        nullable_target_columns = {
+            column.name: column
+            for column in table_config.columns
+            if column.nullable and not column.autoincrement
+        }
+        fill_columns = []
+        rejected_columns = []
+        for source_column in missing_columns:
+            target_column_name = src_tgt_colname_map[source_column]
+            target_column = nullable_target_columns.get(target_column_name)
+            if target_column is None:
+                rejected_columns.append(source_column)
+                continue
+
+            dtype = _xtdb_polars_type_or_none(target_column.data_type)
+            null_literal = pl.lit(None)
+            if dtype is not None:
+                null_literal = null_literal.cast(dtype)
+            fill_columns.append(null_literal.alias(source_column))
+
+        if rejected_columns:
+            raise ValueError(
+                "column mismatch on "
+                f"{set(rejected_columns)} in {upload_items['source'].to_list()}"
+            )
+
+        stage_df = stage_df.with_columns(fill_columns)
 
     return stage_df.select(selected_columns).rename(
         {
@@ -1671,7 +1695,7 @@ class XtdbStagingOps:
         )
         self._stage_run_cache[stage_run_id] = stage_df
         projected_df = _project_xtdb_staged_pipeline_item_dataframe(
-            stage_df, dataset, pipeline_id, valid_time
+            stage_df, dataset, pipeline_id, table_config, valid_time
         )
         return self._filter_duplicate_projected_parent_rows(
             projected_df,
