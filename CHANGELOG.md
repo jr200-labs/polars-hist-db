@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.18](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.17...v0.12.18) (2026-06-29)
+
+
+### Bug Fixes
+
+* tolerate missing nullable XTDB projection columns ([#101](https://github.com/jr200-labs/polars-hist-db/issues/101)) ([2d003f4](https://github.com/jr200-labs/polars-hist-db/commit/2d003f45f1d89f275418e3f2b320a5a1fb6ed710))
+
 ## [0.12.17](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.16...v0.12.17) (2026-06-29)
 
 
