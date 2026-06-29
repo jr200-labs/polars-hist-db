@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.17](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.16...v0.12.17) (2026-06-29)
+
+
+### Bug Fixes
+
+* bound xtdb insert chunk size ([#99](https://github.com/jr200-labs/polars-hist-db/issues/99)) ([870395a](https://github.com/jr200-labs/polars-hist-db/commit/870395a240250bb18b915ab0462132696bc30e49))
+
 ## [0.12.16](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.15...v0.12.16) (2026-06-29)
 
 
