@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.15](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.14...v0.12.15) (2026-06-29)
+
+
+### Bug Fixes
+
+* preserve xtdb null column types ([#95](https://github.com/jr200-labs/polars-hist-db/issues/95)) ([1d54227](https://github.com/jr200-labs/polars-hist-db/commit/1d542274c00945083a2708f7e62dd5ffcb2e6d63))
+
 ## [0.12.14](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.13...v0.12.14) (2026-06-29)
 
 
