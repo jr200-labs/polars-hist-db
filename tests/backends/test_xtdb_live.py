@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from decimal import Decimal
 import os
 import subprocess
 import time
@@ -163,6 +164,45 @@ def test_xtdb_live_insert_non_public_table_with_reserved_column_name():
         "_id": [311038700],
         "name": ["ALPHA"],
         "flag": ["BS"],
+    }
+
+
+def test_xtdb_live_insert_column_with_slash_roundtrip():
+    table_config = TableConfig(
+        schema="source_a",
+        name=f"live_encoded_columns_{int(time.time())}",
+        primary_keys=["entity_id"],
+        columns=[
+            TableColumnConfig("entity_info", "entity_id", "INT", nullable=False),
+            TableColumnConfig("entity_info", "capacity/bcm", "DECIMAL(15,3)"),
+        ],
+    )
+
+    with _xtdb_engine() as engine:
+        with engine.connect() as connection:
+            backend = XtdbBackend()
+            backend.table_configs(connection).create(table_config)
+
+            backend.dataframes(connection).table_insert(
+                pl.DataFrame(
+                    {
+                        "entity_id": [1],
+                        "capacity/bcm": ["4.080"],
+                    }
+                ),
+                table_config.schema,
+                table_config.name,
+                table_config=table_config,
+            )
+
+            result = backend.dataframes(connection).from_table(
+                table_config.schema,
+                table_config.name,
+            )
+
+    assert result.select(["_id", "capacity/bcm"]).to_dict(as_series=False) == {
+        "_id": [1],
+        "capacity/bcm": [Decimal("4.080")],
     }
 
 

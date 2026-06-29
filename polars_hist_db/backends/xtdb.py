@@ -88,6 +88,48 @@ def _quote_identifier(identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
 
 
+def _xtdb_physical_column_name(column_name: str) -> str:
+    return column_name.replace(".", "_").replace("/", "_").replace("-", "_").lower()
+
+
+def _xtdb_column_identifier(column_name: str) -> str:
+    return _quote_identifier(_xtdb_physical_column_name(column_name))
+
+
+def _xtdb_physical_column_map(table_config: TableConfig) -> dict[str, str]:
+    column_map = {}
+    reverse_map: dict[str, str] = {}
+    for column in table_config.columns:
+        physical_name = _xtdb_physical_column_name(column.name)
+        existing_logical_name = reverse_map.get(physical_name)
+        if existing_logical_name is not None and existing_logical_name != column.name:
+            raise ValueError(
+                "XTDB physical column name collision: "
+                f"{existing_logical_name!r} and {column.name!r} both map to "
+                f"{physical_name!r}"
+            )
+        column_map[column.name] = physical_name
+        reverse_map[physical_name] = column.name
+    return column_map
+
+
+def _restore_xtdb_logical_columns(
+    df: pl.DataFrame,
+    table_config: Optional[TableConfig],
+) -> pl.DataFrame:
+    if table_config is None:
+        return df
+
+    rename_map = {
+        physical: logical
+        for logical, physical in _xtdb_physical_column_map(table_config).items()
+        if physical != logical and physical in df.columns
+    }
+    if not rename_map:
+        return df
+    return df.rename(rename_map)
+
+
 def _qualified_table_name(table_schema: str, table_name: str) -> str:
     return f"{_validate_identifier(table_schema)}.{_validate_identifier(table_name)}"
 
@@ -149,7 +191,7 @@ def _xtdb_declared_columns(table_config: TableConfig) -> list[str]:
             continue
         declared_columns.append(column.name)
 
-    return [_quote_identifier(column) for column in declared_columns]
+    return [_xtdb_column_identifier(column) for column in declared_columns]
 
 
 def _xtdb_stage_table_name(dataset_name: str) -> str:
@@ -423,6 +465,16 @@ def _xtdb_configured_column_dtypes(
     dtypes["_valid_from"] = pl.Datetime("us", "UTC")
     dtypes["_valid_to"] = pl.Datetime("us", "UTC")
     return dtypes
+
+
+def _xtdb_physical_configured_column_dtypes(
+    table_config: TableConfig,
+) -> dict[str, pl.DataType]:
+    physical_column_map = _xtdb_physical_column_map(table_config)
+    return {
+        physical_column_map.get(column, _xtdb_physical_column_name(column)): dtype
+        for column, dtype in _xtdb_configured_column_dtypes(table_config).items()
+    }
 
 
 def _apply_xtdb_configured_column_dtypes(
@@ -785,18 +837,18 @@ def _xtdb_table_query_output_columns(
 def _xtdb_table_query_select_expr(column: str, table_config: TableConfig) -> str:
     single_key_alias = _xtdb_single_primary_key_alias(table_config)
     if single_key_alias == column:
-        return f"t._id AS {_quote_identifier(column)}"
+        return f"t._id AS {_xtdb_column_identifier(column)}"
     if column == "__valid_from":
         return "t._valid_from AS __valid_from"
     if column == "__valid_to":
         return "t._valid_to AS __valid_to"
-    return f"t.{_quote_identifier(column)}"
+    return f"t.{_xtdb_column_identifier(column)}"
 
 
 def _xtdb_table_query_target_column(column: str, table_config: TableConfig) -> str:
     if _xtdb_single_primary_key_alias(table_config) == column:
         return "_id"
-    return _quote_identifier(column)
+    return _xtdb_column_identifier(column)
 
 
 def _xtdb_values_cte(name: str, df: pl.DataFrame) -> str:
@@ -804,7 +856,7 @@ def _xtdb_values_cte(name: str, df: pl.DataFrame) -> str:
         raise ValueError("XTDB table_query requires at least one query row")
 
     cte_name = _validate_identifier(name)
-    columns = [_quote_identifier(column) for column in df.columns]
+    columns = [_xtdb_column_identifier(column) for column in df.columns]
     casts = [_xtdb_cast_type_from_polars(dtype) for dtype in df.schema.values()]
     row_queries = []
     for row in df.rows():
@@ -914,6 +966,7 @@ def _filter_xtdb_unchanged_rows(
     current = dataframe_ops.from_raw_sql(
         f"SELECT * FROM {table_sql}{_xtdb_temporal_basis_clause(update_time)}"
     )
+    current = _restore_xtdb_logical_columns(current, table_config)
     if current.is_empty():
         return df
 
@@ -1210,21 +1263,25 @@ class XtdbDataframeOps:
         schema_overrides: Optional[Mapping[str, pl.DataType]] = None,
         time_hint: Optional[TimeHint] = None,
     ) -> pl.DataFrame:
+        table_config: TableConfig | None = None
         if schema_overrides is None:
             table_config = XtdbTableConfigOps(self.connection).from_table(
                 table_schema,
                 table_name,
             )
-            schema_overrides = _xtdb_configured_column_dtypes(table_config)
+            schema_overrides = _xtdb_physical_configured_column_dtypes(table_config)
 
         hint_clause = system_time_hint_clause(time_hint)
         query = f"SELECT * FROM {table_schema}.{table_name}"
         if hint_clause:
             query = f"{query} {hint_clause}"
 
-        return self.from_raw_sql(
-            query,
-            schema_overrides,
+        return _restore_xtdb_logical_columns(
+            self.from_raw_sql(
+                query,
+                schema_overrides,
+            ),
+            table_config,
         )
 
     def table_query(
@@ -1250,7 +1307,7 @@ class XtdbDataframeOps:
         join_clause = " AND ".join(
             "t."
             f"{_xtdb_table_query_target_column(column, table_config)} = "
-            f"q.{_quote_identifier(column)}"
+            f"q.{_xtdb_column_identifier(column)}"
             for column in query_df.columns
         )
         table_sql = _qualified_table_name(table_schema, table_name)
@@ -1310,6 +1367,8 @@ class XtdbDataframeOps:
         table_config: Optional[TableConfig] = None,
         update_time: Optional[datetime] = None,
     ) -> int:
+        if table_config is not None:
+            _xtdb_physical_column_map(table_config)
         df = _prepare_xtdb_insert_dataframe(df, table_config)
         df = _apply_xtdb_configured_column_dtypes(df, table_config)
         if df.is_empty():
@@ -1319,7 +1378,7 @@ class XtdbDataframeOps:
         if driver_connection is not None:
             inserted_count = 0
             for chunk in _iter_xtdb_insert_chunks(df, self.max_rows_per_insert):
-                columns = [_quote_identifier(column) for column in chunk.columns]
+                columns = [_xtdb_column_identifier(column) for column in chunk.columns]
                 column_sql = ", ".join(columns)
                 casts = _xtdb_insert_casts(chunk, table_config)
                 rows = chunk.rows()
