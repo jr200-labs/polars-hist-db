@@ -444,6 +444,39 @@ def test_xtdb_dataframe_ops_casts_null_values_to_configured_types():
     assert "NULL::DOUBLE PRECISION" in insert_sql
 
 
+def test_xtdb_dataframe_ops_casts_categorical_values_to_configured_decimal():
+    driver_connection = Mock()
+    connection = Mock()
+    connection.connection.driver_connection = driver_connection
+    connection.in_transaction.return_value = False
+    ops = XtdbDataframeOps(connection)
+    table_config = TableConfig(
+        schema="test",
+        name="records",
+        primary_keys=["id"],
+        columns=[
+            TableColumnConfig("records", "id", "BIGINT", nullable=False),
+            TableColumnConfig("records", "capacity", "DECIMAL(15,3)"),
+        ],
+    )
+
+    ops.table_insert(
+        pl.DataFrame(
+            {
+                "id": [1],
+                "capacity": ["12.345"],
+            },
+            schema_overrides={"capacity": pl.Categorical},
+        ),
+        "test",
+        "records",
+        table_config=table_config,
+    )
+
+    insert_sql = driver_connection.execute.call_args_list[1].args[0]
+    assert "12.345::DECIMAL(15,3)" in insert_sql
+
+
 def test_xtdb_dataframe_ops_quotes_reserved_insert_columns():
     driver_connection = Mock()
     connection = Mock()
