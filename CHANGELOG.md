@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.16](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.15...v0.12.16) (2026-06-29)
+
+
+### Bug Fixes
+
+* quote reserved XTDB insert columns ([#97](https://github.com/jr200-labs/polars-hist-db/issues/97)) ([7222888](https://github.com/jr200-labs/polars-hist-db/commit/722288842c0f22cdccac42fb72f7def8c3349e82))
+
 ## [0.12.15](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.14...v0.12.15) (2026-06-29)
 
 
