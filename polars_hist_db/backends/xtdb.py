@@ -443,6 +443,18 @@ def _apply_xtdb_configured_column_dtypes(
     return df.with_columns(casts)
 
 
+def _iter_xtdb_insert_chunks(
+    df: pl.DataFrame,
+    max_rows_per_insert: Optional[int],
+) -> Iterable[pl.DataFrame]:
+    if max_rows_per_insert is None or df.height <= max_rows_per_insert:
+        yield df
+        return
+
+    for offset in range(0, df.height, max_rows_per_insert):
+        yield df.slice(offset, max_rows_per_insert)
+
+
 def _prepare_xtdb_insert_dataframe(
     df: pl.DataFrame,
     table_config: Optional[TableConfig],
@@ -1141,8 +1153,13 @@ def _cast_null_parent_lookup_columns(
 
 
 class XtdbDataframeOps:
-    def __init__(self, connection: Any):
+    def __init__(
+        self,
+        connection: Any,
+        max_rows_per_insert: Optional[int] = None,
+    ):
         self.connection = connection
+        self.max_rows_per_insert = max_rows_per_insert
 
     def from_raw_sql(
         self,
@@ -1266,49 +1283,62 @@ class XtdbDataframeOps:
     ) -> int:
         df = _prepare_xtdb_insert_dataframe(df, table_config)
         df = _apply_xtdb_configured_column_dtypes(df, table_config)
+        if df.is_empty():
+            return 0
+
         driver_connection = _driver_connection(self.connection)
         if driver_connection is not None:
-            if df.is_empty():
-                return 0
-
-            columns = [_quote_identifier(column) for column in df.columns]
-            column_sql = ", ".join(columns)
-            casts = _xtdb_insert_casts(df, table_config)
-            rows = df.rows()
-            values_sql = ", ".join(
-                "("
-                + ", ".join(
-                    _xtdb_sql_literal(value, cast)
-                    for value, cast in zip(row, casts, strict=True)
+            inserted_count = 0
+            for chunk in _iter_xtdb_insert_chunks(df, self.max_rows_per_insert):
+                columns = [_quote_identifier(column) for column in chunk.columns]
+                column_sql = ", ".join(columns)
+                casts = _xtdb_insert_casts(chunk, table_config)
+                rows = chunk.rows()
+                values_sql = ", ".join(
+                    "("
+                    + ", ".join(
+                        _xtdb_sql_literal(value, cast)
+                        for value, cast in zip(row, casts, strict=True)
+                    )
+                    + ")"
+                    for row in rows
                 )
-                + ")"
-                for row in rows
-            )
-            table_sql = _qualified_table_name(table_schema, table_name)
-            insert_sql = f"INSERT INTO {table_sql} ({column_sql}) VALUES {values_sql}"
-            _execute_xtdb_dml(
-                self.connection,
-                insert_sql,
-                system_time=update_time,
-            )
-            return len(rows)
+                table_sql = _qualified_table_name(table_schema, table_name)
+                insert_sql = (
+                    f"INSERT INTO {table_sql} ({column_sql}) VALUES {values_sql}"
+                )
+                _execute_xtdb_dml(
+                    self.connection,
+                    insert_sql,
+                    system_time=update_time,
+                )
+                inserted_count += len(rows)
+            return inserted_count
 
         if update_time is not None:
             raise ValueError(
                 "XTDB pgwire system-time writes require a live DBAPI connection"
             )
 
-        result = df.write_database(
-            table_name=f"{table_schema}.{table_name}",
-            connection=self.connection,
-            if_table_exists="append",
-        )
-        return int(result) if result is not None else 0
+        inserted_count = 0
+        for chunk in _iter_xtdb_insert_chunks(df, self.max_rows_per_insert):
+            result = chunk.write_database(
+                table_name=f"{table_schema}.{table_name}",
+                connection=self.connection,
+                if_table_exists="append",
+            )
+            inserted_count += int(result) if result is not None else 0
+        return inserted_count
 
 
 class XtdbAdbcDataframeOps:
-    def __init__(self, connection: Any):
+    def __init__(
+        self,
+        connection: Any,
+        max_rows_per_insert: Optional[int] = None,
+    ):
         self.connection = connection
+        self.max_rows_per_insert = max_rows_per_insert
 
     def from_raw_sql(
         self,
@@ -1363,14 +1393,15 @@ class XtdbAdbcDataframeOps:
 
         df = _prepare_xtdb_insert_dataframe(df, table_config)
         df = _apply_xtdb_configured_column_dtypes(df, table_config)
-        arrow_table = _normalize_xtdb_ingest_arrow(df.to_arrow())
-        with self.connection.cursor() as cursor:
-            cursor.adbc_ingest(
-                table_name,
-                arrow_table,
-                mode="create_append",
-                db_schema_name=table_schema,
-            )
+        for chunk in _iter_xtdb_insert_chunks(df, self.max_rows_per_insert):
+            arrow_table = _normalize_xtdb_ingest_arrow(chunk.to_arrow())
+            with self.connection.cursor() as cursor:
+                cursor.adbc_ingest(
+                    table_name,
+                    arrow_table,
+                    mode="create_append",
+                    db_schema_name=table_schema,
+                )
         return df.height
 
 
@@ -1892,6 +1923,7 @@ class XtdbStagingOps:
 @dataclass(frozen=True)
 class XtdbBackend:
     name: str = "xtdb"
+    max_rows_per_insert: Optional[int] = 10_000
 
     def create_engine(self, config: DbEngineConfig) -> Engine:
         database = config.database or "xtdb"
@@ -1919,10 +1951,16 @@ class XtdbBackend:
         return _load_flight_sql().connect(self.adbc_uri(config), autocommit=True)
 
     def dataframes(self, connection: Any) -> XtdbDataframeOps:
-        return XtdbDataframeOps(connection)
+        return XtdbDataframeOps(
+            connection,
+            max_rows_per_insert=self.max_rows_per_insert,
+        )
 
     def adbc_dataframes(self, connection: Any) -> XtdbAdbcDataframeOps:
-        return XtdbAdbcDataframeOps(connection)
+        return XtdbAdbcDataframeOps(
+            connection,
+            max_rows_per_insert=self.max_rows_per_insert,
+        )
 
     def table_configs(self, connection: Any) -> XtdbTableConfigOps:
         return XtdbTableConfigOps(connection)

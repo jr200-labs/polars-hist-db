@@ -32,6 +32,12 @@ XTDB uses two ports when both backend paths are enabled:
 - `port` defaults to `5432` for the pgwire/SQLAlchemy path.
 - `adbc_port` defaults to `9832` for the ADBC/FlightSQL path.
 
+XTDB writes are chunked by `max_rows_per_insert`, which defaults to `10000`.
+This bounds the size of each final insert/ingest transaction after staging,
+deduplication, transforms, foreign-key handling, and unchanged-row filtering
+have already run. Lower this value for smaller XTDB nodes or raise it only after
+load testing retained/replay workloads.
+
 ## table_configs
 
 A collection of tables that will be managed by this configuration.

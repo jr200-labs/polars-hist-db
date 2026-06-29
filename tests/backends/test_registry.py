@@ -32,3 +32,13 @@ def test_backend_from_config_uses_db_engine_config_backend():
     backend = backend_from_config(DbEngineConfig(backend="xtdb"))
 
     assert isinstance(backend, XtdbBackend)
+    assert backend.max_rows_per_insert == 10_000
+
+
+def test_backend_from_config_passes_xtdb_max_rows_per_insert():
+    backend = backend_from_config(
+        DbEngineConfig(backend="xtdb", max_rows_per_insert=2500)
+    )
+
+    assert isinstance(backend, XtdbBackend)
+    assert backend.max_rows_per_insert == 2500
