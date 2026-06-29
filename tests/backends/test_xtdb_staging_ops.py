@@ -76,6 +76,87 @@ def test_xtdb_staging_insert_partition_uses_retained_stage_table(monkeypatch):
     }
 
 
+def test_xtdb_staging_projects_from_insert_cache_after_partition_insert(monkeypatch):
+    def table_insert(self, df, table_schema, table_name, table_config=None):
+        return df.height
+
+    from_raw_sql = Mock(
+        return_value=pl.DataFrame(
+            schema={
+                "stage_run_id": pl.String,
+                "stage_row_index": pl.Int64,
+                "record_id": pl.Int64,
+                "destination_name": pl.String,
+            }
+        )
+    )
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_insert",
+        table_insert,
+    )
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_raw_sql",
+        from_raw_sql,
+    )
+
+    delta_table_config = TableConfig(
+        schema="fakedata",
+        name="record_stream",
+        columns=[
+            TableColumnConfig("record_stream", "record_id", "INT"),
+            TableColumnConfig("record_stream", "destination_name", "VARCHAR(64)"),
+        ],
+    )
+    dataset = DatasetConfig(
+        name="record_stream",
+        delta_table_schema="fakedata",
+        input_config={"type": "dsv", "search_paths": []},
+        pipeline=[
+            {
+                "schema": "fakedata",
+                "table": "records",
+                "type": "primary",
+                "columns": [
+                    {"source": "record_id", "target": "record_id"},
+                    {"source": "destination_name", "target": "destination"},
+                ],
+            }
+        ],
+    )
+    table_config = TableConfig(
+        schema="fakedata",
+        name="records",
+        primary_keys=["record_id"],
+        columns=[
+            TableColumnConfig("records", "record_id", "INT"),
+            TableColumnConfig("records", "destination", "VARCHAR(64)"),
+        ],
+    )
+    staging = XtdbStagingOps(object())
+
+    staging.insert_partition(
+        pl.DataFrame({"record_id": [1], "destination_name": ["Tokyo"]}),
+        delta_table_config,
+        "stage-1",
+        datetime(2030, 1, 1, tzinfo=timezone.utc),
+        uniqueness_col_set=["record_id"],
+        prefill_nulls_with_default=True,
+    )
+    result = staging.prepare_pipeline_item_dataframe(
+        "stage-1",
+        dataset,
+        0,
+        table_config,
+        valid_time=None,
+    )
+
+    assert result.to_dict(as_series=False) == {
+        "record_id": [1],
+        "destination": ["Tokyo"],
+    }
+    from_raw_sql.assert_not_called()
+
+
 def test_xtdb_staging_projects_pipeline_item_with_valid_time_mapping(monkeypatch):
     stage_df = pl.DataFrame(
         {

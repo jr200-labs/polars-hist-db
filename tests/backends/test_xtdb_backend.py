@@ -7,7 +7,11 @@ import polars as pl
 import pytest
 
 from polars_hist_db.backends import DbEngineConfig, XtdbBackend
-from polars_hist_db.backends.xtdb import XtdbDataframeOps, XtdbTableConfigOps
+from polars_hist_db.backends.xtdb import (
+    XtdbDataframeOps,
+    XtdbTableConfigOps,
+    _xtdb_declared_columns,
+)
 from polars_hist_db.config import (
     DeltaConfig,
     TableColumnConfig,
@@ -619,12 +623,41 @@ def test_xtdb_table_creation_maps_mysql_compatibility_types(monkeypatch):
 
     ops.create(table_config)
 
-    statement = connection.execute.call_args_list[0].args[0]
-    assert statement.text == (
-        "CREATE TABLE test.compat_types "
-        "(_id, bool_col, bit_col, tinyint_col, mediumint_col, "
-        "datetime_col, time_col)"
-    )
+    executed_sql = [call.args[0].text for call in connection.execute.call_args_list]
+    assert all(not sql.startswith("CREATE TABLE") for sql in executed_sql)
+    assert executed_sql == [
+        "INSERT INTO test.__polars_hist_db_xtdb_table_configs "
+        "(_id, table_schema, table_name, primary_keys_json, id_policy, "
+        "columns_json, foreign_keys_json) "
+        "VALUES ('test.compat_types'::TEXT, 'test'::TEXT, 'compat_types'::TEXT, "
+        "'[\"id\"]'::TEXT, 'single-key'::TEXT, "
+        '\'[{"table":"compat_types","name":"id","data_type":"INT",'
+        '"default_value":null,"autoincrement":false,"nullable":false,'
+        '"unique_constraint":[]},{"table":"compat_types","name":"bool_col",'
+        '"data_type":"BOOL","default_value":null,"autoincrement":false,'
+        '"nullable":true,"unique_constraint":[]},{"table":"compat_types",'
+        '"name":"bit_col","data_type":"BIT","default_value":null,'
+        '"autoincrement":false,"nullable":true,"unique_constraint":[]},'
+        '{"table":"compat_types","name":"tinyint_col","data_type":"TINYINT",'
+        '"default_value":null,"autoincrement":false,"nullable":true,'
+        '"unique_constraint":[]},{"table":"compat_types","name":"mediumint_col",'
+        '"data_type":"MEDIUMINT","default_value":null,"autoincrement":false,'
+        '"nullable":true,"unique_constraint":[]},{"table":"compat_types",'
+        '"name":"datetime_col","data_type":"DATETIME","default_value":null,'
+        '"autoincrement":false,"nullable":true,"unique_constraint":[]},'
+        '{"table":"compat_types","name":"time_col","data_type":"TIME",'
+        '"default_value":null,"autoincrement":false,"nullable":true,'
+        "\"unique_constraint\":[]}]'::TEXT, '[]'::TEXT)",
+    ]
+    assert _xtdb_declared_columns(table_config) == [
+        "_id",
+        "bool_col",
+        "bit_col",
+        "tinyint_col",
+        "mediumint_col",
+        "datetime_col",
+        "time_col",
+    ]
     assert [column.data_type for column in table_config.columns[1:]] == [
         "BOOL",
         "BIT",
@@ -664,6 +697,40 @@ def test_xtdb_table_config_ops_drop_all_erases_configured_tables(monkeypatch):
 
     assert executed == [
         "ERASE FROM market.prices WHERE TRUE",
+        "DELETE FROM market.__polars_hist_db_xtdb_table_configs "
+        "WHERE _id = 'market.prices'::TEXT",
+    ]
+
+
+def test_xtdb_table_config_ops_drop_removes_metadata_without_data_table(monkeypatch):
+    executed = []
+
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb._execute_xtdb_dml",
+        lambda _connection, sql, **_kwargs: executed.append(sql),
+    )
+
+    table_config = TableConfig(
+        schema="market",
+        name="prices",
+        primary_keys=["id"],
+        columns=[TableColumnConfig("prices", "id", "INT", nullable=False)],
+    )
+
+    ops = XtdbTableConfigOps(object())
+    monkeypatch.setattr(
+        ops,
+        "table_exists",
+        Mock(
+            side_effect=lambda _schema, table: (
+                table == "__polars_hist_db_xtdb_table_configs"
+            )
+        ),
+    )
+
+    ops.drop(table_config)
+
+    assert executed == [
         "DELETE FROM market.__polars_hist_db_xtdb_table_configs "
         "WHERE _id = 'market.prices'::TEXT",
     ]
@@ -737,7 +804,7 @@ def test_xtdb_backend_create_engine_uses_configured_database(monkeypatch):
     assert calls[0][0] == "postgresql+psycopg://127.0.0.1:15432/analytics"
 
 
-def test_xtdb_table_creation_declares_configured_columns(monkeypatch):
+def test_xtdb_table_creation_records_configured_columns_without_ddl(monkeypatch):
     connection = Mock()
     connection.connection = None
     ops = XtdbTableConfigOps(connection)
@@ -756,8 +823,23 @@ def test_xtdb_table_creation_declares_configured_columns(monkeypatch):
     result = ops.create(table_config)
 
     assert result is table_config
-    statement = connection.execute.call_args_list[0].args[0]
-    assert statement.text == "CREATE TABLE test.records (_id, destination, record_mcm)"
+    executed_sql = [call.args[0].text for call in connection.execute.call_args_list]
+    assert all(not sql.startswith("CREATE TABLE") for sql in executed_sql)
+    assert executed_sql == [
+        "INSERT INTO test.__polars_hist_db_xtdb_table_configs "
+        "(_id, table_schema, table_name, primary_keys_json, id_policy, "
+        "columns_json, foreign_keys_json) "
+        "VALUES ('test.records'::TEXT, 'test'::TEXT, 'records'::TEXT, "
+        "'[\"id\"]'::TEXT, 'single-key'::TEXT, "
+        '\'[{"table":"records","name":"id","data_type":"BIGINT",'
+        '"default_value":null,"autoincrement":false,"nullable":false,'
+        '"unique_constraint":[]},{"table":"records","name":"destination",'
+        '"data_type":"VARCHAR(255)","default_value":null,"autoincrement":false,'
+        '"nullable":true,"unique_constraint":[]},{"table":"records",'
+        '"name":"record_mcm","data_type":"DECIMAL(20,6)","default_value":null,'
+        '"autoincrement":false,"nullable":true,"unique_constraint":[]}]'
+        "'::TEXT, '[]'::TEXT)",
+    ]
 
 
 def test_xtdb_table_creation_is_idempotent_when_table_exists(monkeypatch):
@@ -781,7 +863,7 @@ def test_xtdb_table_creation_is_idempotent_when_table_exists(monkeypatch):
     ops.from_table.assert_called_once_with("test", "records")
 
 
-def test_xtdb_table_creation_declares_composite_primary_key_columns(monkeypatch):
+def test_xtdb_table_creation_records_composite_primary_key_columns(monkeypatch):
     connection = Mock()
     connection.connection = None
     ops = XtdbTableConfigOps(connection)
@@ -801,10 +883,23 @@ def test_xtdb_table_creation_declares_composite_primary_key_columns(monkeypatch)
     result = ops.create(table_config)
 
     assert result is table_config
-    statement = connection.execute.call_args_list[0].args[0]
-    assert statement.text == (
-        "CREATE TABLE test.records (_id, entity_id, record_id, destination)"
-    )
+    executed_sql = [call.args[0].text for call in connection.execute.call_args_list]
+    assert all(not sql.startswith("CREATE TABLE") for sql in executed_sql)
+    assert executed_sql == [
+        "INSERT INTO test.__polars_hist_db_xtdb_table_configs "
+        "(_id, table_schema, table_name, primary_keys_json, id_policy, "
+        "columns_json, foreign_keys_json) "
+        "VALUES ('test.records'::TEXT, 'test'::TEXT, 'records'::TEXT, "
+        "'[\"entity_id\",\"record_id\"]'::TEXT, 'xtdb-pk-v1'::TEXT, "
+        '\'[{"table":"records","name":"entity_id","data_type":"BIGINT",'
+        '"default_value":null,"autoincrement":false,"nullable":false,'
+        '"unique_constraint":[]},{"table":"records","name":"record_id",'
+        '"data_type":"BIGINT","default_value":null,"autoincrement":false,'
+        '"nullable":false,"unique_constraint":[]},{"table":"records",'
+        '"name":"destination","data_type":"VARCHAR(255)","default_value":null,'
+        '"autoincrement":false,"nullable":true,"unique_constraint":[]}]'
+        "'::TEXT, '[]'::TEXT)",
+    ]
 
 
 def test_xtdb_table_creation_records_primary_key_metadata(monkeypatch):
@@ -827,10 +922,6 @@ def test_xtdb_table_creation_records_primary_key_metadata(monkeypatch):
 
     executed_sql = [call.args[0].text for call in connection.execute.call_args_list]
     assert executed_sql == [
-        "CREATE TABLE test.records (_id, entity_id, record_id)",
-        "CREATE TABLE test.__polars_hist_db_xtdb_table_configs "
-        "(_id, table_schema, table_name, primary_keys_json, id_policy, "
-        "columns_json, foreign_keys_json)",
         "INSERT INTO test.__polars_hist_db_xtdb_table_configs "
         "(_id, table_schema, table_name, primary_keys_json, id_policy, "
         "columns_json, foreign_keys_json) "

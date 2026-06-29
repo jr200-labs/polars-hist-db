@@ -23,6 +23,40 @@ from ..utils.clock import Clock
 LOGGER = logging.getLogger(__name__)
 
 
+def _make_dsv_file_commit_fn(
+    bound_csv_file: str,
+    bound_file_time: Any,
+) -> Callable[[Connection, List[Tuple[str, str]]], Awaitable[bool]]:
+    async def commit_fn(
+        connection: Connection,
+        modified_tables: List[Tuple[str, str]],
+    ) -> bool:
+        result = True
+        for modified_schema, modified_table in modified_tables:
+            aops = AuditOps(modified_schema)
+            path = Path(bound_csv_file).absolute()
+            result = aops.add_entry(
+                "dsv",
+                path.as_posix(),
+                modified_table,
+                connection,
+                bound_file_time,
+            )
+
+            if not result:
+                LOGGER.error(
+                    "audit for [%s.%s - %s]: FAILED",
+                    modified_schema,
+                    modified_table,
+                    path.name,
+                )
+                raise NonRetryableException("Failed to update audit log")
+
+        return result
+
+    return commit_fn
+
+
 class DsvCrawlerInputSource(InputSource[DsvCrawlerInputConfig]):
     def __init__(
         self,
@@ -113,40 +147,7 @@ class DsvCrawlerInputSource(InputSource[DsvCrawlerInputConfig]):
 
                 partitions = self._process_payload(Path(csv_file), file_time)
 
-                def _make_commit_fn(
-                    bound_csv_file: str, bound_file_time: Any
-                ) -> Callable[[Connection, List[Tuple[str, str]]], Awaitable[bool]]:
-                    async def commit_fn(
-                        connection: Connection,
-                        modified_tables: List[Tuple[str, str]],
-                    ) -> bool:
-                        for modified_schema, modified_table in modified_tables:
-                            aops = AuditOps(modified_schema)
-                            path = Path(bound_csv_file).absolute()
-                            result: bool = aops.add_entry(
-                                "dsv",
-                                path.as_posix(),
-                                modified_table,
-                                connection,
-                                bound_file_time,
-                            )
-
-                            if not result:
-                                LOGGER.error(
-                                    "audit for [%s.%s - %s]: FAILED",
-                                    modified_schema,
-                                    modified_table,
-                                    path.name,
-                                )
-                                raise NonRetryableException(
-                                    "Failed to update audit log"
-                                )
-
-                        return result
-
-                    return commit_fn
-
-                yield partitions, _make_commit_fn(csv_file, file_time)
+                yield partitions, _make_dsv_file_commit_fn(csv_file, file_time)
 
                 pipeline_time = time.perf_counter() - start_time
                 timings.add_timing("pipeline", pipeline_time)
