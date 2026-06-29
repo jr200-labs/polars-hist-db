@@ -35,10 +35,10 @@ def test_xtdb_staging_insert_partition_uses_retained_stage_table(monkeypatch):
 
     delta_table_config = TableConfig(
         schema="fakedata",
-        name="cargo_stream",
+        name="record_stream",
         columns=[
-            TableColumnConfig("cargo_stream", "cargo_id", "INT"),
-            TableColumnConfig("cargo_stream", "destination_name", "VARCHAR(64)"),
+            TableColumnConfig("record_stream", "record_id", "INT"),
+            TableColumnConfig("record_stream", "destination_name", "VARCHAR(64)"),
         ],
     )
     partition_time = datetime(2030, 1, 1, 12, 0, tzinfo=timezone.utc)
@@ -48,29 +48,29 @@ def test_xtdb_staging_insert_partition_uses_retained_stage_table(monkeypatch):
     inserted_count = staging.insert_partition(
         pl.DataFrame(
             {
-                "cargo_id": [1, 1],
-                "destination_name": ["Osaka", "Tokyo"],
+                "record_id": [1, 1],
+                "destination_name": ["Beta", "Alpha"],
             }
         ),
         delta_table_config,
         "stage-1",
         partition_time,
-        uniqueness_col_set=["cargo_id"],
+        uniqueness_col_set=["record_id"],
         prefill_nulls_with_default=True,
     )
 
     assert inserted_count == 1
     stage_config = created_configs[0]
     assert stage_config.schema == "fakedata"
-    assert stage_config.name == "__cargo_stream_stage"
+    assert stage_config.name == "__record_stream_stage"
     assert list(stage_config.primary_keys) == ["stage_run_id", "stage_row_index"]
     assert inserted["table_schema"] == "fakedata"
-    assert inserted["table_name"] == "__cargo_stream_stage"
-    assert inserted["table_config"].name == "__cargo_stream_stage"
+    assert inserted["table_name"] == "__record_stream_stage"
+    assert inserted["table_config"].name == "__record_stream_stage"
     assert inserted["df"].to_dict(as_series=False) == {
         "stage_row_index": [0],
-        "cargo_id": [1],
-        "destination_name": ["Tokyo"],
+        "record_id": [1],
+        "destination_name": ["Alpha"],
         "stage_run_id": ["stage-1"],
         "stage_partition_time": [partition_time],
     }
@@ -85,7 +85,7 @@ def test_xtdb_staging_projects_from_insert_cache_after_partition_insert(monkeypa
             schema={
                 "stage_run_id": pl.String,
                 "stage_row_index": pl.Int64,
-                "cargo_id": pl.Int64,
+                "record_id": pl.Int64,
                 "destination_name": pl.String,
             }
         )
@@ -101,23 +101,23 @@ def test_xtdb_staging_projects_from_insert_cache_after_partition_insert(monkeypa
 
     delta_table_config = TableConfig(
         schema="fakedata",
-        name="cargo_stream",
+        name="record_stream",
         columns=[
-            TableColumnConfig("cargo_stream", "cargo_id", "INT"),
-            TableColumnConfig("cargo_stream", "destination_name", "VARCHAR(64)"),
+            TableColumnConfig("record_stream", "record_id", "INT"),
+            TableColumnConfig("record_stream", "destination_name", "VARCHAR(64)"),
         ],
     )
     dataset = DatasetConfig(
-        name="cargo_stream",
+        name="record_stream",
         delta_table_schema="fakedata",
         input_config={"type": "dsv", "search_paths": []},
         pipeline=[
             {
                 "schema": "fakedata",
-                "table": "cargos",
+                "table": "records",
                 "type": "primary",
                 "columns": [
-                    {"source": "cargo_id", "target": "cargo_id"},
+                    {"source": "record_id", "target": "record_id"},
                     {"source": "destination_name", "target": "destination"},
                 ],
             }
@@ -125,21 +125,21 @@ def test_xtdb_staging_projects_from_insert_cache_after_partition_insert(monkeypa
     )
     table_config = TableConfig(
         schema="fakedata",
-        name="cargos",
-        primary_keys=["cargo_id"],
+        name="records",
+        primary_keys=["record_id"],
         columns=[
-            TableColumnConfig("cargos", "cargo_id", "INT"),
-            TableColumnConfig("cargos", "destination", "VARCHAR(64)"),
+            TableColumnConfig("records", "record_id", "INT"),
+            TableColumnConfig("records", "destination", "VARCHAR(64)"),
         ],
     )
     staging = XtdbStagingOps(object())
 
     staging.insert_partition(
-        pl.DataFrame({"cargo_id": [1], "destination_name": ["Tokyo"]}),
+        pl.DataFrame({"record_id": [1], "destination_name": ["Alpha"]}),
         delta_table_config,
         "stage-1",
         datetime(2030, 1, 1, tzinfo=timezone.utc),
-        uniqueness_col_set=["cargo_id"],
+        uniqueness_col_set=["record_id"],
         prefill_nulls_with_default=True,
     )
     result = staging.prepare_pipeline_item_dataframe(
@@ -151,8 +151,8 @@ def test_xtdb_staging_projects_from_insert_cache_after_partition_insert(monkeypa
     )
 
     assert result.to_dict(as_series=False) == {
-        "cargo_id": [1],
-        "destination": ["Tokyo"],
+        "record_id": [1],
+        "destination": ["Alpha"],
     }
     from_raw_sql.assert_not_called()
 
@@ -162,8 +162,8 @@ def test_xtdb_staging_projects_pipeline_item_with_valid_time_mapping(monkeypatch
         {
             "stage_run_id": ["stage-1"],
             "stage_row_index": [0],
-            "cargo_id": [1],
-            "destination_name": ["Tokyo"],
+            "record_id": [1],
+            "destination_name": ["Alpha"],
             "msg_timestamp": [datetime(2030, 1, 1, tzinfo=timezone.utc)],
             "ignored": ["not written"],
         }
@@ -174,16 +174,16 @@ def test_xtdb_staging_projects_pipeline_item_with_valid_time_mapping(monkeypatch
         from_raw_sql,
     )
     dataset = DatasetConfig(
-        name="cargo_stream",
+        name="record_stream",
         delta_table_schema="fakedata",
         input_config={"type": "dsv", "search_paths": []},
         pipeline=[
             {
                 "schema": "fakedata",
-                "table": "cargos",
+                "table": "records",
                 "type": "primary",
                 "columns": [
-                    {"source": "cargo_id", "target": "cargo_id"},
+                    {"source": "record_id", "target": "record_id"},
                     {"source": "destination_name", "target": "destination"},
                 ],
             }
@@ -191,11 +191,11 @@ def test_xtdb_staging_projects_pipeline_item_with_valid_time_mapping(monkeypatch
     )
     table_config = TableConfig(
         schema="fakedata",
-        name="cargos",
-        primary_keys=["cargo_id"],
+        name="records",
+        primary_keys=["record_id"],
         columns=[
-            TableColumnConfig("cargos", "cargo_id", "INT"),
-            TableColumnConfig("cargos", "destination", "VARCHAR(64)"),
+            TableColumnConfig("records", "record_id", "INT"),
+            TableColumnConfig("records", "destination", "VARCHAR(64)"),
         ],
     )
 
@@ -204,16 +204,16 @@ def test_xtdb_staging_projects_pipeline_item_with_valid_time_mapping(monkeypatch
         dataset,
         0,
         table_config,
-        valid_time=ValidTimeConfig(table="cargos", from_column="msg_timestamp"),
+        valid_time=ValidTimeConfig(table="records", from_column="msg_timestamp"),
     )
 
     assert result.to_dict(as_series=False) == {
-        "cargo_id": [1],
-        "destination": ["Tokyo"],
+        "record_id": [1],
+        "destination": ["Alpha"],
         "msg_timestamp": [datetime(2030, 1, 1, tzinfo=timezone.utc)],
     }
     from_raw_sql.assert_called_once_with(
-        "SELECT * FROM fakedata.__cargo_stream_stage "
+        "SELECT * FROM fakedata.__record_stream_stage "
         "WHERE stage_run_id = 'stage-1'::TEXT"
     )
 
@@ -225,16 +225,16 @@ def test_xtdb_staging_cleanup_deletes_only_batch_run():
     connection.in_transaction.return_value = False
     delta_table_config = TableConfig(
         schema="fakedata",
-        name="cargo_stream",
+        name="record_stream",
         columns=[
-            TableColumnConfig("cargo_stream", "cargo_id", "INT"),
+            TableColumnConfig("record_stream", "record_id", "INT"),
         ],
     )
 
     XtdbStagingOps(connection).cleanup_run("stage-1", delta_table_config)
 
     assert driver_connection.execute.call_args.args == (
-        "DELETE FROM fakedata.__cargo_stream_stage "
+        "DELETE FROM fakedata.__record_stream_stage "
         "WHERE stage_run_id = 'stage-1'::TEXT",
     )
 
@@ -342,7 +342,7 @@ def test_xtdb_staging_deduces_explicit_numeric_foreign_keys(monkeypatch):
             "stage_run_id": ["stage-1"],
             "stage_row_index": [0],
             "origin_location_id": [1001],
-            "origin_name": ["Bonny"],
+            "origin_name": ["Alpha"],
             "origin_country": ["Nigeria"],
         }
     )
@@ -375,12 +375,12 @@ def test_xtdb_staging_deduces_explicit_numeric_foreign_keys(monkeypatch):
         table_insert,
     )
     dataset = DatasetConfig(
-        name="cargo_stream",
-        delta_table_schema="kpler",
+        name="record_stream",
+        delta_table_schema="sample",
         input_config={"type": "dsv", "search_paths": []},
         pipeline=[
             {
-                "schema": "kpler",
+                "schema": "sample",
                 "table": "location_info",
                 "type": "extract",
                 "columns": [
@@ -394,7 +394,7 @@ def test_xtdb_staging_deduces_explicit_numeric_foreign_keys(monkeypatch):
                 ],
             },
             {
-                "schema": "kpler",
+                "schema": "sample",
                 "table": "trades",
                 "type": "primary",
                 "columns": [
@@ -404,7 +404,7 @@ def test_xtdb_staging_deduces_explicit_numeric_foreign_keys(monkeypatch):
         ],
     )
     table_config = TableConfig(
-        schema="kpler",
+        schema="sample",
         name="location_info",
         primary_keys=["id"],
         columns=[
@@ -422,17 +422,17 @@ def test_xtdb_staging_deduces_explicit_numeric_foreign_keys(monkeypatch):
         valid_time=None,
     )
 
-    assert inserted["table_schema"] == "kpler"
+    assert inserted["table_schema"] == "sample"
     assert inserted["table_name"] == "location_info"
     assert inserted["table_config"] == table_config
     assert inserted["df"].to_dict(as_series=False) == {
         "id": [1001],
-        "name": ["Bonny"],
+        "name": ["Alpha"],
         "country": ["Nigeria"],
     }
     assert result.to_dict(as_series=False) == {
         "id": [1001],
-        "name": ["Bonny"],
+        "name": ["Alpha"],
         "country": ["Nigeria"],
     }
 
@@ -482,12 +482,12 @@ def test_xtdb_staging_generates_numeric_foreign_key_when_source_key_is_missing(
         table_insert,
     )
     dataset = DatasetConfig(
-        name="cargo_stream",
-        delta_table_schema="kpler",
+        name="record_stream",
+        delta_table_schema="sample",
         input_config={"type": "dsv", "search_paths": []},
         pipeline=[
             {
-                "schema": "kpler",
+                "schema": "sample",
                 "table": "location_info",
                 "type": "extract",
                 "columns": [
@@ -501,7 +501,7 @@ def test_xtdb_staging_generates_numeric_foreign_key_when_source_key_is_missing(
                 ],
             },
             {
-                "schema": "kpler",
+                "schema": "sample",
                 "table": "trades",
                 "type": "primary",
                 "columns": [
@@ -514,7 +514,7 @@ def test_xtdb_staging_generates_numeric_foreign_key_when_source_key_is_missing(
         ],
     )
     table_config = TableConfig(
-        schema="kpler",
+        schema="sample",
         name="location_info",
         primary_keys=["id"],
         columns=[
@@ -588,12 +588,12 @@ def test_xtdb_staging_reuses_deduced_foreign_key_for_later_primary_item(
         lambda self, df, table_schema, table_name, table_config=None: df.height,
     )
     dataset = DatasetConfig(
-        name="cargo_stream",
-        delta_table_schema="kpler",
+        name="record_stream",
+        delta_table_schema="sample",
         input_config={"type": "dsv", "search_paths": []},
         pipeline=[
             {
-                "schema": "kpler",
+                "schema": "sample",
                 "table": "location_info",
                 "type": "extract",
                 "columns": [
@@ -607,7 +607,7 @@ def test_xtdb_staging_reuses_deduced_foreign_key_for_later_primary_item(
                 ],
             },
             {
-                "schema": "kpler",
+                "schema": "sample",
                 "table": "trades",
                 "type": "primary",
                 "columns": [
@@ -621,7 +621,7 @@ def test_xtdb_staging_reuses_deduced_foreign_key_for_later_primary_item(
         ],
     )
     location_config = TableConfig(
-        schema="kpler",
+        schema="sample",
         name="location_info",
         primary_keys=["id"],
         columns=[
@@ -631,7 +631,7 @@ def test_xtdb_staging_reuses_deduced_foreign_key_for_later_primary_item(
         ],
     )
     trades_config = TableConfig(
-        schema="kpler",
+        schema="sample",
         name="trades",
         primary_keys=["id"],
         columns=[
@@ -714,12 +714,12 @@ def test_xtdb_staging_does_not_insert_same_generated_parent_twice(
         table_insert,
     )
     dataset = DatasetConfig(
-        name="cargo_stream",
-        delta_table_schema="kpler",
+        name="record_stream",
+        delta_table_schema="sample",
         input_config={"type": "dsv", "search_paths": []},
         pipeline=[
             {
-                "schema": "kpler",
+                "schema": "sample",
                 "table": "location_info",
                 "type": "extract",
                 "columns": [
@@ -733,7 +733,7 @@ def test_xtdb_staging_does_not_insert_same_generated_parent_twice(
                 ],
             },
             {
-                "schema": "kpler",
+                "schema": "sample",
                 "table": "location_info",
                 "columns": [
                     {
@@ -746,7 +746,7 @@ def test_xtdb_staging_does_not_insert_same_generated_parent_twice(
                 ],
             },
             {
-                "schema": "kpler",
+                "schema": "sample",
                 "table": "trades",
                 "type": "primary",
                 "columns": [
@@ -756,7 +756,7 @@ def test_xtdb_staging_does_not_insert_same_generated_parent_twice(
         ],
     )
     location_config = TableConfig(
-        schema="kpler",
+        schema="sample",
         name="location_info",
         primary_keys=["id"],
         columns=[

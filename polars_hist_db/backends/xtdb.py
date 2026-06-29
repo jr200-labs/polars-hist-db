@@ -33,7 +33,7 @@ _XTDB_STAGE_RUN_ID_COLUMN = "stage_run_id"
 _XTDB_STAGE_ROW_INDEX_COLUMN = "stage_row_index"
 _XTDB_STAGE_PARTITION_TIME_COLUMN = "stage_partition_time"
 _XTDB_LAST_SYSTEM_TIME_KEY = "polars_hist_db_xtdb_last_system_time"
-_XTDB_RESERVED_IDENTIFIERS = {"timestamp"}
+_XTDB_RESERVED_IDENTIFIERS = {"flag", "timestamp"}
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 

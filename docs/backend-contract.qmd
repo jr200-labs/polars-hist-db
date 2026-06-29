@@ -3,7 +3,7 @@ title: "Backend Contract"
 ---
 
 This document defines the storage-backend contract for `polars-hist-db`.
-The current implementation uses MariaDB system-versioned tables, but Whengas
+The current implementation uses MariaDB system-versioned tables, but the consuming application
 should treat the stable product surface as typed Polars dataframes over
 temporal tables. A second backend, such as XTDB, should be evaluated against
 this contract before any migration is attempted.
@@ -90,7 +90,7 @@ until it passes the same contract tests.
 - Map Polars dtypes to backend-native storage types.
 - Round-trip dates, datetimes, decimals, booleans, categoricals, integers,
   floats, strings, and nulls without lossy conversion.
-- Preserve decimal precision needed by finance and gas-volume data.
+- Preserve decimal precision needed by finance and commodity-volume data.
 
 ### Reads
 
@@ -139,7 +139,7 @@ Apache Arrow, and object-storage-oriented architecture:
 - <https://github.com/xtdb/xtdb>
 - <https://docs.xtdb.com/intro/what-is-xtdb.html>
 
-Those properties are directly relevant to Whengas because the data platform is
+Those properties are directly relevant to the consuming application because the data platform is
 already Polars/Arrow-oriented and needs historical views. The same materials
 also describe a strongly ordered transaction path, with writes for a database
 processed through a single leader. That is a valuable consistency model, but it
@@ -154,7 +154,7 @@ XTDB should only move beyond spike status if it passes the following gates:
 - Delta upsert parity tests pass for inserts, updates, duplicate handling,
   unchanged-row dropping, and row-finality dropout.
 - Finance-shaped data preserves decimal precision and timestamp semantics.
-- Whengas-shaped cargo and vessel tables can be read into Arrow/Polars without
+- application-shaped record and entity tables can be read into Arrow/Polars without
   row-by-row conversion becoming the bottleneck.
 - Netbacks-style high-frequency update streams can be batched without violating
   freshness requirements.
@@ -167,7 +167,7 @@ XTDB should only move beyond spike status if it passes the following gates:
 The existing `polars-xtdb` prototype is useful prior art, but it should not be
 treated as a completed backend. It already explores XTDB reads, system-time
 columns, and basic type mapping. The current gaps are the important parts for
-Whengas:
+the consuming application:
 
 - Type mapping is incomplete for the schemas now used by `polars-hist-db`.
 - Dataset ingestion, audit tracking, delta upserts, and finality are not wired
@@ -216,7 +216,7 @@ XTDB columns surface through `information_schema`, and XTDB widens column types
 from inserted data. The adapter therefore keeps Arrow/Polars and
 `TableConfig` as the typed boundary while the spike proves whether live XTDB
 ingestion preserves the precision and nullability guarantees required by
-Whengas.
+the consuming application.
 
 The first live pgwire round trip passes against `ghcr.io/xtdb/xtdb:nightly`:
 
@@ -307,11 +307,11 @@ behaviour:
   changes. A live test proves a row with an explicit valid-time window is only
   visible inside that window.
 - Dataset configs can declare per-table valid-time mappings:
-  `valid_time: [{table: cargos, from_column: msg_timestamp}]`. The XTDB
+  `valid_time: [{table: records, from_column: msg_timestamp}]`. The XTDB
   temporal upsert path copies the configured `from_column` to `_valid_from`
   and optional `to_column` to `_valid_to`, preserving the original source
-  columns. This keeps feed semantics YAML-controlled: cargo snapshots can use
-  message/as-of time, vessel vectors can use source position time, and future
+  columns. This keeps feed semantics YAML-controlled: record snapshots can use
+  message/as-of time, entity vectors can use source position time, and future
   rate feeds can use explicit validity windows.
 - Dataset ingestion keeps an explicit staging phase for XTDB. The adapter
   writes each partition to a retained internal table named
@@ -335,11 +335,11 @@ Do not start by replacing MariaDB. Start by extracting the backend contract and
 building a minimal XTDB adapter behind it. The decision to migrate should be
 based on parity tests, representative benchmarks, and operational confidence.
 
-For Whengas, the practical default is:
+For the consuming application, the practical default is:
 
 - Keep MariaDB as the production backend while the adapter boundary is created.
 - Build XTDB as an experimental backend.
-- Compare both backends with cargo, vessel, netbacks, and pipe/storage-shaped
+- Compare both backends with record, entity, netbacks, and pipe/storage-shaped
   datasets.
 - Migrate only after typed temporal reads, writes, update visibility, and
   operational recovery are proven.

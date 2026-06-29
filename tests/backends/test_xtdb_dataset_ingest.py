@@ -51,35 +51,35 @@ def test_xtdb_primary_ingest_uses_staged_dataframe_for_temporal_upsert():
         items=[
             {
                 "schema": "fakedata",
-                "name": "cargos",
-                "primary_keys": ["cargo_id"],
+                "name": "records",
+                "primary_keys": ["record_id"],
                 "columns": [
-                    {"name": "cargo_id", "data_type": "INT", "nullable": False},
+                    {"name": "record_id", "data_type": "INT", "nullable": False},
                     {"name": "destination", "data_type": "VARCHAR(64)"},
                 ],
                 "is_temporal": True,
             }
         ]
     )
-    cargo_table = tables["cargos"]
+    record_table = tables["records"]
     dataset = DatasetConfig(
-        name="cargo_stream",
+        name="record_stream",
         delta_table_schema="fakedata",
         input_config={"type": "dsv", "search_paths": []},
         valid_time=[
             {
                 "schema": "fakedata",
-                "table": "cargos",
+                "table": "records",
                 "from_column": "msg_timestamp",
             }
         ],
         pipeline=[
             {
                 "schema": "fakedata",
-                "table": "cargos",
+                "table": "records",
                 "type": "primary",
                 "columns": [
-                    {"source": "cargo_id", "target": "cargo_id"},
+                    {"source": "record_id", "target": "record_id"},
                     {"source": "destination_name", "target": "destination"},
                 ],
             }
@@ -89,8 +89,8 @@ def test_xtdb_primary_ingest_uses_staged_dataframe_for_temporal_upsert():
     update_time = datetime(2030, 1, 1, 12, 5, tzinfo=timezone.utc)
     staged_df = pl.DataFrame(
         {
-            "cargo_id": [1],
-            "destination": ["Tokyo"],
+            "record_id": [1],
+            "destination": ["Alpha"],
             "msg_timestamp": [msg_timestamp],
         }
     )
@@ -109,32 +109,32 @@ def test_xtdb_primary_ingest_uses_staged_dataframe_for_temporal_upsert():
     )
 
     assert did_modify is True
-    assert backend.table_config_ops.created == [cargo_table]
+    assert backend.table_config_ops.created == [record_table]
     assert staging.prepare_calls == [
         (
-            ("stage-1", dataset, 0, cargo_table),
+            ("stage-1", dataset, 0, record_table),
             {
                 "valid_time": ValidTimeConfig(
                     schema="fakedata",
-                    table="cargos",
+                    table="records",
                     from_column="msg_timestamp",
                 )
             },
         )
     ]
     args, kwargs = backend.temporal_upsert_calls[0]
-    assert args[1:] == ("fakedata", "cargos")
+    assert args[1:] == ("fakedata", "records")
     assert args[0].to_dict(as_series=False) == {
-        "cargo_id": [1],
-        "destination": ["Tokyo"],
+        "record_id": [1],
+        "destination": ["Alpha"],
         "msg_timestamp": [msg_timestamp],
     }
-    assert kwargs["table_config"] == cargo_table
+    assert kwargs["table_config"] == record_table
     assert kwargs["delta_config"] == dataset.delta_config
     assert kwargs["update_time"] == update_time
     assert kwargs["valid_time"] == ValidTimeConfig(
         schema="fakedata",
-        table="cargos",
+        table="records",
         from_column="msg_timestamp",
     )
 
@@ -143,46 +143,46 @@ def test_xtdb_extract_ingest_uses_staged_dataframe_for_temporal_upsert():
     tables = TableConfigs(
         items=[
             {
-                "schema": "spire",
+                "schema": "source_a",
                 "name": "vectors",
-                "primary_keys": ["mmsi"],
+                "primary_keys": ["entity_id"],
                 "columns": [
-                    {"name": "mmsi", "data_type": "INT", "nullable": False},
+                    {"name": "entity_id", "data_type": "INT", "nullable": False},
                     {"name": "latitude", "data_type": "DOUBLE"},
                 ],
                 "is_temporal": True,
             },
             {
-                "schema": "spire",
-                "name": "vessel_info",
-                "primary_keys": ["mmsi"],
+                "schema": "source_a",
+                "name": "entity_info",
+                "primary_keys": ["entity_id"],
                 "columns": [
-                    {"name": "mmsi", "data_type": "INT", "nullable": False},
+                    {"name": "entity_id", "data_type": "INT", "nullable": False},
                     {"name": "name", "data_type": "VARCHAR(64)"},
                 ],
             },
         ]
     )
-    vessel_info = tables["vessel_info"]
+    entity_info = tables["entity_info"]
     dataset = DatasetConfig(
-        name="spire_stream",
-        delta_table_schema="spire",
+        name="source_a_stream",
+        delta_table_schema="source_a",
         input_config={"type": "dsv", "search_paths": []},
         pipeline=[
             {
-                "schema": "spire",
+                "schema": "source_a",
                 "table": "vectors",
                 "type": "primary",
                 "columns": [
-                    {"source": "source_mmsi", "target": "mmsi"},
+                    {"source": "source_entity_id", "target": "entity_id"},
                     {"source": "source_latitude", "target": "latitude"},
                 ],
             },
             {
-                "schema": "spire",
-                "table": "vessel_info",
+                "schema": "source_a",
+                "table": "entity_info",
                 "columns": [
-                    {"source": "source_mmsi", "target": "mmsi"},
+                    {"source": "source_entity_id", "target": "entity_id"},
                     {"source": "source_name", "target": "name"},
                 ],
             },
@@ -191,8 +191,8 @@ def test_xtdb_extract_ingest_uses_staged_dataframe_for_temporal_upsert():
     update_time = datetime(2030, 1, 1, 12, 5, tzinfo=timezone.utc)
     staged_df = pl.DataFrame(
         {
-            "mmsi": [123],
-            "name": ["LNG Test"],
+            "entity_id": [123],
+            "name": ["Commodity Test"],
         }
     )
     backend = _FakeXtdbBackend()
@@ -201,7 +201,7 @@ def test_xtdb_extract_ingest_uses_staged_dataframe_for_temporal_upsert():
     did_modify = scrape_extract_item(
         1,
         dataset,
-        "vessel_info",
+        "entity_info",
         tables,
         update_time,
         SimpleNamespace(),
@@ -211,17 +211,17 @@ def test_xtdb_extract_ingest_uses_staged_dataframe_for_temporal_upsert():
     )
 
     assert did_modify is True
-    assert backend.table_config_ops.created == [vessel_info]
+    assert backend.table_config_ops.created == [entity_info]
     assert staging.prepare_calls == [
-        (("stage-1", dataset, 1, vessel_info), {"valid_time": None})
+        (("stage-1", dataset, 1, entity_info), {"valid_time": None})
     ]
     args, kwargs = backend.temporal_upsert_calls[0]
-    assert args[1:] == ("spire", "vessel_info")
+    assert args[1:] == ("source_a", "entity_info")
     assert args[0].to_dict(as_series=False) == {
-        "mmsi": [123],
-        "name": ["LNG Test"],
+        "entity_id": [123],
+        "name": ["Commodity Test"],
     }
-    assert kwargs["table_config"] == vessel_info
+    assert kwargs["table_config"] == entity_info
     assert kwargs["delta_config"] == dataset.delta_config
     assert kwargs["update_time"] == update_time
     assert kwargs["valid_time"] is None
