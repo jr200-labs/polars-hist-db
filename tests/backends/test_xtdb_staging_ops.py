@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from unittest.mock import Mock
 
 import polars as pl
+import pytest
 
 from polars_hist_db.backends.xtdb import XtdbStagingOps
 from polars_hist_db.config import (
@@ -216,6 +217,111 @@ def test_xtdb_staging_projects_pipeline_item_with_valid_time_mapping(monkeypatch
         "SELECT * FROM fakedata.__record_stream_stage "
         "WHERE stage_run_id = 'stage-1'::TEXT"
     )
+
+
+def test_xtdb_staging_projects_missing_nullable_pipeline_columns(monkeypatch):
+    stage_df = pl.DataFrame(
+        {
+            "stage_run_id": ["stage-1"],
+            "stage_row_index": [0],
+            "record_id": [1],
+            "destination_name": ["Alpha"],
+        }
+    )
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_raw_sql",
+        Mock(return_value=stage_df),
+    )
+    dataset = DatasetConfig(
+        name="record_stream",
+        delta_table_schema="fakedata",
+        input_config={"type": "dsv", "search_paths": []},
+        pipeline=[
+            {
+                "schema": "fakedata",
+                "table": "records",
+                "type": "primary",
+                "columns": [
+                    {"source": "record_id", "target": "record_id"},
+                    {"source": "destination_name", "target": "destination"},
+                    {"source": "source_note", "target": "source_note"},
+                ],
+            }
+        ],
+    )
+    table_config = TableConfig(
+        schema="fakedata",
+        name="records",
+        primary_keys=["record_id"],
+        columns=[
+            TableColumnConfig("records", "record_id", "INT", nullable=False),
+            TableColumnConfig("records", "destination", "VARCHAR(64)"),
+            TableColumnConfig("records", "source_note", "VARCHAR(128)"),
+        ],
+    )
+
+    result = XtdbStagingOps(object()).prepare_pipeline_item_dataframe(
+        "stage-1",
+        dataset,
+        0,
+        table_config,
+        valid_time=None,
+    )
+
+    assert result.to_dict(as_series=False) == {
+        "record_id": [1],
+        "destination": ["Alpha"],
+        "source_note": [None],
+    }
+    assert result.schema["source_note"] == pl.String
+
+
+def test_xtdb_staging_rejects_missing_required_pipeline_columns(monkeypatch):
+    stage_df = pl.DataFrame(
+        {
+            "stage_run_id": ["stage-1"],
+            "stage_row_index": [0],
+            "record_id": [1],
+        }
+    )
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_raw_sql",
+        Mock(return_value=stage_df),
+    )
+    dataset = DatasetConfig(
+        name="record_stream",
+        delta_table_schema="fakedata",
+        input_config={"type": "dsv", "search_paths": []},
+        pipeline=[
+            {
+                "schema": "fakedata",
+                "table": "records",
+                "type": "primary",
+                "columns": [
+                    {"source": "record_id", "target": "record_id"},
+                    {"source": "destination_name", "target": "destination"},
+                ],
+            }
+        ],
+    )
+    table_config = TableConfig(
+        schema="fakedata",
+        name="records",
+        primary_keys=["record_id"],
+        columns=[
+            TableColumnConfig("records", "record_id", "INT", nullable=False),
+            TableColumnConfig("records", "destination", "VARCHAR(64)", nullable=False),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="column mismatch"):
+        XtdbStagingOps(object()).prepare_pipeline_item_dataframe(
+            "stage-1",
+            dataset,
+            0,
+            table_config,
+            valid_time=None,
+        )
 
 
 def test_xtdb_staging_cleanup_deletes_only_batch_run():
