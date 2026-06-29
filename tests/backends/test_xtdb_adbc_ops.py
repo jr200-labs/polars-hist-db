@@ -135,6 +135,27 @@ def test_xtdb_adbc_dataframe_ops_targets_configured_schema():
     assert connection.cursor_instance.ingests[0][3] == {"db_schema_name": "analytics"}
 
 
+def test_xtdb_adbc_dataframe_ops_splits_ingest_by_max_rows():
+    connection = _FakeAdbcConnection()
+    ops = XtdbAdbcDataframeOps(connection, max_rows_per_insert=2)
+
+    result = ops.table_insert(
+        pl.DataFrame({"id": [1, 2, 3, 4, 5], "destination": ["A", "B", "C", "D", "E"]}),
+        "public",
+        "records",
+        table_config=_record_config(),
+    )
+
+    assert result == 5
+    ingests = connection.cursor_instance.ingests
+    assert len(ingests) == 3
+    assert [ingest[1].to_pydict() for ingest in ingests] == [
+        {"_id": [1, 2], "destination": ["A", "B"]},
+        {"_id": [3, 4], "destination": ["C", "D"]},
+        {"_id": [5], "destination": ["E"]},
+    ]
+
+
 def test_xtdb_backend_builds_adbc_uri():
     uri = XtdbBackend().adbc_uri(
         DbEngineConfig(backend="xtdb", hostname="127.0.0.1", adbc_port=19832)

@@ -147,20 +147,32 @@ def test_xtdb_dataframe_ops_reads_table_with_configured_schema_overrides(monkeyp
     )
 
 
-def test_xtdb_dataframe_ops_writes_dataframe_via_polars_write_database():
-    df = Mock()
-    df.write_database.return_value = 7
+def test_xtdb_dataframe_ops_writes_dataframe_via_polars_write_database(monkeypatch):
+    captured = {}
+
+    def write_database(self, **kwargs):
+        captured["df"] = self
+        captured["kwargs"] = kwargs
+        return 2
+
+    monkeypatch.setattr(pl.DataFrame, "write_database", write_database)
+
+    df = pl.DataFrame({"_id": [1, 2], "destination": ["Alpha", "Beta"]})
     connection = object()
     ops = XtdbDataframeOps(connection)
 
     result = ops.table_insert(df, "test", "records")
 
-    assert result == 7
-    df.write_database.assert_called_once_with(
-        table_name="test.records",
-        connection=connection,
-        if_table_exists="append",
-    )
+    assert result == 2
+    assert captured["df"].to_dict(as_series=False) == {
+        "_id": [1, 2],
+        "destination": ["Alpha", "Beta"],
+    }
+    assert captured["kwargs"] == {
+        "table_name": "test.records",
+        "connection": connection,
+        "if_table_exists": "append",
+    }
 
 
 def test_xtdb_dataframe_ops_maps_configured_primary_key_to_id(monkeypatch):
@@ -269,6 +281,36 @@ def test_xtdb_dataframe_ops_uses_system_time_transaction_for_update_time():
     assert driver_connection.execute.call_args_list[0].args == (
         "BEGIN READ WRITE WITH (SYSTEM_TIME = TIMESTAMP '2030-01-01T12:00:00+00:00')",
     )
+
+
+def test_xtdb_dataframe_ops_splits_pgwire_insert_by_max_rows():
+    driver_connection = Mock()
+    connection = Mock()
+    connection.connection.driver_connection = driver_connection
+    connection.in_transaction.return_value = False
+    ops = XtdbDataframeOps(connection, max_rows_per_insert=2)
+
+    result = ops.table_insert(
+        pl.DataFrame(
+            {"_id": [1, 2, 3, 4, 5], "destination": ["A", "B", "C", "D", "E"]}
+        ),
+        "test",
+        "records",
+    )
+
+    assert result == 5
+    insert_sql = [
+        call.args[0]
+        for call in driver_connection.execute.call_args_list
+        if call.args[0].startswith("INSERT INTO")
+    ]
+    assert insert_sql == [
+        "INSERT INTO test.records (_id, destination) VALUES "
+        "(1::BIGINT, 'A'::TEXT), (2::BIGINT, 'B'::TEXT)",
+        "INSERT INTO test.records (_id, destination) VALUES "
+        "(3::BIGINT, 'C'::TEXT), (4::BIGINT, 'D'::TEXT)",
+        "INSERT INTO test.records (_id, destination) VALUES (5::BIGINT, 'E'::TEXT)",
+    ]
 
 
 def test_xtdb_dml_advances_reused_system_time_on_same_connection():

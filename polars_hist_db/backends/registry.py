@@ -15,4 +15,12 @@ def get_backend(name: str = "mariadb"):
 
 
 def backend_from_config(config: DbEngineConfig):
+    if config.backend == "xtdb":
+        return XtdbBackend(
+            max_rows_per_insert=(
+                config.max_rows_per_insert
+                if config.max_rows_per_insert is not None
+                else XtdbBackend().max_rows_per_insert
+            )
+        )
     return get_backend(config.backend)
