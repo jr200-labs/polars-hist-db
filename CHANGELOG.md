@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.26](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.25...v0.12.26) (2026-06-30)
+
+
+### Bug Fixes
+
+* fall back when xtdb adbc ingest is unavailable ([#122](https://github.com/jr200-labs/polars-hist-db/issues/122)) ([047d31e](https://github.com/jr200-labs/polars-hist-db/commit/047d31e0482ef89337fab0248aad5fb59755f79d))
+
 ## [0.12.25](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.24...v0.12.25) (2026-06-30)
 
 
