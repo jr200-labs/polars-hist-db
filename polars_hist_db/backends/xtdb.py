@@ -50,6 +50,16 @@ def _load_flight_sql() -> Any:
     return flight_sql
 
 
+def _is_xtdb_adbc_ingest_unavailable(exc: Exception) -> bool:
+    message = str(exc).lower()
+    class_name = exc.__class__.__name__
+    return (
+        class_name in {"NotImplementedError", "NotSupportedError"}
+        and "executeingest" in message
+        and ("not implemented" in message or "not_implemented" in message)
+    )
+
+
 def _xtdb_type_to_config_type(data_type: str) -> str:
     normalized = data_type.upper()
     xtdb_types = {
@@ -1683,6 +1693,40 @@ class XtdbStagingOps:
             )
         return self._dataframes()
 
+    def _bulk_table_insert(
+        self,
+        df: pl.DataFrame,
+        table_schema: str,
+        table_name: str,
+        *,
+        table_config: TableConfig,
+    ) -> int:
+        if self.adbc_connection is None:
+            return self._dataframes().table_insert(
+                df,
+                table_schema,
+                table_name,
+                table_config=table_config,
+            )
+
+        try:
+            return self._bulk_dataframes().table_insert(
+                df,
+                table_schema,
+                table_name,
+                table_config=table_config,
+            )
+        except Exception as exc:
+            if not _is_xtdb_adbc_ingest_unavailable(exc):
+                raise
+
+        return self._dataframes().table_insert(
+            df,
+            table_schema,
+            table_name,
+            table_config=table_config,
+        )
+
     def stage_table_config(self, delta_table_config: TableConfig) -> TableConfig:
         stage_table = _xtdb_stage_table_name(delta_table_config.name)
         existing_column_names = {column.name for column in delta_table_config.columns}
@@ -1758,7 +1802,7 @@ class XtdbStagingOps:
 
         stage_config = self.stage_table_config(delta_table_config)
         df = _normalize_xtdb_timestamp_columns(df, stage_config)
-        inserted_count = self._bulk_dataframes().table_insert(
+        inserted_count = self._bulk_table_insert(
             df,
             stage_config.schema,
             stage_config.name,
@@ -2013,7 +2057,7 @@ class XtdbStagingOps:
                 schema=parent_rows_to_insert.schema,
             )
         if not parent_rows_to_insert.is_empty():
-            self._bulk_dataframes().table_insert(
+            self._bulk_table_insert(
                 parent_rows_to_insert,
                 table_config.schema,
                 table_config.name,
