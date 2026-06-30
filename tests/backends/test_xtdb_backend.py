@@ -20,6 +20,25 @@ from polars_hist_db.config import (
 )
 
 
+def test_xtdb_create_engine_includes_configured_credentials():
+    config = DbEngineConfig(
+        backend="xtdb",
+        hostname="xtdb.example.internal",
+        port=5432,
+        database="xtdb",
+        username="xtdb",
+        password="secret/pass",
+    )
+
+    engine = XtdbBackend().create_engine(config)
+
+    assert str(engine.url) == (
+        "postgresql+psycopg://xtdb:***@xtdb.example.internal:5432/xtdb"
+    )
+    assert engine.url.username == "xtdb"
+    assert engine.url.password == "secret/pass"
+
+
 def test_xtdb_temporal_upsert_delegates_to_dataframe_insert():
     backend = XtdbBackend()
     ops = Mock()
