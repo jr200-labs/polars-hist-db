@@ -4,7 +4,7 @@ from unittest.mock import Mock
 import polars as pl
 import pytest
 
-from polars_hist_db.backends.xtdb import XtdbStagingOps
+from polars_hist_db.backends.xtdb import XtdbBackend, XtdbStagingOps
 from polars_hist_db.config import (
     DatasetConfig,
     TableColumnConfig,
@@ -75,6 +75,51 @@ def test_xtdb_staging_insert_partition_uses_retained_stage_table(monkeypatch):
         "stage_run_id": ["stage-1"],
         "stage_partition_time": [partition_time],
     }
+
+
+def test_xtdb_staging_insert_partition_preserves_insert_row_limit(monkeypatch):
+    observed = {}
+
+    def table_insert(self, df, table_schema, table_name, table_config=None):
+        observed["max_rows_per_insert"] = self.max_rows_per_insert
+        return df.height
+
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_insert",
+        table_insert,
+    )
+
+    delta_table_config = TableConfig(
+        schema="fakedata",
+        name="record_stream",
+        columns=[
+            TableColumnConfig("record_stream", "record_id", "INT"),
+            TableColumnConfig("record_stream", "destination_name", "VARCHAR(64)"),
+        ],
+    )
+    staging = XtdbStagingOps(object(), max_rows_per_insert=2500)
+
+    staging.insert_partition(
+        pl.DataFrame(
+            {
+                "record_id": [1, 2],
+                "destination_name": ["Alpha", "Beta"],
+            }
+        ),
+        delta_table_config,
+        "stage-1",
+        datetime(2030, 1, 1, 12, 0, tzinfo=timezone.utc),
+        uniqueness_col_set=["record_id"],
+        prefill_nulls_with_default=True,
+    )
+
+    assert observed["max_rows_per_insert"] == 2500
+
+
+def test_xtdb_backend_staging_preserves_insert_row_limit():
+    staging = XtdbBackend(max_rows_per_insert=2500).staging(object())
+
+    assert staging.max_rows_per_insert == 2500
 
 
 def test_xtdb_staging_projects_from_insert_cache_after_partition_insert(monkeypatch):

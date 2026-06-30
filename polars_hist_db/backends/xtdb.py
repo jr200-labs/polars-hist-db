@@ -1584,11 +1584,22 @@ class XtdbTableConfigOps:
 
 
 class XtdbStagingOps:
-    def __init__(self, connection: Any):
+    def __init__(
+        self,
+        connection: Any,
+        max_rows_per_insert: Optional[int] = None,
+    ):
         self.connection = connection
+        self.max_rows_per_insert = max_rows_per_insert
         self._stage_run_cache: dict[str, pl.DataFrame] = {}
         self._inserted_parent_row_cache: set[tuple[str, str, str]] = set()
         self._projected_parent_row_cache: set[tuple[str, str, str]] = set()
+
+    def _dataframes(self) -> XtdbDataframeOps:
+        return XtdbDataframeOps(
+            self.connection,
+            max_rows_per_insert=self.max_rows_per_insert,
+        )
 
     def stage_table_config(self, delta_table_config: TableConfig) -> TableConfig:
         stage_table = _xtdb_stage_table_name(delta_table_config.name)
@@ -1664,7 +1675,7 @@ class XtdbStagingOps:
             return 0
 
         stage_config = self.stage_table_config(delta_table_config)
-        inserted_count = XtdbDataframeOps(self.connection).table_insert(
+        inserted_count = self._dataframes().table_insert(
             df,
             stage_config.schema,
             stage_config.name,
@@ -1689,7 +1700,7 @@ class XtdbStagingOps:
         stage_run_literal = _xtdb_sql_literal(stage_run_id, "TEXT")
         stage_df = self._stage_run_cache.get(stage_run_id)
         if stage_df is None:
-            stage_df = XtdbDataframeOps(self.connection).from_raw_sql(
+            stage_df = self._dataframes().from_raw_sql(
                 f"SELECT * FROM {table_name} "
                 f"WHERE {_XTDB_STAGE_RUN_ID_COLUMN} = {stage_run_literal}"
             )
@@ -1842,7 +1853,7 @@ class XtdbStagingOps:
                     pl.coalesce(target_column, generated_value).alias(target_column)
                 )
 
-        parent_df = XtdbDataframeOps(self.connection).from_table(
+        parent_df = self._dataframes().from_table(
             table_config.schema,
             table_config.name,
         )
@@ -1919,7 +1930,7 @@ class XtdbStagingOps:
                 schema=parent_rows_to_insert.schema,
             )
         if not parent_rows_to_insert.is_empty():
-            XtdbDataframeOps(self.connection).table_insert(
+            self._dataframes().table_insert(
                 parent_rows_to_insert,
                 table_config.schema,
                 table_config.name,
@@ -2002,7 +2013,10 @@ class XtdbBackend:
         return XtdbTableConfigOps(connection)
 
     def staging(self, connection: Any) -> XtdbStagingOps:
-        return XtdbStagingOps(connection)
+        return XtdbStagingOps(
+            connection,
+            max_rows_per_insert=self.max_rows_per_insert,
+        )
 
     def time_hint_clause(self, time_hint: TimeHint) -> str | None:
         return system_time_hint_clause(time_hint)
