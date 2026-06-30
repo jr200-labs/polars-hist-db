@@ -1151,7 +1151,7 @@ def test_xtdb_declared_columns_quotes_non_identifier_column_names():
         "_id",
         "stage_run_id",
         "stage_row_index",
-        '"Entity"',
-        '"External Ref (entity)"',
+        "entity",
+        '"external ref (entity)"',
         '"timestamp"',
     ]
