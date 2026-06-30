@@ -158,6 +158,78 @@ def test_xtdb_staging_projects_from_insert_cache_after_partition_insert(monkeypa
     from_raw_sql.assert_not_called()
 
 
+def test_xtdb_staging_projects_empty_insert_from_cache(monkeypatch):
+    table_insert = Mock(return_value=0)
+    from_raw_sql = Mock(
+        side_effect=AssertionError("empty staged partition should stay cached")
+    )
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_insert",
+        table_insert,
+    )
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_raw_sql",
+        from_raw_sql,
+    )
+
+    delta_table_config = TableConfig(
+        schema="fakedata",
+        name="record_stream",
+        columns=[
+            TableColumnConfig("record_stream", "record_id", "INT"),
+            TableColumnConfig("record_stream", "destination_name", "VARCHAR(64)"),
+        ],
+    )
+    dataset = DatasetConfig(
+        name="record_stream",
+        delta_table_schema="fakedata",
+        input_config={"type": "dsv", "search_paths": []},
+        pipeline=[
+            {
+                "schema": "fakedata",
+                "table": "records",
+                "type": "primary",
+                "columns": [
+                    {"source": "record_id", "target": "record_id"},
+                    {"source": "destination_name", "target": "destination"},
+                ],
+            }
+        ],
+    )
+    table_config = TableConfig(
+        schema="fakedata",
+        name="records",
+        primary_keys=["record_id"],
+        columns=[
+            TableColumnConfig("records", "record_id", "INT", nullable=False),
+            TableColumnConfig("records", "destination", "VARCHAR(64)"),
+        ],
+    )
+    staging = XtdbStagingOps(object())
+
+    inserted_count = staging.insert_partition(
+        pl.DataFrame(schema={"record_id": pl.Int64, "destination_name": pl.String}),
+        delta_table_config,
+        "stage-1",
+        datetime(2030, 1, 1, tzinfo=timezone.utc),
+        uniqueness_col_set=["record_id"],
+        prefill_nulls_with_default=True,
+    )
+    result = staging.prepare_pipeline_item_dataframe(
+        "stage-1",
+        dataset,
+        0,
+        table_config,
+        valid_time=None,
+    )
+
+    assert inserted_count == 0
+    assert result.is_empty()
+    assert result.schema == {"record_id": pl.Int64, "destination": pl.String}
+    table_insert.assert_not_called()
+    from_raw_sql.assert_not_called()
+
+
 def test_xtdb_staging_projects_pipeline_item_with_valid_time_mapping(monkeypatch):
     stage_df = pl.DataFrame(
         {
