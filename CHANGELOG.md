@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.22](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.21...v0.12.22) (2026-06-30)
+
+
+### Bug Fixes
+
+* align xtdb staging projection with configured schema ([#112](https://github.com/jr200-labs/polars-hist-db/issues/112)) ([3a4efa4](https://github.com/jr200-labs/polars-hist-db/commit/3a4efa48dbe5278bbf83ccfcb538059523b81fdd))
+
 ## [0.12.21](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.20...v0.12.21) (2026-06-30)
 
 
