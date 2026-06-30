@@ -1651,9 +1651,6 @@ class XtdbStagingOps:
         uniqueness_col_set: Iterable[str],
         prefill_nulls_with_default: bool,
     ) -> int:
-        if df.is_empty():
-            return 0
-
         if prefill_nulls_with_default:
             df = _fill_xtdb_staging_defaults(df, delta_table_config)
         df = _dedupe_xtdb_staging_dataframe(df, uniqueness_col_set)
@@ -1662,6 +1659,9 @@ class XtdbStagingOps:
             pl.lit(stage_run_id).alias(_XTDB_STAGE_RUN_ID_COLUMN),
             pl.lit(partition_time).alias(_XTDB_STAGE_PARTITION_TIME_COLUMN),
         )
+        if df.is_empty():
+            self._stage_run_cache[stage_run_id] = df
+            return 0
 
         stage_config = self.stage_table_config(delta_table_config)
         inserted_count = XtdbDataframeOps(self.connection).table_insert(
