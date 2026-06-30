@@ -94,6 +94,7 @@ async def try_run_pipeline_as_transaction(
     seconds_between_retries: float = 60,
     delta_table_config: Optional[TableConfig] = None,
     backend: Any = None,
+    adbc_connection: Any = None,
 ):
     main_table_config: TableConfig = tables[dataset.pipeline.get_main_table_name()[1]]
     tbl_to_header_map = dataset.pipeline.get_header_map(main_table_config.name)
@@ -104,7 +105,14 @@ async def try_run_pipeline_as_transaction(
         with engine.connect() as connection:
             try:
                 with _pipeline_transaction_context(connection, is_xtdb):
-                    staging = backend.staging(connection) if is_xtdb else None
+                    staging = (
+                        backend.staging(
+                            connection,
+                            adbc_connection=adbc_connection,
+                        )
+                        if is_xtdb
+                        else None
+                    )
                     if delta_table_config is not None and not is_xtdb:
                         _ensure_delta_table(
                             connection,
