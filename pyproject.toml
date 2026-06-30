@@ -7,22 +7,22 @@ readme = "README.md"
 requires-python = ">=3.12,<4.0"
 
 dependencies = [
-    "nats-py>=2.14.0",
-    "pandas>=3.0.2",
-    "polars[sqlalchemy]>=1.41.2",
+    "nats-py>=2.15.0",
+    "pandas>=3.0.3",
+    "polars[sqlalchemy]>=1.42.0",
     "pyarrow>=24.0.0",
-    "pymysql>=1.1.2",
-    "pytz>=2026.1.post1",
+    "pymysql>=1.2.0",
+    "pytz>=2026.2",
     "pyyaml>=6.0.3",
-    "scandir-rs>=2.9.5",
+    "scandir-rs>=2.9.9",
     "sql-metadata>=2.20.0",
-    "sqlalchemy[asyncio]>=2.0.49",
+    "sqlalchemy[asyncio]>=2.0.51",
 ]
 
 [project.optional-dependencies]
 sqlalchemy = ["polars[sqlalchemy]"]
 nats = ["nats-py"]
-xtdb = ["adbc-driver-flightsql>=1.10.0", "psycopg[binary]>=3.2.2"]
+xtdb = ["adbc-driver-flightsql>=1.11.0", "psycopg[binary]>=3.3.4"]
 
 [project.urls]
 Repository = "https://github.com/jr200-labs/polars-hist-db"
@@ -32,17 +32,17 @@ polars-hist-db-parity = "polars_hist_db.parity:main"
 
 [dependency-groups]
 dev = [
-    "coverage>=7.13.5",
-    "ipykernel>=7.2.0",
-    "mypy>=2.0.0",
-    "pytest>=9.0.3",
-    "pytest-asyncio>=1.3.0",
+    "coverage>=7.14.3",
+    "ipykernel>=7.3.0",
+    "mypy>=2.1.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "quarto-cli",
-    "ruff>=0.15.10",
-    "types-python-dateutil>=2.9.0.20260408",
-    "types-pytz>=2025.2.0.20251108",
-    "types-pyyaml>=6.0.12.20260408",
-    "pyarrow-stubs>=20.0.0.20251215",
+    "ruff>=0.15.20",
+    "types-python-dateutil>=2.9.0.20260518",
+    "types-pytz>=2026.2.0.20260518",
+    "types-pyyaml>=6.0.12.20260518",
+    "pyarrow-stubs>=20.0.0.20260625",
 ]
 
 [tool.setuptools.package-data]
