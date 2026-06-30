@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.24](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.23...v0.12.24) (2026-06-30)
+
+
+### Bug Fixes
+
+* apply xtdb insert row limit to staging writes ([#117](https://github.com/jr200-labs/polars-hist-db/issues/117)) ([8171fd4](https://github.com/jr200-labs/polars-hist-db/commit/8171fd4c0e747bed06422caf595fb7789e83e879))
+
 ## [0.12.23](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.22...v0.12.23) (2026-06-30)
 
 
