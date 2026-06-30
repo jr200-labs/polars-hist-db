@@ -31,20 +31,29 @@ async def run_datasets(
         engine = backend.create_engine(config.db_config)
 
     num_datasets_processed = 0
-    for dataset in config.datasets.datasets:
-        if dataset_name is None or dataset.name == dataset_name:
-            num_datasets_processed += 1
-            LOGGER.info("scraping dataset %s", dataset.name)
-            await _run_dataset(
-                dataset.input_config,
-                dataset,
-                config.tables,
-                engine,
-                debug_capture_output,
-                backend,
-                js=js,
-                raise_on_error=raise_on_error,
-            )
+    adbc_connection = None
+    try:
+        for dataset in config.datasets.datasets:
+            if dataset_name is None or dataset.name == dataset_name:
+                if getattr(backend, "name", None) == "xtdb" and adbc_connection is None:
+                    adbc_connection = backend.create_adbc_connection(config.db_config)
+
+                num_datasets_processed += 1
+                LOGGER.info("scraping dataset %s", dataset.name)
+                await _run_dataset(
+                    dataset.input_config,
+                    dataset,
+                    config.tables,
+                    engine,
+                    debug_capture_output,
+                    backend,
+                    adbc_connection=adbc_connection,
+                    js=js,
+                    raise_on_error=raise_on_error,
+                )
+    finally:
+        if adbc_connection is not None:
+            adbc_connection.close()
 
     if num_datasets_processed == 0:
         LOGGER.error("no datasets processed for %s", dataset_name)
@@ -83,6 +92,7 @@ async def _run_dataset(
     engine: Engine,
     debug_capture_output: Optional[List[Tuple[datetime, pl.DataFrame]]],
     backend,
+    adbc_connection=None,
     js: Optional[JetStreamContext] = None,
     raise_on_error: bool = False,
 ):
@@ -109,6 +119,7 @@ async def _run_dataset(
                 commit_fn,
                 delta_table_config=delta_table_config,
                 backend=backend,
+                adbc_connection=adbc_connection,
             )
 
     except Exception as e:

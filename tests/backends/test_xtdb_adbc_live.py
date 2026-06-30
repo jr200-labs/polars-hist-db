@@ -8,6 +8,7 @@ from typing import Any
 
 import polars as pl
 import pytest
+from sqlalchemy import text
 
 from polars_hist_db.backends import DbEngineConfig, XtdbBackend
 from polars_hist_db.config import TableColumnConfig, TableConfig
@@ -25,6 +26,7 @@ pytestmark = [
 
 try:
     import adbc_driver_flightsql  # noqa: F401
+    import psycopg  # noqa: F401
 except ImportError:
     pytestmark = [
         *pytestmark,
@@ -78,6 +80,59 @@ def _xtdb_adbc_connection() -> Iterator[Any]:
         subprocess.run(["docker", "rm", "-f", container_id], check=False)
 
 
+@contextmanager
+def _xtdb_pgwire_and_adbc_connections() -> Iterator[tuple[Any, Any]]:
+    container_id = _docker(
+        [
+            "run",
+            "--rm",
+            "-d",
+            "-p",
+            "5432",
+            "-p",
+            "9832",
+            "ghcr.io/xtdb/xtdb:nightly",
+        ]
+    )
+    engine = None
+    adbc_connection = None
+    try:
+        backend = XtdbBackend()
+        config = DbEngineConfig(
+            backend="xtdb",
+            hostname="127.0.0.1",
+            port=_published_port(container_id, "5432/tcp"),
+            adbc_port=_published_port(container_id, "9832/tcp"),
+        )
+        engine = backend.create_engine(config)
+        deadline = time.monotonic() + 60
+        while True:
+            try:
+                with engine.connect() as connection:
+                    connection.execute(text("SELECT 1"))
+                adbc_connection = backend.create_adbc_connection(config)
+                with adbc_connection.cursor() as cursor:
+                    cursor.execute("SELECT 1")
+                    cursor.fetch_arrow_table()
+                break
+            except Exception:
+                if adbc_connection is not None:
+                    adbc_connection.close()
+                    adbc_connection = None
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(1)
+
+        with engine.connect() as pgwire_connection:
+            yield pgwire_connection, adbc_connection
+    finally:
+        if adbc_connection is not None:
+            adbc_connection.close()
+        if engine is not None:
+            engine.dispose()
+        subprocess.run(["docker", "rm", "-f", container_id], check=False)
+
+
 def test_xtdb_adbc_live_arrow_ingest_read_roundtrip():
     table_config = TableConfig(
         schema="public",
@@ -114,6 +169,59 @@ def test_xtdb_adbc_live_arrow_ingest_read_roundtrip():
         "_id": [1, 2],
         "destination": ["Alpha", "Beta"],
         "amount_value": [10.5, 20.25],
+    }
+
+
+def test_xtdb_adbc_live_staging_partition_roundtrip():
+    stream_name = f"live_adbc_stage_records_{int(time.time())}"
+    delta_table_config = TableConfig(
+        schema="sample",
+        name=stream_name,
+        columns=[
+            TableColumnConfig(stream_name, "record_id", "BIGINT", nullable=False),
+            TableColumnConfig(stream_name, "destination", "VARCHAR(255)"),
+            TableColumnConfig(stream_name, "amount_value", "DOUBLE"),
+        ],
+    )
+
+    with _xtdb_pgwire_and_adbc_connections() as (
+        pgwire_connection,
+        adbc_connection,
+    ):
+        backend = XtdbBackend(max_rows_per_insert=2)
+        staging = backend.staging(
+            pgwire_connection,
+            adbc_connection=adbc_connection,
+        )
+        stage_config = staging.ensure_table(delta_table_config)
+
+        inserted_count = staging.insert_partition(
+            pl.DataFrame(
+                {
+                    "record_id": [1, 2, 3],
+                    "destination": ["Alpha", "Beta", "Gamma"],
+                    "amount_value": [10.5, 20.25, 30.75],
+                }
+            ),
+            delta_table_config,
+            "stage-1",
+            datetime(2030, 1, 1, tzinfo=timezone.utc),
+            uniqueness_col_set=["record_id"],
+            prefill_nulls_with_default=True,
+        )
+        persisted = backend.dataframes(pgwire_connection).from_table(
+            stage_config.schema,
+            stage_config.name,
+        )
+
+    assert inserted_count == 3
+    assert persisted.sort("record_id").select(
+        ["record_id", "destination", "amount_value", "stage_run_id"]
+    ).to_dict(as_series=False) == {
+        "record_id": [1, 2, 3],
+        "destination": ["Alpha", "Beta", "Gamma"],
+        "amount_value": [10.5, 20.25, 30.75],
+        "stage_run_id": ["stage-1", "stage-1", "stage-1"],
     }
 
 
