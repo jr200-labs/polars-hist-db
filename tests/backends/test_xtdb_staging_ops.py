@@ -122,6 +122,57 @@ def test_xtdb_backend_staging_preserves_insert_row_limit():
     assert staging.max_rows_per_insert == 2500
 
 
+def test_xtdb_staging_insert_partition_uses_adbc_bulk_connection(monkeypatch):
+    adbc_connection = object()
+    pgwire_insert = Mock(side_effect=AssertionError("should use ADBC bulk ingest"))
+    inserted = {}
+
+    def adbc_table_insert(self, df, table_schema, table_name, table_config=None):
+        inserted["connection"] = self.connection
+        inserted["df"] = df
+        inserted["table_schema"] = table_schema
+        inserted["table_name"] = table_name
+        inserted["table_config"] = table_config
+        return df.height
+
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_insert",
+        pgwire_insert,
+    )
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbAdbcDataframeOps.table_insert",
+        adbc_table_insert,
+    )
+    delta_table_config = TableConfig(
+        schema="fakedata",
+        name="record_stream",
+        columns=[
+            TableColumnConfig("record_stream", "record_id", "INT"),
+            TableColumnConfig("record_stream", "destination_name", "VARCHAR(64)"),
+        ],
+    )
+    staging = XtdbBackend(max_rows_per_insert=2500).staging(
+        object(),
+        adbc_connection=adbc_connection,
+    )
+
+    inserted_count = staging.insert_partition(
+        pl.DataFrame({"record_id": [1], "destination_name": ["Alpha"]}),
+        delta_table_config,
+        "stage-1",
+        datetime(2030, 1, 1, 12, 0, tzinfo=timezone.utc),
+        uniqueness_col_set=["record_id"],
+        prefill_nulls_with_default=True,
+    )
+
+    assert inserted_count == 1
+    assert inserted["connection"] is adbc_connection
+    assert inserted["table_schema"] == "fakedata"
+    assert inserted["table_name"] == "__record_stream_stage"
+    assert inserted["table_config"].name == "__record_stream_stage"
+    pgwire_insert.assert_not_called()
+
+
 def test_xtdb_staging_projects_from_insert_cache_after_partition_insert(monkeypatch):
     def table_insert(self, df, table_schema, table_name, table_config=None):
         return df.height
@@ -658,6 +709,113 @@ def test_xtdb_staging_deduces_foreign_keys_and_inserts_missing_parent(
         "country_id": [generated_id],
         "name": ["Japan"],
     }
+
+
+def test_xtdb_staging_inserts_missing_parent_with_adbc_bulk_connection(monkeypatch):
+    adbc_connection = object()
+    stage_df = pl.DataFrame(
+        {
+            "stage_run_id": ["stage-1"],
+            "stage_row_index": [0],
+            "country_id": [None],
+            "country_name": ["Japan"],
+        },
+        schema={
+            "stage_run_id": pl.String,
+            "stage_row_index": pl.Int64,
+            "country_id": pl.String,
+            "country_name": pl.String,
+        },
+    )
+    parent_df = pl.DataFrame(
+        schema={
+            "_id": pl.String,
+            "country_id": pl.String,
+            "name": pl.String,
+        }
+    )
+    pgwire_insert = Mock(side_effect=AssertionError("should use ADBC bulk ingest"))
+    inserted = {}
+
+    def adbc_table_insert(self, df, table_schema, table_name, table_config=None):
+        inserted["connection"] = self.connection
+        inserted["df"] = df
+        inserted["table_schema"] = table_schema
+        inserted["table_name"] = table_name
+        inserted["table_config"] = table_config
+        return df.height
+
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_raw_sql",
+        Mock(return_value=stage_df),
+    )
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_table",
+        Mock(return_value=parent_df),
+    )
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_insert",
+        pgwire_insert,
+    )
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbAdbcDataframeOps.table_insert",
+        adbc_table_insert,
+    )
+    dataset = DatasetConfig(
+        name="country_stream",
+        delta_table_schema="ref",
+        input_config={"type": "dsv", "search_paths": []},
+        pipeline=[
+            {
+                "schema": "ref",
+                "table": "countries",
+                "type": "primary",
+                "columns": [
+                    {
+                        "source": "country_id",
+                        "target": "country_id",
+                        "deduce_foreign_key": True,
+                    },
+                    {"source": "country_name", "target": "name"},
+                ],
+            }
+        ],
+    )
+    table_config = TableConfig(
+        schema="ref",
+        name="countries",
+        primary_keys=["country_id"],
+        columns=[
+            TableColumnConfig("countries", "country_id", "VARCHAR(128)"),
+            TableColumnConfig("countries", "name", "VARCHAR(64)"),
+        ],
+    )
+
+    result = XtdbStagingOps(
+        object(),
+        adbc_connection=adbc_connection,
+    ).prepare_pipeline_item_dataframe(
+        "stage-1",
+        dataset,
+        0,
+        table_config,
+        valid_time=None,
+    )
+
+    generated_id = 'xtdb-fk-v1:ref.countries:[["name","Japan"]]'
+    assert inserted["connection"] is adbc_connection
+    assert inserted["table_schema"] == "ref"
+    assert inserted["table_name"] == "countries"
+    assert inserted["table_config"] == table_config
+    assert inserted["df"].to_dict(as_series=False) == {
+        "country_id": [generated_id],
+        "name": ["Japan"],
+    }
+    assert result.to_dict(as_series=False) == {
+        "country_id": [generated_id],
+        "name": ["Japan"],
+    }
+    pgwire_insert.assert_not_called()
 
 
 def test_xtdb_staging_deduces_explicit_numeric_foreign_keys(monkeypatch):

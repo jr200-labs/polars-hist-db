@@ -1660,8 +1660,10 @@ class XtdbStagingOps:
         self,
         connection: Any,
         max_rows_per_insert: Optional[int] = None,
+        adbc_connection: Any | None = None,
     ):
         self.connection = connection
+        self.adbc_connection = adbc_connection
         self.max_rows_per_insert = max_rows_per_insert
         self._stage_run_cache: dict[str, pl.DataFrame] = {}
         self._inserted_parent_row_cache: set[tuple[str, str, str]] = set()
@@ -1672,6 +1674,14 @@ class XtdbStagingOps:
             self.connection,
             max_rows_per_insert=self.max_rows_per_insert,
         )
+
+    def _bulk_dataframes(self) -> XtdbDataframeOps | XtdbAdbcDataframeOps:
+        if self.adbc_connection is not None:
+            return XtdbAdbcDataframeOps(
+                self.adbc_connection,
+                max_rows_per_insert=self.max_rows_per_insert,
+            )
+        return self._dataframes()
 
     def stage_table_config(self, delta_table_config: TableConfig) -> TableConfig:
         stage_table = _xtdb_stage_table_name(delta_table_config.name)
@@ -1748,7 +1758,7 @@ class XtdbStagingOps:
 
         stage_config = self.stage_table_config(delta_table_config)
         df = _normalize_xtdb_timestamp_columns(df, stage_config)
-        inserted_count = self._dataframes().table_insert(
+        inserted_count = self._bulk_dataframes().table_insert(
             df,
             stage_config.schema,
             stage_config.name,
@@ -2003,7 +2013,7 @@ class XtdbStagingOps:
                 schema=parent_rows_to_insert.schema,
             )
         if not parent_rows_to_insert.is_empty():
-            self._dataframes().table_insert(
+            self._bulk_dataframes().table_insert(
                 parent_rows_to_insert,
                 table_config.schema,
                 table_config.name,
@@ -2085,10 +2095,16 @@ class XtdbBackend:
     def table_configs(self, connection: Any) -> XtdbTableConfigOps:
         return XtdbTableConfigOps(connection)
 
-    def staging(self, connection: Any) -> XtdbStagingOps:
+    def staging(
+        self,
+        connection: Any,
+        *,
+        adbc_connection: Any | None = None,
+    ) -> XtdbStagingOps:
         return XtdbStagingOps(
             connection,
             max_rows_per_insert=self.max_rows_per_insert,
+            adbc_connection=adbc_connection,
         )
 
     def time_hint_clause(self, time_hint: TimeHint) -> str | None:

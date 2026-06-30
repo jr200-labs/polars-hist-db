@@ -16,6 +16,31 @@ class _FakeBackend:
         return object()
 
 
+class _FakeAdbcConnection:
+    def __init__(self):
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+class _FakeXtdbBackend:
+    name = "xtdb"
+
+    def __init__(self):
+        self.created_engine_with = None
+        self.created_adbc_with = None
+        self.adbc_connection = _FakeAdbcConnection()
+
+    def create_engine(self, config):
+        self.created_engine_with = config
+        return object()
+
+    def create_adbc_connection(self, config):
+        self.created_adbc_with = config
+        return self.adbc_connection
+
+
 class _ContextManager:
     def __init__(self, value):
         self.value = value
@@ -98,6 +123,50 @@ async def test_run_datasets_creates_engine_from_config_when_engine_is_omitted(
     await run_datasets(config)
 
     assert fake_backend.created_with == config.db_config
+
+
+@pytest.mark.asyncio
+async def test_run_datasets_creates_xtdb_adbc_connection(monkeypatch):
+    fake_backend = _FakeXtdbBackend()
+    observed = {}
+    dataset = SimpleNamespace(
+        name="records",
+        input_config=SimpleNamespace(type="dsv"),
+    )
+    config = SimpleNamespace(
+        db_config=DbEngineConfig(backend="xtdb"),
+        datasets=SimpleNamespace(datasets=[dataset]),
+        tables=object(),
+    )
+
+    async def fake_run_dataset(
+        input_config,
+        dataset_arg,
+        tables,
+        engine,
+        debug_capture_output,
+        backend,
+        *,
+        adbc_connection=None,
+        js=None,
+        raise_on_error=False,
+    ):
+        observed["adbc_connection"] = adbc_connection
+
+    monkeypatch.setattr(
+        "polars_hist_db.dataset.entrypoint.backend_from_config",
+        lambda config: fake_backend,
+    )
+    monkeypatch.setattr(
+        "polars_hist_db.dataset.entrypoint._run_dataset", fake_run_dataset
+    )
+
+    await run_datasets(config)
+
+    assert fake_backend.created_engine_with == config.db_config
+    assert fake_backend.created_adbc_with == config.db_config
+    assert observed["adbc_connection"] is fake_backend.adbc_connection
+    assert fake_backend.adbc_connection.closed is True
 
 
 @pytest.mark.asyncio
