@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.12.20](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.19...v0.12.20) (2026-06-30)
+
+
+### Features
+
+* **deps:** update dependency pyarrow to v24 ([#107](https://github.com/jr200-labs/polars-hist-db/issues/107)) ([f3f94a5](https://github.com/jr200-labs/polars-hist-db/commit/f3f94a55aa111d516e13fc854da3ae113e4e2cb6))
+
+
+### Bug Fixes
+
+* **deps:** update all non-major dependencies ([#106](https://github.com/jr200-labs/polars-hist-db/issues/106)) ([b438ad1](https://github.com/jr200-labs/polars-hist-db/commit/b438ad14a2e854170b737805e2613ce8c6ab8a2a))
+* **deps:** update quarto-cli digest to 5807604 ([#105](https://github.com/jr200-labs/polars-hist-db/issues/105)) ([050aafc](https://github.com/jr200-labs/polars-hist-db/commit/050aafc904f7d2c49942a1b21fabf0cdcee07bdd))
+* normalize xtdb physical column names ([#108](https://github.com/jr200-labs/polars-hist-db/issues/108)) ([95b4003](https://github.com/jr200-labs/polars-hist-db/commit/95b4003124ade3e080cc27ecc824e1e0e1bfdaeb))
+
 ## [0.12.19](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.18...v0.12.19) (2026-06-29)
 
 
