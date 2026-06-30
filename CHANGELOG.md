@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.23](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.22...v0.12.23) (2026-06-30)
+
+
+### Bug Fixes
+
+* cache empty xtdb staging partitions ([#115](https://github.com/jr200-labs/polars-hist-db/issues/115)) ([0183201](https://github.com/jr200-labs/polars-hist-db/commit/018320120e5d0e225b593b033e81f542c60bc12b))
+
 ## [0.12.22](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.21...v0.12.22) (2026-06-30)
 
 
