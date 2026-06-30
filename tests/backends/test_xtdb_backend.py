@@ -20,7 +20,18 @@ from polars_hist_db.config import (
 )
 
 
-def test_xtdb_create_engine_includes_configured_credentials():
+def test_xtdb_create_engine_includes_configured_credentials(monkeypatch):
+    calls = []
+    engine = Mock()
+    engine.dialect = SimpleNamespace()
+
+    def fake_create_engine(url, **kwargs):
+        calls.append((url, kwargs))
+        return engine
+
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.create_engine", fake_create_engine
+    )
     config = DbEngineConfig(
         backend="xtdb",
         hostname="xtdb.example.internal",
@@ -30,13 +41,13 @@ def test_xtdb_create_engine_includes_configured_credentials():
         password="secret/pass",
     )
 
-    engine = XtdbBackend().create_engine(config)
+    result = XtdbBackend().create_engine(config)
 
-    assert str(engine.url) == (
-        "postgresql+psycopg://xtdb:***@xtdb.example.internal:5432/xtdb"
+    assert result is engine
+    assert calls[0][0] == (
+        "postgresql+psycopg://xtdb:secret%2Fpass@xtdb.example.internal:5432/xtdb"
     )
-    assert engine.url.username == "xtdb"
-    assert engine.url.password == "secret/pass"
+    assert calls[0][1]["connect_args"] == {"prepare_threshold": None}
 
 
 def test_xtdb_temporal_upsert_delegates_to_dataframe_insert():
