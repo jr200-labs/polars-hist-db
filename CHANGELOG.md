@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.21](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.20...v0.12.21) (2026-06-30)
+
+
+### Bug Fixes
+
+* support xtdb pgwire credentials ([#110](https://github.com/jr200-labs/polars-hist-db/issues/110)) ([0b7f692](https://github.com/jr200-labs/polars-hist-db/commit/0b7f6928b21172f48d7a92b4026f1adab8495f59))
+
 ## [0.12.20](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.19...v0.12.20) (2026-06-30)
 
 
