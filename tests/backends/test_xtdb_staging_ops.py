@@ -173,6 +173,63 @@ def test_xtdb_staging_insert_partition_uses_adbc_bulk_connection(monkeypatch):
     pgwire_insert.assert_not_called()
 
 
+def test_xtdb_staging_insert_partition_falls_back_when_adbc_ingest_unavailable(
+    monkeypatch,
+):
+    adbc_connection = object()
+    inserted = {}
+
+    def adbc_table_insert(self, df, table_schema, table_name, table_config=None):
+        raise NotImplementedError("NOT_IMPLEMENTED: ExecuteIngest")
+
+    def pgwire_table_insert(self, df, table_schema, table_name, table_config=None):
+        inserted["connection"] = self.connection
+        inserted["max_rows_per_insert"] = self.max_rows_per_insert
+        inserted["df"] = df
+        inserted["table_schema"] = table_schema
+        inserted["table_name"] = table_name
+        inserted["table_config"] = table_config
+        return df.height
+
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbAdbcDataframeOps.table_insert",
+        adbc_table_insert,
+    )
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_insert",
+        pgwire_table_insert,
+    )
+    pgwire_connection = object()
+    delta_table_config = TableConfig(
+        schema="fakedata",
+        name="record_stream",
+        columns=[
+            TableColumnConfig("record_stream", "record_id", "INT"),
+            TableColumnConfig("record_stream", "destination_name", "VARCHAR(64)"),
+        ],
+    )
+    staging = XtdbBackend(max_rows_per_insert=2500).staging(
+        pgwire_connection,
+        adbc_connection=adbc_connection,
+    )
+
+    inserted_count = staging.insert_partition(
+        pl.DataFrame({"record_id": [1], "destination_name": ["Alpha"]}),
+        delta_table_config,
+        "stage-1",
+        datetime(2030, 1, 1, 12, 0, tzinfo=timezone.utc),
+        uniqueness_col_set=["record_id"],
+        prefill_nulls_with_default=True,
+    )
+
+    assert inserted_count == 1
+    assert inserted["connection"] is pgwire_connection
+    assert inserted["max_rows_per_insert"] == 2500
+    assert inserted["table_schema"] == "fakedata"
+    assert inserted["table_name"] == "__record_stream_stage"
+    assert inserted["table_config"].name == "__record_stream_stage"
+
+
 def test_xtdb_staging_projects_from_insert_cache_after_partition_insert(monkeypatch):
     def table_insert(self, df, table_schema, table_name, table_config=None):
         return df.height
