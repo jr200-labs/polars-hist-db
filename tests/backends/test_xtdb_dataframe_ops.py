@@ -1,6 +1,8 @@
-from unittest.mock import Mock
+import builtins
 from datetime import datetime, timezone
+from decimal import Decimal
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import polars as pl
 import pytest
@@ -12,6 +14,10 @@ from polars_hist_db.backends.xtdb import (
 )
 from polars_hist_db.config import TableColumnConfig, TableConfig
 from polars_hist_db.core import TimeHint
+
+
+def _single_executemany_call(driver_connection: Mock):
+    return driver_connection.cursor.return_value.executemany.call_args
 
 
 def test_xtdb_dataframe_ops_reads_raw_sql_with_schema_overrides(monkeypatch):
@@ -328,6 +334,7 @@ def test_xtdb_dataframe_ops_uses_system_time_transaction_for_update_time():
 
 def test_xtdb_dataframe_ops_splits_pgwire_insert_by_max_rows():
     driver_connection = Mock()
+    cursor = driver_connection.cursor.return_value
     connection = Mock()
     connection.connection.driver_connection = driver_connection
     connection.in_transaction.return_value = False
@@ -342,17 +349,16 @@ def test_xtdb_dataframe_ops_splits_pgwire_insert_by_max_rows():
     )
 
     assert result == 5
-    insert_sql = [
-        call.args[0]
-        for call in driver_connection.execute.call_args_list
-        if call.args[0].startswith("INSERT INTO")
-    ]
+    insert_sql = [call.args[0] for call in cursor.executemany.call_args_list]
     assert insert_sql == [
-        "INSERT INTO test.records (_id, destination) VALUES "
-        "(1::BIGINT, 'A'::TEXT), (2::BIGINT, 'B'::TEXT)",
-        "INSERT INTO test.records (_id, destination) VALUES "
-        "(3::BIGINT, 'C'::TEXT), (4::BIGINT, 'D'::TEXT)",
-        "INSERT INTO test.records (_id, destination) VALUES (5::BIGINT, 'E'::TEXT)",
+        "INSERT INTO test.records (_id, destination) VALUES (%s::BIGINT, %s::TEXT)",
+        "INSERT INTO test.records (_id, destination) VALUES (%s::BIGINT, %s::TEXT)",
+        "INSERT INTO test.records (_id, destination) VALUES (%s::BIGINT, %s::TEXT)",
+    ]
+    assert [call.args[1] for call in cursor.executemany.call_args_list] == [
+        [(1, "A"), (2, "B")],
+        [(3, "C"), (4, "D")],
+        [(5, "E")],
     ]
 
 
@@ -402,6 +408,81 @@ def test_xtdb_dml_advances_reused_system_time_on_same_connection():
     ]
 
 
+def test_xtdb_dml_registers_text_dumper_for_parameterized_rows():
+    string_types = pytest.importorskip("psycopg.types.string")
+
+    driver_connection = Mock()
+    connection = Mock()
+    connection.connection.driver_connection = driver_connection
+    connection.in_transaction.return_value = False
+
+    _execute_xtdb_dml(
+        connection,
+        "INSERT INTO test.records (_id, destination) VALUES (%s::BIGINT, %s::TEXT)",
+        [(1, "Alpha")],
+    )
+
+    driver_connection.adapters.register_dumper.assert_any_call(
+        str, string_types.StrDumper
+    )
+
+
+def test_xtdb_dml_skips_text_dumper_when_psycopg_is_unavailable(monkeypatch):
+    original_import = builtins.__import__
+
+    def import_without_psycopg(name, *args, **kwargs):
+        if name.startswith("psycopg"):
+            raise ModuleNotFoundError("No module named 'psycopg'")
+        return original_import(name, *args, **kwargs)
+
+    driver_connection = Mock()
+    connection = Mock()
+    connection.connection.driver_connection = driver_connection
+    connection.in_transaction.return_value = False
+    monkeypatch.setattr(builtins, "__import__", import_without_psycopg)
+
+    _execute_xtdb_dml(
+        connection,
+        "INSERT INTO test.records (_id, destination) VALUES (%s::BIGINT, %s::TEXT)",
+        [(1, "Alpha")],
+    )
+
+    driver_connection.adapters.register_dumper.assert_not_called()
+
+
+def test_xtdb_dataframe_ops_normalizes_bound_timestamp_parameters_to_naive_utc():
+    driver_connection = Mock()
+    connection = Mock()
+    connection.connection.driver_connection = driver_connection
+    connection.in_transaction.return_value = False
+    ops = XtdbDataframeOps(connection)
+    table_config = TableConfig(
+        schema="test",
+        name="records",
+        primary_keys=["id"],
+        columns=[
+            TableColumnConfig("records", "id", "BIGINT", nullable=False),
+            TableColumnConfig("records", "seen_at", "DATETIME"),
+        ],
+    )
+
+    ops.table_insert(
+        pl.DataFrame(
+            {
+                "id": [1],
+                "seen_at": [datetime(2030, 1, 1, 12, 30, tzinfo=timezone.utc)],
+            }
+        ),
+        "test",
+        "records",
+        table_config=table_config,
+    )
+
+    insert_call = _single_executemany_call(driver_connection)
+    assert "%s::TIMESTAMP" in insert_call.args[0]
+    assert insert_call.args[1] == [(1, datetime(2030, 1, 1, 12, 30))]
+
+
 def test_xtdb_dataframe_ops_uses_native_casts_for_mysql_compatibility_types():
     driver_connection = Mock()
     connection = Mock()
@@ -442,14 +523,25 @@ def test_xtdb_dataframe_ops_uses_native_casts_for_mysql_compatibility_types():
         table_config=table_config,
     )
 
-    insert_sql = driver_connection.execute.call_args_list[1].args[0]
-    assert "TRUE::BOOLEAN" in insert_sql
-    assert "1::INTEGER" in insert_sql
-    assert "2::INTEGER" in insert_sql
-    assert "738221::INTEGER" in insert_sql
-    assert "4::INTEGER" in insert_sql
-    assert "'2030-01-01T12:00:00'::TIMESTAMP" in insert_sql
-    assert "'12:30:00'::TIME" in insert_sql
+    insert_call = _single_executemany_call(driver_connection)
+    insert_sql = insert_call.args[0]
+    assert "INSERT INTO test.compat_types" in insert_sql
+    assert "%s::BOOLEAN" in insert_sql
+    assert insert_sql.count("%s::INTEGER") == 5
+    assert "%s::TIMESTAMP" in insert_sql
+    assert "%s::TIME" in insert_sql
+    assert insert_call.args[1] == [
+        (
+            1,
+            True,
+            1,
+            2,
+            738221,
+            4,
+            datetime(2030, 1, 1, 12, 0),
+            datetime(2030, 1, 1, 12, 30).time(),
+        )
+    ]
 
 
 def test_xtdb_dataframe_ops_casts_null_values_to_configured_types():
@@ -482,9 +574,11 @@ def test_xtdb_dataframe_ops_casts_null_values_to_configured_types():
         table_config=table_config,
     )
 
-    insert_sql = driver_connection.execute.call_args_list[1].args[0]
-    assert "NULL::TIMESTAMP" in insert_sql
-    assert "NULL::DOUBLE PRECISION" in insert_sql
+    insert_call = _single_executemany_call(driver_connection)
+    insert_sql = insert_call.args[0]
+    assert "%s::TIMESTAMP" in insert_sql
+    assert "%s::DOUBLE PRECISION" in insert_sql
+    assert insert_call.args[1] == [(1, None, None)]
 
 
 def test_xtdb_dataframe_ops_casts_categorical_values_to_configured_decimal():
@@ -516,8 +610,10 @@ def test_xtdb_dataframe_ops_casts_categorical_values_to_configured_decimal():
         table_config=table_config,
     )
 
-    insert_sql = driver_connection.execute.call_args_list[1].args[0]
-    assert "12.345::DECIMAL(15,3)" in insert_sql
+    insert_call = _single_executemany_call(driver_connection)
+    insert_sql = insert_call.args[0]
+    assert "%s::DECIMAL(15,3)" in insert_sql
+    assert insert_call.args[1] == [(1, Decimal("12.345"))]
 
 
 def test_xtdb_dataframe_ops_quotes_reserved_insert_columns():
@@ -550,7 +646,7 @@ def test_xtdb_dataframe_ops_quotes_reserved_insert_columns():
         table_config=table_config,
     )
 
-    insert_sql = driver_connection.execute.call_args_list[1].args[0]
+    insert_sql = _single_executemany_call(driver_connection).args[0]
     assert 'INSERT INTO source_a.entity_info (_id, name, "flag")' in insert_sql
 
 
@@ -582,10 +678,12 @@ def test_xtdb_dataframe_ops_encodes_insert_columns_with_slashes():
         table_config=table_config,
     )
 
-    insert_sql = driver_connection.execute.call_args_list[1].args[0]
+    insert_call = _single_executemany_call(driver_connection)
+    insert_sql = insert_call.args[0]
     assert '"capacity/bcm"' not in insert_sql
     assert "capacity_bcm" in insert_sql
-    assert "4.080::DECIMAL(15,3)" in insert_sql
+    assert "%s::DECIMAL(15,3)" in insert_sql
+    assert insert_call.args[1] == [(1, Decimal("4.080"))]
 
 
 def test_xtdb_dataframe_ops_uses_underscore_column_mapping():
@@ -620,7 +718,7 @@ def test_xtdb_dataframe_ops_uses_underscore_column_mapping():
         table_config=table_config,
     )
 
-    insert_sql = driver_connection.execute.call_args_list[1].args[0]
+    insert_sql = _single_executemany_call(driver_connection).args[0]
     assert '"metrics.properties.Capacity/Value"' not in insert_sql
     assert "metrics_properties_capacity_value" in insert_sql
 

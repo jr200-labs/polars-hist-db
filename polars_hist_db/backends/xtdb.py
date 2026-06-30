@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 import hashlib
 import json
@@ -602,11 +602,17 @@ def _delete_xtdb_missing_rows(
     update_time: Optional[datetime],
     dropout_close_time: Optional[datetime],
 ) -> int:
-    current = dataframe_ops.from_raw_sql(
-        "SELECT _id FROM "
-        f"{_qualified_table_name(table_schema, table_name)}"
-        f"{_xtdb_temporal_basis_clause(update_time)}"
-    )
+    try:
+        current = dataframe_ops.from_raw_sql(
+            "SELECT _id FROM "
+            f"{_qualified_table_name(table_schema, table_name)}"
+            f"{_xtdb_temporal_basis_clause(update_time)}"
+        )
+    except Exception as exc:
+        if _is_xtdb_table_not_found_error(exc):
+            _rollback_xtdb_connection(dataframe_ops.connection)
+            return 0
+        raise
     if current.is_empty():
         return 0
 
@@ -701,6 +707,61 @@ def _is_xtdb_invalid_system_time_error(exc: Exception) -> bool:
     return "invalid-system-time" in message or "specified system-time older" in message
 
 
+def _is_xtdb_table_not_found_error(exc: Exception) -> bool:
+    return "Table not found:" in str(exc)
+
+
+def _rollback_xtdb_connection(connection: Any) -> None:
+    rollback = getattr(connection, "rollback", None)
+    if callable(rollback):
+        rollback()
+
+
+def _configure_xtdb_pgwire_parameter_adapters(driver_connection: Any) -> None:
+    adapters = getattr(driver_connection, "adapters", None)
+    register_dumper = getattr(adapters, "register_dumper", None)
+    if not callable(register_dumper):
+        return
+
+    try:
+        from psycopg.types.string import StrDumper
+    except ModuleNotFoundError:
+        return
+
+    register_dumper(str, StrDumper)
+
+
+def _xtdb_parameter_value(value: Any, cast_type: str) -> Any:
+    if (
+        isinstance(value, datetime)
+        and cast_type.upper().startswith("TIMESTAMP")
+        and value.tzinfo is not None
+    ):
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
+
+
+def _normalize_xtdb_timestamp_columns(
+    df: pl.DataFrame,
+    table_config: Optional[TableConfig],
+) -> pl.DataFrame:
+    casts = _xtdb_insert_casts(df, table_config)
+    expressions = []
+    for column, cast_type in zip(df.columns, casts, strict=True):
+        dtype = df.schema[column]
+        if (
+            isinstance(dtype, pl.Datetime)
+            and dtype.time_zone is not None
+            and cast_type.upper().startswith("TIMESTAMP")
+        ):
+            expressions.append(
+                pl.col(column).dt.convert_time_zone("UTC").dt.replace_time_zone(None)
+            )
+    if not expressions:
+        return df
+    return df.with_columns(expressions)
+
+
 def _execute_xtdb_dml(
     connection: Any,
     sql: str,
@@ -734,8 +795,14 @@ def _execute_xtdb_dml(
             driver_connection.execute(sql)
             row_count = 0
         else:
-            with driver_connection.cursor() as cursor:
+            _configure_xtdb_pgwire_parameter_adapters(driver_connection)
+            cursor = driver_connection.cursor()
+            try:
                 cursor.executemany(sql, rows)
+            finally:
+                close = getattr(cursor, "close", None)
+                if callable(close):
+                    close()
             row_count = len(rows)
         driver_connection.commit()
     except Exception as exc:
@@ -965,9 +1032,15 @@ def _filter_xtdb_unchanged_rows(
     incoming = _prepare_xtdb_insert_dataframe(indexed_df, table_config)
 
     table_sql = _qualified_table_name(table_schema, table_name)
-    current = dataframe_ops.from_raw_sql(
-        f"SELECT * FROM {table_sql}{_xtdb_temporal_basis_clause(update_time)}"
-    )
+    try:
+        current = dataframe_ops.from_raw_sql(
+            f"SELECT * FROM {table_sql}{_xtdb_temporal_basis_clause(update_time)}"
+        )
+    except Exception as exc:
+        if _is_xtdb_table_not_found_error(exc):
+            _rollback_xtdb_connection(dataframe_ops.connection)
+            return df
+        raise
     current = _restore_xtdb_logical_columns(current, table_config)
     if current.is_empty():
         return df
@@ -1322,16 +1395,14 @@ class XtdbDataframeOps:
                 columns = [_xtdb_column_identifier(column) for column in chunk.columns]
                 column_sql = ", ".join(columns)
                 casts = _xtdb_insert_casts(chunk, table_config)
-                rows = chunk.rows()
-                values_sql = ", ".join(
-                    "("
-                    + ", ".join(
-                        _xtdb_sql_literal(value, cast)
+                rows = [
+                    tuple(
+                        _xtdb_parameter_value(value, cast)
                         for value, cast in zip(row, casts, strict=True)
                     )
-                    + ")"
-                    for row in rows
-                )
+                    for row in chunk.rows()
+                ]
+                values_sql = "(" + ", ".join(f"%s::{cast}" for cast in casts) + ")"
                 table_sql = _qualified_table_name(table_schema, table_name)
                 insert_sql = (
                     f"INSERT INTO {table_sql} ({column_sql}) VALUES {values_sql}"
@@ -1339,6 +1410,7 @@ class XtdbDataframeOps:
                 _execute_xtdb_dml(
                     self.connection,
                     insert_sql,
+                    rows,
                     system_time=update_time,
                 )
                 inserted_count += len(rows)
@@ -1675,6 +1747,7 @@ class XtdbStagingOps:
             return 0
 
         stage_config = self.stage_table_config(delta_table_config)
+        df = _normalize_xtdb_timestamp_columns(df, stage_config)
         inserted_count = self._dataframes().table_insert(
             df,
             stage_config.schema,
