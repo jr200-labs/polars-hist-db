@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import polars as pl
+import pytest
 
 from polars_hist_db.backends.xtdb import (
     XtdbDataframeOps,
@@ -141,6 +142,48 @@ def test_xtdb_dataframe_ops_reads_table_with_configured_schema_overrides(monkeyp
             "_id": pl.Int64,
             "destination_date": pl.Datetime(),
             "amount_value": pl.Float64,
+            "_valid_from": pl.Datetime("us", "UTC"),
+            "_valid_to": pl.Datetime("us", "UTC"),
+        },
+    )
+
+
+def test_xtdb_dataframe_ops_restores_logical_columns_with_slashes(monkeypatch):
+    read_database = Mock(
+        return_value=pl.DataFrame(
+            {
+                "_id": [1],
+                "capacity_bcm": ["12.345"],
+            }
+        )
+    )
+    monkeypatch.setattr(pl, "read_database", read_database)
+    table_config = TableConfig(
+        schema="test",
+        name="records",
+        primary_keys=["id"],
+        columns=[
+            TableColumnConfig("records", "id", "BIGINT", nullable=False),
+            TableColumnConfig("records", "capacity/bcm", "DECIMAL(15,3)"),
+        ],
+    )
+    monkeypatch.setattr(
+        XtdbTableConfigOps,
+        "from_table",
+        lambda self, table_schema, table_name: table_config,
+    )
+    connection = object()
+    ops = XtdbDataframeOps(connection)
+
+    result = ops.from_table("test", "records")
+
+    assert result.columns == ["_id", "capacity/bcm"]
+    read_database.assert_called_once_with(
+        "SELECT * FROM test.records",
+        connection,
+        schema_overrides={
+            "_id": pl.Int64,
+            "capacity_bcm": pl.Decimal(15, 3),
             "_valid_from": pl.Datetime("us", "UTC"),
             "_valid_to": pl.Datetime("us", "UTC"),
         },
@@ -509,6 +552,108 @@ def test_xtdb_dataframe_ops_quotes_reserved_insert_columns():
 
     insert_sql = driver_connection.execute.call_args_list[1].args[0]
     assert 'INSERT INTO source_a.entity_info (_id, name, "flag")' in insert_sql
+
+
+def test_xtdb_dataframe_ops_encodes_insert_columns_with_slashes():
+    driver_connection = Mock()
+    connection = Mock()
+    connection.connection.driver_connection = driver_connection
+    connection.in_transaction.return_value = False
+    ops = XtdbDataframeOps(connection)
+    table_config = TableConfig(
+        schema="source_a",
+        name="entity_info",
+        primary_keys=["entity_id"],
+        columns=[
+            TableColumnConfig("entity_info", "entity_id", "INT", nullable=False),
+            TableColumnConfig("entity_info", "capacity/bcm", "DECIMAL(15,3)"),
+        ],
+    )
+
+    ops.table_insert(
+        pl.DataFrame(
+            {
+                "entity_id": [1],
+                "capacity/bcm": ["4.080"],
+            }
+        ),
+        "source_a",
+        "entity_info",
+        table_config=table_config,
+    )
+
+    insert_sql = driver_connection.execute.call_args_list[1].args[0]
+    assert '"capacity/bcm"' not in insert_sql
+    assert "capacity_bcm" in insert_sql
+    assert "4.080::DECIMAL(15,3)" in insert_sql
+
+
+def test_xtdb_dataframe_ops_uses_underscore_column_mapping():
+    driver_connection = Mock()
+    connection = Mock()
+    connection.connection.driver_connection = driver_connection
+    connection.in_transaction.return_value = False
+    ops = XtdbDataframeOps(connection)
+    table_config = TableConfig(
+        schema="source_a",
+        name="entity_info",
+        primary_keys=["entity_id"],
+        columns=[
+            TableColumnConfig("entity_info", "entity_id", "INT", nullable=False),
+            TableColumnConfig(
+                "entity_info",
+                "metrics.properties.Capacity/Value",
+                "DECIMAL(15,3)",
+            ),
+        ],
+    )
+
+    ops.table_insert(
+        pl.DataFrame(
+            {
+                "entity_id": [1],
+                "metrics.properties.Capacity/Value": ["4.080"],
+            }
+        ),
+        "source_a",
+        "entity_info",
+        table_config=table_config,
+    )
+
+    insert_sql = driver_connection.execute.call_args_list[1].args[0]
+    assert '"metrics.properties.Capacity/Value"' not in insert_sql
+    assert "metrics_properties_capacity_value" in insert_sql
+
+
+def test_xtdb_dataframe_ops_rejects_physical_column_mapping_collisions():
+    connection = Mock()
+    connection.connection.driver_connection = Mock()
+    connection.in_transaction.return_value = False
+    ops = XtdbDataframeOps(connection)
+    table_config = TableConfig(
+        schema="source_a",
+        name="entity_info",
+        primary_keys=["entity_id"],
+        columns=[
+            TableColumnConfig("entity_info", "entity_id", "INT", nullable=False),
+            TableColumnConfig("entity_info", "Metric.Value", "VARCHAR(64)"),
+            TableColumnConfig("entity_info", "metric/value", "VARCHAR(64)"),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="physical column name collision"):
+        ops.table_insert(
+            pl.DataFrame(
+                {
+                    "entity_id": [1],
+                    "Metric.Value": ["A"],
+                    "metric/value": ["B"],
+                }
+            ),
+            "source_a",
+            "entity_info",
+            table_config=table_config,
+        )
 
 
 def test_xtdb_backend_returns_xtdb_dataframe_ops():
