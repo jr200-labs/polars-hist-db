@@ -73,7 +73,7 @@ def test_xtdb_staging_insert_partition_uses_retained_stage_table(monkeypatch):
         "record_id": [1],
         "destination_name": ["Alpha"],
         "stage_run_id": ["stage-1"],
-        "stage_partition_time": [partition_time],
+        "stage_partition_time": [partition_time.replace(tzinfo=None)],
     }
 
 
@@ -488,7 +488,7 @@ def test_xtdb_staging_insert_cache_matches_stage_table_schema_for_missing_column
         "destination_name": ["Alpha"],
         "source_note": [None],
         "stage_run_id": ["stage-1"],
-        "stage_partition_time": [datetime(2030, 1, 1, tzinfo=timezone.utc)],
+        "stage_partition_time": [datetime(2030, 1, 1)],
     }
     assert inserted["df"].schema["source_note"] == pl.String
     from_raw_sql.assert_not_called()

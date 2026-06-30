@@ -157,9 +157,11 @@ def test_xtdb_temporal_upsert_dropout_deletes_missing_current_keys():
     assert result == 2
     executed_sql = [call.args[0] for call in driver_connection.execute.call_args_list]
     assert executed_sql[1] == "DELETE FROM test.records WHERE _id IN (2::BIGINT)"
-    assert executed_sql[3] == (
-        "INSERT INTO test.records (_id, destination) VALUES (1::BIGINT, 'Alpha'::TEXT)"
+    insert_call = driver_connection.cursor.return_value.executemany.call_args
+    assert insert_call.args[0] == (
+        "INSERT INTO test.records (_id, destination) VALUES (%s::BIGINT, %s::TEXT)"
     )
+    assert insert_call.args[1] == [(1, "Alpha")]
 
 
 def test_xtdb_temporal_upsert_dropout_closes_missing_keys_at_valid_time():
@@ -324,6 +326,70 @@ def test_xtdb_temporal_upsert_takes_last_duplicate_source_key():
         "id": [1],
         "destination": ["Beta"],
     }
+
+
+def test_xtdb_temporal_upsert_drop_unchanged_treats_missing_table_as_empty():
+    backend = XtdbBackend()
+    ops = Mock()
+    ops.from_raw_sql.side_effect = Exception("Table not found: test.records")
+    ops.table_insert.return_value = 1
+    table_config = TableConfig(
+        schema="test",
+        name="records",
+        primary_keys=["id"],
+        columns=[
+            TableColumnConfig("records", "id", "BIGINT", nullable=False),
+            TableColumnConfig("records", "destination", "VARCHAR(255)"),
+        ],
+    )
+
+    result = backend.temporal_upsert(
+        pl.DataFrame({"id": [1], "destination": ["Alpha"]}),
+        "test",
+        "records",
+        dataframe_ops=ops,
+        table_config=table_config,
+        delta_config=DeltaConfig(drop_unchanged_rows=True),
+    )
+
+    assert result == 1
+    written_df = ops.table_insert.call_args.args[0]
+    assert written_df.to_dict(as_series=False) == {
+        "id": [1],
+        "destination": ["Alpha"],
+    }
+
+
+def test_xtdb_temporal_upsert_dropout_treats_missing_table_as_empty():
+    backend = XtdbBackend()
+    driver_connection = Mock()
+    connection = Mock()
+    connection.connection.driver_connection = driver_connection
+    connection.in_transaction.return_value = False
+    ops = XtdbDataframeOps(connection)
+    ops.from_raw_sql = Mock(side_effect=Exception("Table not found: test.records"))
+    table_config = TableConfig(
+        schema="test",
+        name="records",
+        primary_keys=["id"],
+        columns=[
+            TableColumnConfig("records", "id", "BIGINT", nullable=False),
+            TableColumnConfig("records", "destination", "VARCHAR(255)"),
+        ],
+    )
+
+    result = backend.temporal_upsert(
+        pl.DataFrame({"id": [1], "destination": ["Alpha"]}),
+        "test",
+        "records",
+        dataframe_ops=ops,
+        table_config=table_config,
+        delta_config=DeltaConfig(row_finality="dropout"),
+    )
+
+    assert result == 1
+    executed_sql = [call.args[0] for call in driver_connection.execute.call_args_list]
+    assert not any(sql.startswith("DELETE FROM") for sql in executed_sql)
 
 
 def test_xtdb_temporal_upsert_treats_explicit_valid_time_change_as_changed():
