@@ -276,6 +276,107 @@ def test_xtdb_staging_projects_missing_nullable_pipeline_columns(monkeypatch):
     assert result.schema["source_note"] == pl.String
 
 
+def test_xtdb_staging_insert_cache_matches_stage_table_schema_for_missing_columns(
+    monkeypatch,
+):
+    inserted = {}
+
+    def table_insert(self, df, table_schema, table_name, table_config=None):
+        inserted["df"] = df
+        return df.height
+
+    from_raw_sql = Mock(
+        return_value=pl.DataFrame(
+            schema={
+                "stage_run_id": pl.String,
+                "stage_row_index": pl.Int64,
+                "record_id": pl.Int64,
+                "destination_name": pl.String,
+                "source_note": pl.String,
+            }
+        )
+    )
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_insert",
+        table_insert,
+    )
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_raw_sql",
+        from_raw_sql,
+    )
+
+    delta_table_config = TableConfig(
+        schema="fakedata",
+        name="record_stream",
+        columns=[
+            TableColumnConfig("record_stream", "record_id", "INT", nullable=False),
+            TableColumnConfig("record_stream", "destination_name", "VARCHAR(64)"),
+            TableColumnConfig("record_stream", "source_note", "VARCHAR(128)"),
+        ],
+    )
+    dataset = DatasetConfig(
+        name="record_stream",
+        delta_table_schema="fakedata",
+        input_config={"type": "dsv", "search_paths": []},
+        pipeline=[
+            {
+                "schema": "fakedata",
+                "table": "records",
+                "type": "primary",
+                "columns": [
+                    {"source": "record_id", "target": "record_id"},
+                    {"source": "destination_name", "target": "destination"},
+                    {"source": "source_note", "target": "source_note"},
+                ],
+            }
+        ],
+    )
+    table_config = TableConfig(
+        schema="fakedata",
+        name="records",
+        primary_keys=["record_id"],
+        columns=[
+            TableColumnConfig("records", "record_id", "INT", nullable=False),
+            TableColumnConfig("records", "destination", "VARCHAR(64)"),
+            TableColumnConfig("records", "source_note", "VARCHAR(128)"),
+        ],
+    )
+    staging = XtdbStagingOps(object())
+
+    staging.insert_partition(
+        pl.DataFrame({"record_id": [1], "destination_name": ["Alpha"]}),
+        delta_table_config,
+        "stage-1",
+        datetime(2030, 1, 1, tzinfo=timezone.utc),
+        uniqueness_col_set=["record_id"],
+        prefill_nulls_with_default=True,
+    )
+    result = staging.prepare_pipeline_item_dataframe(
+        "stage-1",
+        dataset,
+        0,
+        table_config,
+        valid_time=None,
+    )
+
+    assert result.to_dict(as_series=False) == {
+        "record_id": [1],
+        "destination": ["Alpha"],
+        "source_note": [None],
+    }
+    assert result.schema["source_note"] == pl.String
+    assert inserted["df"].to_dict(as_series=False) == {
+        "stage_row_index": [0],
+        "record_id": [1],
+        "destination_name": ["Alpha"],
+        "source_note": [None],
+        "stage_run_id": ["stage-1"],
+        "stage_partition_time": [datetime(2030, 1, 1, tzinfo=timezone.utc)],
+    }
+    assert inserted["df"].schema["source_note"] == pl.String
+    from_raw_sql.assert_not_called()
+
+
 def test_xtdb_staging_rejects_missing_required_pipeline_columns(monkeypatch):
     stage_df = pl.DataFrame(
         {
