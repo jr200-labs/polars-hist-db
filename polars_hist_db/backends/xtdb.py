@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import re
+from urllib.parse import quote
 from typing import Any, Iterable, Literal, Mapping, Optional, cast
 
 import polars as pl
@@ -2015,7 +2016,13 @@ class XtdbBackend:
 
     def create_engine(self, config: DbEngineConfig) -> Engine:
         database = config.database or "xtdb"
-        url = f"postgresql+psycopg://{config.hostname}:{config.port}/{database}"
+        auth = ""
+        if config.username:
+            auth = quote(config.username, safe="")
+            if config.password:
+                auth = f"{auth}:{quote(config.password, safe='')}"
+            auth = f"{auth}@"
+        url = f"postgresql+psycopg://{auth}{config.hostname}:{config.port}/{database}"
         engine = create_engine(
             url,
             connect_args={"prepare_threshold": None},
