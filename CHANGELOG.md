@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.25](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.24...v0.12.25) (2026-06-30)
+
+
+### Features
+
+* use xtdb adbc for bulk staging ingest ([#121](https://github.com/jr200-labs/polars-hist-db/issues/121)) ([5c6d04e](https://github.com/jr200-labs/polars-hist-db/commit/5c6d04e2cac41bdff5fc23a7e4a53c01859f6637))
+
+
+### Bug Fixes
+
+* parameterize xtdb pgwire inserts ([#119](https://github.com/jr200-labs/polars-hist-db/issues/119)) ([2318362](https://github.com/jr200-labs/polars-hist-db/commit/2318362dacdd69f914a9ca2063393f618a692e51))
+
 ## [0.12.24](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.23...v0.12.24) (2026-06-30)
 
 
