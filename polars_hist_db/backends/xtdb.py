@@ -191,15 +191,12 @@ def _normalize_xtdb_ingest_arrow(table: pa.Table) -> pa.Table:
 def _xtdb_declared_columns(table_config: TableConfig) -> list[str]:
     document_id_columns = _xtdb_document_id_columns(table_config)
     uses_explicit_id = document_id_columns == ["_id"]
-    uses_single_source_key = len(document_id_columns) == 1 and not uses_explicit_id
 
     declared_columns = ["_id"]
     for column in table_config.columns:
         if column.name in _XTDB_SYSTEM_COLUMNS:
             continue
         if uses_explicit_id and column.name == "_id":
-            continue
-        if uses_single_source_key and column.name == document_id_columns[0]:
             continue
         declared_columns.append(column.name)
 
@@ -439,14 +436,13 @@ def _xtdb_insert_casts(
         document_id_columns = _xtdb_document_id_columns(table_config)
         if len(document_id_columns) > 1:
             configured_types["_id"] = "TEXT"
+        elif document_id_columns != ["_id"]:
+            for column in table_config.columns:
+                if column.name == document_id_columns[0]:
+                    configured_types["_id"] = _xtdb_cast_type(column.data_type)
+                    break
         for column in table_config.columns:
-            target_name = (
-                "_id"
-                if len(document_id_columns) == 1
-                and column.name == document_id_columns[0]
-                else column.name
-            )
-            configured_types[target_name] = _xtdb_cast_type(column.data_type)
+            configured_types[column.name] = _xtdb_cast_type(column.data_type)
 
     casts = []
     for name, dtype in df.schema.items():
@@ -458,19 +454,15 @@ def _xtdb_configured_column_dtypes(
     table_config: TableConfig,
 ) -> dict[str, pl.DataType]:
     document_id_columns = _xtdb_document_id_columns(table_config)
-    uses_single_source_key = len(document_id_columns) == 1
     dtypes: dict[str, pl.DataType] = {}
 
     for column in table_config.columns:
         dtype = _xtdb_polars_type_or_none(column.data_type)
         if dtype is None:
             continue
-        target_name = (
-            "_id"
-            if uses_single_source_key and column.name == document_id_columns[0]
-            else column.name
-        )
-        dtypes[target_name] = dtype
+        dtypes[column.name] = dtype
+        if document_id_columns != ["_id"] and document_id_columns == [column.name]:
+            dtypes["_id"] = dtype
 
     if len(document_id_columns) > 1:
         dtypes["_id"] = pl.String()
@@ -547,7 +539,9 @@ def _prepare_xtdb_insert_dataframe(
         )
 
     if len(document_id_columns) == 1:
-        return df.rename({document_id_columns[0]: "_id"})
+        return df.with_columns(pl.col(document_id_columns[0]).alias("_id")).select(
+            ["_id", *df.columns]
+        )
 
     document_ids = [
         _xtdb_composite_document_id(document_id_columns, row)

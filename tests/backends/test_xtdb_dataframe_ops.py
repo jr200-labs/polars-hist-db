@@ -146,6 +146,7 @@ def test_xtdb_dataframe_ops_reads_table_with_configured_schema_overrides(monkeyp
         connection,
         schema_overrides={
             "_id": pl.Int64,
+            "id": pl.Int64,
             "destination_date": pl.Datetime(),
             "amount_value": pl.Float64,
             "_valid_from": pl.Datetime("us", "UTC"),
@@ -159,6 +160,7 @@ def test_xtdb_dataframe_ops_restores_logical_columns_with_slashes(monkeypatch):
         return_value=pl.DataFrame(
             {
                 "_id": [1],
+                "id": [1],
                 "capacity_bcm": ["12.345"],
             }
         )
@@ -183,12 +185,13 @@ def test_xtdb_dataframe_ops_restores_logical_columns_with_slashes(monkeypatch):
 
     result = ops.from_table("test", "records")
 
-    assert result.columns == ["_id", "capacity/bcm"]
+    assert result.columns == ["_id", "id", "capacity/bcm"]
     read_database.assert_called_once_with(
         "SELECT * FROM test.records",
         connection,
         schema_overrides={
             "_id": pl.Int64,
+            "id": pl.Int64,
             "capacity_bcm": pl.Decimal(15, 3),
             "_valid_from": pl.Datetime("us", "UTC"),
             "_valid_to": pl.Datetime("us", "UTC"),
@@ -253,6 +256,7 @@ def test_xtdb_dataframe_ops_maps_configured_primary_key_to_id(monkeypatch):
     written_df = captured["df"]
     assert written_df.to_dict(as_series=False) == {
         "_id": [1, 2],
+        "id": [1, 2],
         "destination": ["A", "B"],
     }
     assert captured["kwargs"] == {
@@ -480,7 +484,7 @@ def test_xtdb_dataframe_ops_normalizes_bound_timestamp_parameters_to_naive_utc()
 
     insert_call = _single_executemany_call(driver_connection)
     assert "%s::TIMESTAMP" in insert_call.args[0]
-    assert insert_call.args[1] == [(1, datetime(2030, 1, 1, 12, 30))]
+    assert insert_call.args[1] == [(1, 1, datetime(2030, 1, 1, 12, 30))]
 
 
 def test_xtdb_dataframe_ops_uses_native_casts_for_mysql_compatibility_types():
@@ -527,11 +531,12 @@ def test_xtdb_dataframe_ops_uses_native_casts_for_mysql_compatibility_types():
     insert_sql = insert_call.args[0]
     assert "INSERT INTO test.compat_types" in insert_sql
     assert "%s::BOOLEAN" in insert_sql
-    assert insert_sql.count("%s::INTEGER") == 5
+    assert insert_sql.count("%s::INTEGER") == 6
     assert "%s::TIMESTAMP" in insert_sql
     assert "%s::TIME" in insert_sql
     assert insert_call.args[1] == [
         (
+            1,
             1,
             True,
             1,
@@ -578,7 +583,7 @@ def test_xtdb_dataframe_ops_casts_null_values_to_configured_types():
     insert_sql = insert_call.args[0]
     assert "%s::TIMESTAMP" in insert_sql
     assert "%s::DOUBLE PRECISION" in insert_sql
-    assert insert_call.args[1] == [(1, None, None)]
+    assert insert_call.args[1] == [(1, 1, None, None)]
 
 
 def test_xtdb_dataframe_ops_casts_categorical_values_to_configured_decimal():
@@ -613,7 +618,7 @@ def test_xtdb_dataframe_ops_casts_categorical_values_to_configured_decimal():
     insert_call = _single_executemany_call(driver_connection)
     insert_sql = insert_call.args[0]
     assert "%s::DECIMAL(15,3)" in insert_sql
-    assert insert_call.args[1] == [(1, Decimal("12.345"))]
+    assert insert_call.args[1] == [(1, 1, Decimal("12.345"))]
 
 
 def test_xtdb_dataframe_ops_quotes_reserved_insert_columns():
@@ -647,7 +652,9 @@ def test_xtdb_dataframe_ops_quotes_reserved_insert_columns():
     )
 
     insert_sql = _single_executemany_call(driver_connection).args[0]
-    assert 'INSERT INTO source_a.entity_info (_id, name, "flag")' in insert_sql
+    assert (
+        'INSERT INTO source_a.entity_info (_id, entity_id, name, "flag")' in insert_sql
+    )
 
 
 def test_xtdb_dataframe_ops_encodes_insert_columns_with_slashes():
@@ -681,9 +688,10 @@ def test_xtdb_dataframe_ops_encodes_insert_columns_with_slashes():
     insert_call = _single_executemany_call(driver_connection)
     insert_sql = insert_call.args[0]
     assert '"capacity/bcm"' not in insert_sql
+    assert "entity_id" in insert_sql
     assert "capacity_bcm" in insert_sql
     assert "%s::DECIMAL(15,3)" in insert_sql
-    assert insert_call.args[1] == [(1, Decimal("4.080"))]
+    assert insert_call.args[1] == [(1, 1, Decimal("4.080"))]
 
 
 def test_xtdb_dataframe_ops_uses_underscore_column_mapping():

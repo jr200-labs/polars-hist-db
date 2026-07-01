@@ -159,9 +159,10 @@ def test_xtdb_temporal_upsert_dropout_deletes_missing_current_keys():
     assert executed_sql[1] == "DELETE FROM test.records WHERE _id IN (2::BIGINT)"
     insert_call = driver_connection.cursor.return_value.executemany.call_args
     assert insert_call.args[0] == (
-        "INSERT INTO test.records (_id, destination) VALUES (%s::BIGINT, %s::TEXT)"
+        "INSERT INTO test.records (_id, id, destination) "
+        "VALUES (%s::BIGINT, %s::BIGINT, %s::TEXT)"
     )
-    assert insert_call.args[1] == [(1, "Alpha")]
+    assert insert_call.args[1] == [(1, 1, "Alpha")]
 
 
 def test_xtdb_temporal_upsert_dropout_closes_missing_keys_at_valid_time():
@@ -747,6 +748,7 @@ def test_xtdb_table_creation_maps_mysql_compatibility_types(monkeypatch):
     ]
     assert _xtdb_declared_columns(table_config) == [
         "_id",
+        "id",
         "bool_col",
         "bit_col",
         "tinyint_col",
