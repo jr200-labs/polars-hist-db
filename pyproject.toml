@@ -15,7 +15,7 @@ dependencies = [
     "pytz>=2026.2",
     "pyyaml>=6.0.3",
     "scandir-rs>=2.9.9",
-    "sql-metadata>=2.20.0",
+    "sql-metadata>=3.0.1",
     "sqlalchemy[asyncio]>=2.0.51",
 ]
 
