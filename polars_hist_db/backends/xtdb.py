@@ -1721,6 +1721,9 @@ class XtdbStagingOps:
             table_config=table_config,
         )
 
+    def bulk_dataframes(self) -> XtdbDataframeOps | XtdbAdbcDataframeOps:
+        return self._bulk_dataframes()
+
     def stage_table_config(self, delta_table_config: TableConfig) -> TableConfig:
         stage_table = _xtdb_stage_table_name(delta_table_config.name)
         existing_column_names = {column.name for column in delta_table_config.columns}
