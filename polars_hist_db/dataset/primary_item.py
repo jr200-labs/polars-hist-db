@@ -11,6 +11,19 @@ from ..core import TableConfigOps, DeltaTableOps, TableOps
 LOGGER = logging.getLogger(__name__)
 
 
+def _xtdb_temporal_write_kwargs(
+    table_config: TableConfig,
+    valid_time: Any,
+    upload_time: datetime,
+    staging: Any,
+) -> dict[str, Any]:
+    if table_config.is_temporal or valid_time is not None:
+        return {"update_time": upload_time}
+    if hasattr(staging, "bulk_dataframes"):
+        return {"dataframe_ops": staging.bulk_dataframes()}
+    return {}
+
+
 def scrape_primary_item(
     pipeline_id: int,
     dataset: DatasetConfig,
@@ -95,6 +108,12 @@ def scrape_xtdb_pipeline_item(
     )
 
     backend.table_configs(connection).create(table_config)
+    temporal_write_kwargs = _xtdb_temporal_write_kwargs(
+        table_config,
+        valid_time,
+        upload_time,
+        staging,
+    )
     modified_count = backend.temporal_upsert(
         target_df,
         table_config.schema,
@@ -102,8 +121,8 @@ def scrape_xtdb_pipeline_item(
         connection=connection,
         table_config=table_config,
         delta_config=dataset.delta_config,
-        update_time=upload_time,
         valid_time=valid_time,
+        **temporal_write_kwargs,
     )
 
     LOGGER.debug("(item %d) XTDB upserted %d rows", pipeline_id, modified_count)
