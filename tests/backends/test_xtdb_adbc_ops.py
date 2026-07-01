@@ -69,6 +69,7 @@ def test_xtdb_adbc_dataframe_ops_ingests_arrow_with_id_mapping():
     assert arrow_table.schema.field("destination").type == pa.string()
     assert arrow_table.to_pydict() == {
         "_id": [1, 2],
+        "id": [1, 2],
         "destination": ["Alpha", "Beta"],
     }
 
@@ -106,6 +107,7 @@ def test_xtdb_adbc_dataframe_ops_ingests_null_columns_with_configured_arrow_type
     assert arrow_table.schema.field("amount_value").type == pa.float64()
     assert arrow_table.to_pydict() == {
         "_id": [1],
+        "id": [1],
         "destination_date": [None],
         "amount_value": [None],
     }
@@ -150,9 +152,9 @@ def test_xtdb_adbc_dataframe_ops_splits_ingest_by_max_rows():
     ingests = connection.cursor_instance.ingests
     assert len(ingests) == 3
     assert [ingest[1].to_pydict() for ingest in ingests] == [
-        {"_id": [1, 2], "destination": ["A", "B"]},
-        {"_id": [3, 4], "destination": ["C", "D"]},
-        {"_id": [5], "destination": ["E"]},
+        {"_id": [1, 2], "id": [1, 2], "destination": ["A", "B"]},
+        {"_id": [3, 4], "id": [3, 4], "destination": ["C", "D"]},
+        {"_id": [5], "id": [5], "destination": ["E"]},
     ]
 
 
