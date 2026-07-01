@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.28](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.27...v0.12.28) (2026-07-01)
+
+
+### Bug Fixes
+
+* use bulk xtdb writes for non-temporal ingests ([#129](https://github.com/jr200-labs/polars-hist-db/issues/129)) ([5313939](https://github.com/jr200-labs/polars-hist-db/commit/5313939a24a84ffd0e40e2ed5b1e1384de0be003))
+
 ## [0.12.27](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.26...v0.12.27) (2026-07-01)
 
 
