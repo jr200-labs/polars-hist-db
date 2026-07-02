@@ -32,7 +32,7 @@ polars-hist-db-parity = "polars_hist_db.parity:main"
 
 [dependency-groups]
 dev = [
-    "coverage>=7.14.3",
+    "coverage>=7.15.0",
     "ipykernel>=7.3.0",
     "mypy>=2.1.0",
     "pytest>=9.1.1",
