@@ -3,6 +3,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 import hashlib
 import json
+import logging
 import math
 import re
 from urllib.parse import quote
@@ -27,6 +28,7 @@ from ..types import PolarsType
 from .config import DbEngineConfig
 from .temporal import system_time_hint_clause
 
+LOGGER = logging.getLogger(__name__)
 
 _XTDB_SYSTEM_COLUMNS = {"_valid_from", "_valid_to", "_system_from", "_system_to"}
 _XTDB_READONLY_SYSTEM_COLUMNS = {"_system_from", "_system_to"}
@@ -2242,10 +2244,28 @@ class XtdbBackend:
         if update_time is not None:
             insert_kwargs["update_time"] = update_time
 
-        inserted_count = dataframe_ops.table_insert(
-            df,
-            table_schema,
-            table_name,
-            **insert_kwargs,
-        )
+        try:
+            inserted_count = dataframe_ops.table_insert(
+                df,
+                table_schema,
+                table_name,
+                **insert_kwargs,
+            )
+        except Exception as exc:
+            if not (
+                isinstance(dataframe_ops, XtdbAdbcDataframeOps)
+                and _is_xtdb_adbc_ingest_unavailable(exc)
+            ):
+                raise
+            if connection is None:
+                raise
+            LOGGER.warning(
+                "XTDB ADBC ingest unavailable — falling back to pgwire (%s)", exc
+            )
+            inserted_count = self.dataframes(connection).table_insert(
+                df,
+                table_schema,
+                table_name,
+                **insert_kwargs,
+            )
         return deleted_count + inserted_count
