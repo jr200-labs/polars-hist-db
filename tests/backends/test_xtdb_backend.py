@@ -9,6 +9,7 @@ import pytest
 from polars_hist_db.backends import DbEngineConfig, XtdbBackend
 from polars_hist_db.backends.xtdb import (
     _XTDB_NON_TEMPORAL_VALID_FROM,
+    XtdbAdbcDataframeOps,
     XtdbDataframeOps,
     XtdbTableConfigOps,
     _xtdb_declared_columns,
@@ -1397,3 +1398,53 @@ def test_xtdb_temporal_upsert_preserves_user_provided_valid_from():
 
     written_df = ops.table_insert.call_args.args[0]
     assert written_df.get_column("_valid_from").to_list() == [explicit_from]
+
+
+def test_xtdb_temporal_upsert_falls_back_to_pgwire_when_adbc_ingest_unavailable(
+    monkeypatch,
+):
+    """XTDB Flight SQL does not implement ExecuteIngest; the ADBC bulk-write
+    surface raises with 'Not implemented' / 'ExecuteIngest' in the message.
+    temporal_upsert must fall back to the pgwire path rather than bubbling
+    the error and stalling the ingest pipeline."""
+    backend = XtdbBackend()
+
+    class NotSupportedError(Exception):
+        pass
+
+    adbc_ops = XtdbAdbcDataframeOps.__new__(XtdbAdbcDataframeOps)
+    adbc_ops.table_insert = Mock(  # type: ignore[method-assign]
+        side_effect=NotSupportedError(
+            "NOT_IMPLEMENTED: [FlightSQL] Not implemented. "
+            "(Unimplemented; ExecuteIngest)"
+        )
+    )
+
+    pgwire_ops = Mock()
+    pgwire_ops.table_insert.return_value = 7
+    monkeypatch.setattr(
+        XtdbBackend, "dataframes", lambda self, conn: pgwire_ops, raising=True
+    )
+
+    table_config = TableConfig(
+        schema="reference",
+        name="entity_info",
+        primary_keys=["entity_number"],
+        is_temporal=False,
+        columns=[
+            TableColumnConfig("entity_info", "entity_number", "BIGINT", nullable=False),
+        ],
+    )
+
+    result = backend.temporal_upsert(
+        pl.DataFrame({"entity_number": [1, 2]}),
+        "reference",
+        "entity_info",
+        connection=Mock(),
+        dataframe_ops=adbc_ops,
+        table_config=table_config,
+    )
+
+    assert result == 7
+    adbc_ops.table_insert.assert_called_once()  # type: ignore[attr-defined]
+    pgwire_ops.table_insert.assert_called_once()
