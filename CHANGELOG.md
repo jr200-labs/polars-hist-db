@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.12.30](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.29...v0.12.30) (2026-07-02)
+
+
+### Bug Fixes
+
+* **deps:** update dependency coverage to &gt;=7.15.0 ([#138](https://github.com/jr200-labs/polars-hist-db/issues/138)) ([e7f42bf](https://github.com/jr200-labs/polars-hist-db/commit/e7f42bfd86621504e0973bd96333bcb35b6dfca6))
+* **deps:** update dependency jr200-labs/github-action-templates to shared-v0.1.25 ([#137](https://github.com/jr200-labs/polars-hist-db/issues/137)) ([0a072b2](https://github.com/jr200-labs/polars-hist-db/commit/0a072b282e8241ec34818883611123b8092d5d0e))
+* **deps:** update quarto-cli digest to e22b5ed ([#136](https://github.com/jr200-labs/polars-hist-db/issues/136)) ([3cb349e](https://github.com/jr200-labs/polars-hist-db/commit/3cb349ee48b0cb7bd828ab04b075e973ea7c06ea))
+* **xtdb:** fall back to pgwire on ADBC ExecuteIngest not implemented ([#135](https://github.com/jr200-labs/polars-hist-db/issues/135)) ([27eed2a](https://github.com/jr200-labs/polars-hist-db/commit/27eed2ab0e4ac5f59d0fc16fcde9696d353380a6))
+
 ## [0.12.29](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.28...v0.12.29) (2026-07-02)
 
 
