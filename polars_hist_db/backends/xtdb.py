@@ -1085,6 +1085,9 @@ def _filter_xtdb_unchanged_rows(
     )
 
 
+_XTDB_NON_TEMPORAL_VALID_FROM = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
 def _apply_xtdb_valid_time_mapping(
     df: pl.DataFrame, valid_time: Optional[ValidTimeConfig]
 ) -> pl.DataFrame:
@@ -1116,6 +1119,29 @@ def _apply_xtdb_valid_time_mapping(
         for source, target in mappings.items()
         if source != target
     )
+
+
+def _apply_xtdb_non_temporal_valid_from(
+    df: pl.DataFrame,
+    table_config: Optional[TableConfig],
+    valid_time: Optional[ValidTimeConfig],
+) -> pl.DataFrame:
+    """Reference tables (``is_temporal: false``) with no ``valid_time`` mapping
+    must be readable as-of any historical timestamp — they represent an
+    always-valid dimension, not a bitemporal fact.
+
+    XTDB otherwise defaults an unspecified ``_valid_from`` to transaction
+    time, so ``FOR VALID_TIME AS OF <t>`` on any ``t`` before the upload
+    returns zero rows. Pin ``_valid_from`` to the unix epoch so those
+    queries resolve.
+    """
+    if table_config is None or table_config.is_temporal:
+        return df
+    if valid_time is not None:
+        return df
+    if "_valid_from" in df.columns:
+        return df
+    return df.with_columns(pl.lit(_XTDB_NON_TEMPORAL_VALID_FROM).alias("_valid_from"))
 
 
 def _fill_xtdb_staging_defaults(
@@ -2173,6 +2199,7 @@ class XtdbBackend:
             dataframe_ops = self.dataframes(connection)
 
         df = _apply_xtdb_valid_time_mapping(df, valid_time)
+        df = _apply_xtdb_non_temporal_valid_from(df, table_config, valid_time)
 
         deleted_count = 0
         if delta_config is not None:
