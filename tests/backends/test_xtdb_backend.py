@@ -8,6 +8,7 @@ import pytest
 
 from polars_hist_db.backends import DbEngineConfig, XtdbBackend
 from polars_hist_db.backends.xtdb import (
+    _XTDB_NON_TEMPORAL_VALID_FROM,
     XtdbDataframeOps,
     XtdbTableConfigOps,
     _xtdb_declared_columns,
@@ -18,6 +19,8 @@ from polars_hist_db.config import (
     TableConfig,
     ValidTimeConfig,
 )
+
+_NON_TEMPORAL_VALID_FROM = _XTDB_NON_TEMPORAL_VALID_FROM
 
 
 def test_xtdb_create_engine_includes_configured_credentials(monkeypatch):
@@ -74,12 +77,13 @@ def test_xtdb_temporal_upsert_delegates_to_dataframe_insert():
     )
 
     assert result == 2
-    ops.table_insert.assert_called_once_with(
-        df,
-        "test",
-        "records",
-        table_config=table_config,
-    )
+    written_df = ops.table_insert.call_args.args[0]
+    assert written_df.to_dict(as_series=False) == {
+        "id": [1, 2],
+        "destination": ["Alpha", "Beta"],
+        "_valid_from": [_NON_TEMPORAL_VALID_FROM, _NON_TEMPORAL_VALID_FROM],
+    }
+    assert ops.table_insert.call_args.kwargs == {"table_config": table_config}
 
 
 def test_xtdb_temporal_upsert_passes_system_time_to_dataframe_insert():
@@ -156,13 +160,19 @@ def test_xtdb_temporal_upsert_dropout_deletes_missing_current_keys():
 
     assert result == 2
     executed_sql = [call.args[0] for call in driver_connection.execute.call_args_list]
-    assert executed_sql[1] == "DELETE FROM test.records WHERE _id IN (2::BIGINT)"
+    assert executed_sql[1] == (
+        "DELETE FROM test.records FOR PORTION OF VALID_TIME FROM "
+        "TIMESTAMP '1970-01-01T00:00:00+00:00' TO NULL "
+        "WHERE _id IN (2::BIGINT)"
+    )
     insert_call = driver_connection.cursor.return_value.executemany.call_args
     assert insert_call.args[0] == (
-        "INSERT INTO test.records (_id, id, destination) "
-        "VALUES (%s::BIGINT, %s::BIGINT, %s::TEXT)"
+        "INSERT INTO test.records (_id, id, destination, _valid_from) "
+        "VALUES (%s::BIGINT, %s::BIGINT, %s::TEXT, %s::TIMESTAMP)"
     )
-    assert insert_call.args[1] == [(1, 1, "Alpha")]
+    assert insert_call.args[1] == [
+        (1, 1, "Alpha", _NON_TEMPORAL_VALID_FROM.replace(tzinfo=None))
+    ]
 
 
 def test_xtdb_temporal_upsert_dropout_closes_missing_keys_at_valid_time():
@@ -295,6 +305,7 @@ def test_xtdb_temporal_upsert_takes_first_duplicate_source_key():
     assert written_df.to_dict(as_series=False) == {
         "id": [1],
         "destination": ["Alpha"],
+        "_valid_from": [_NON_TEMPORAL_VALID_FROM],
     }
 
 
@@ -326,6 +337,7 @@ def test_xtdb_temporal_upsert_takes_last_duplicate_source_key():
     assert written_df.to_dict(as_series=False) == {
         "id": [1],
         "destination": ["Beta"],
+        "_valid_from": [_NON_TEMPORAL_VALID_FROM],
     }
 
 
@@ -358,6 +370,7 @@ def test_xtdb_temporal_upsert_drop_unchanged_treats_missing_table_as_empty():
     assert written_df.to_dict(as_series=False) == {
         "id": [1],
         "destination": ["Alpha"],
+        "_valid_from": [_NON_TEMPORAL_VALID_FROM],
     }
 
 
@@ -580,6 +593,7 @@ def test_xtdb_temporal_upsert_prefills_configured_defaults_before_insert():
         "as_of": [date(1985, 10, 26)],
         "cutoff": [time(1, 20)],
         "price": [Decimal("2.71")],
+        "_valid_from": [_NON_TEMPORAL_VALID_FROM],
     }
 
 
@@ -618,6 +632,7 @@ def test_xtdb_temporal_upsert_treats_null_to_value_as_changed():
     assert written_df.to_dict(as_series=False) == {
         "id": [1],
         "amount_value": [330.33],
+        "_valid_from": [_NON_TEMPORAL_VALID_FROM],
     }
 
 
@@ -1253,3 +1268,132 @@ def test_xtdb_declared_columns_quotes_non_identifier_column_names():
         '"external ref (entity)"',
         '"timestamp"',
     ]
+
+
+def test_xtdb_temporal_upsert_pins_valid_from_to_epoch_for_non_temporal_tables():
+    """Reference tables (is_temporal=False) must be readable as-of any past
+    timestamp — otherwise every asof-mode query joining a reference table
+    silently returns zero rows. Pin _valid_from to the unix epoch on write."""
+    backend = XtdbBackend()
+    ops = Mock()
+    ops.table_insert.return_value = 1
+    table_config = TableConfig(
+        schema="reference",
+        name="vessel_info",
+        primary_keys=["mmsi"],
+        is_temporal=False,
+        columns=[
+            TableColumnConfig("vessel_info", "mmsi", "BIGINT", nullable=False),
+            TableColumnConfig("vessel_info", "status", "VARCHAR(16)"),
+        ],
+    )
+
+    backend.temporal_upsert(
+        pl.DataFrame({"mmsi": [1234], "status": ["ACTIVE"]}),
+        "reference",
+        "vessel_info",
+        dataframe_ops=ops,
+        table_config=table_config,
+    )
+
+    written_df = ops.table_insert.call_args.args[0]
+    assert "_valid_from" in written_df.columns
+    assert written_df.get_column("_valid_from").to_list() == [_NON_TEMPORAL_VALID_FROM]
+
+
+def test_xtdb_temporal_upsert_keeps_temporal_tables_off_epoch():
+    """Bitemporal fact tables (is_temporal=True) must NOT get the epoch
+    sentinel — their _valid_from comes from the transaction system_time or an
+    explicit valid_time mapping. Injecting epoch would collapse history."""
+    backend = XtdbBackend()
+    ops = Mock()
+    ops.table_insert.return_value = 1
+    update_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    table_config = TableConfig(
+        schema="fact",
+        name="cargos",
+        primary_keys=["cargo_id"],
+        is_temporal=True,
+        columns=[
+            TableColumnConfig("cargos", "cargo_id", "BIGINT", nullable=False),
+        ],
+    )
+
+    backend.temporal_upsert(
+        pl.DataFrame({"cargo_id": [1]}),
+        "fact",
+        "cargos",
+        dataframe_ops=ops,
+        table_config=table_config,
+        update_time=update_time,
+    )
+
+    written_df = ops.table_insert.call_args.args[0]
+    assert "_valid_from" not in written_df.columns
+
+
+def test_xtdb_temporal_upsert_respects_configured_valid_time_over_epoch():
+    """When the config provides a valid_time mapping, use the mapped column
+    rather than the epoch sentinel — even on a non-temporal table."""
+    backend = XtdbBackend()
+    ops = Mock()
+    ops.table_insert.return_value = 1
+    mapped_from = datetime(2030, 6, 1, tzinfo=timezone.utc)
+    table_config = TableConfig(
+        schema="reference",
+        name="rates",
+        primary_keys=["code"],
+        is_temporal=False,
+        columns=[
+            TableColumnConfig("rates", "code", "VARCHAR(3)", nullable=False),
+            TableColumnConfig("rates", "value", "DOUBLE"),
+            TableColumnConfig("rates", "effective_from", "DATETIME"),
+        ],
+    )
+
+    backend.temporal_upsert(
+        pl.DataFrame(
+            {
+                "code": ["USD"],
+                "value": [1.0],
+                "effective_from": [mapped_from],
+            }
+        ),
+        "reference",
+        "rates",
+        dataframe_ops=ops,
+        table_config=table_config,
+        valid_time=ValidTimeConfig(table="rates", from_column="effective_from"),
+    )
+
+    written_df = ops.table_insert.call_args.args[0]
+    assert written_df.get_column("_valid_from").to_list() == [mapped_from]
+
+
+def test_xtdb_temporal_upsert_preserves_user_provided_valid_from():
+    """If the caller already put _valid_from in the dataframe, honour it and
+    do not overwrite with the epoch sentinel."""
+    backend = XtdbBackend()
+    ops = Mock()
+    ops.table_insert.return_value = 1
+    explicit_from = datetime(2028, 1, 1, tzinfo=timezone.utc)
+    table_config = TableConfig(
+        schema="reference",
+        name="rates",
+        primary_keys=["code"],
+        is_temporal=False,
+        columns=[
+            TableColumnConfig("rates", "code", "VARCHAR(3)", nullable=False),
+        ],
+    )
+
+    backend.temporal_upsert(
+        pl.DataFrame({"code": ["USD"], "_valid_from": [explicit_from]}),
+        "reference",
+        "rates",
+        dataframe_ops=ops,
+        table_config=table_config,
+    )
+
+    written_df = ops.table_insert.call_args.args[0]
+    assert written_df.get_column("_valid_from").to_list() == [explicit_from]
