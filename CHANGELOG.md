@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.12.29](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.28...v0.12.29) (2026-07-02)
+
+
+### Features
+
+* **deps:** update dependency sql-metadata to v3 ([#132](https://github.com/jr200-labs/polars-hist-db/issues/132)) ([6bbc71d](https://github.com/jr200-labs/polars-hist-db/commit/6bbc71d53fbf75f46a7f23607782c4492e4baa50))
+
+
+### Bug Fixes
+
+* **deps:** update dependency jr200-labs/github-action-templates to shared-v0.1.23 ([#131](https://github.com/jr200-labs/polars-hist-db/issues/131)) ([74c6017](https://github.com/jr200-labs/polars-hist-db/commit/74c6017d5eb4451527ea16444e45d3f689b21b65))
+* **xtdb:** pin _valid_from to epoch for non-temporal tables ([#134](https://github.com/jr200-labs/polars-hist-db/issues/134)) ([70f7a01](https://github.com/jr200-labs/polars-hist-db/commit/70f7a01bc19ec7f16d4796d51787a10c4b9d08af))
+
 ## [0.12.28](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.27...v0.12.28) (2026-07-01)
 
 
