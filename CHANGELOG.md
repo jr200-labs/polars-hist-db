@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.32](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.31...v0.12.32) (2026-07-05)
+
+
+### Features
+
+* **observability:** uploader row-flow OTel counters (JRL-269) ([#145](https://github.com/jr200-labs/polars-hist-db/issues/145)) ([2065c7f](https://github.com/jr200-labs/polars-hist-db/commit/2065c7f24f5a7bdb46b7194c9ad686d5d5156f80))
+
 ## [0.12.31](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.30...v0.12.31) (2026-07-05)
 
 
