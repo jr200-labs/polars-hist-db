@@ -145,9 +145,7 @@ class AuditOps:
         assert tbl is not None
         return tbl
 
-    def reset_dataset(
-        self, target_table_name: str, connection: Connection
-    ) -> None:
+    def reset_dataset(self, target_table_name: str, connection: Connection) -> None:
         """Wipe a polars_hist_db-managed dataset: erase the target table
         AND the paired audit-log entries in one transaction.
 
@@ -161,17 +159,13 @@ class AuditOps:
             from ..backends.xtdb import _execute_xtdb_dml
 
             self.create(connection)
-            _execute_xtdb_dml(
-                connection, f"ERASE FROM {target_fqtn} WHERE TRUE"
-            )
+            _execute_xtdb_dml(connection, f"ERASE FROM {target_fqtn} WHERE TRUE")
             _execute_xtdb_dml(
                 connection,
                 f"ERASE FROM {self._table_sql()} "
                 f"WHERE table_name = {_sql_literal(target_table_name)}",
             )
-            LOGGER.info(
-                "reset dataset %s (data + audit-log erased)", target_fqtn
-            )
+            LOGGER.info("reset dataset %s (data + audit-log erased)", target_fqtn)
             return
 
         target_tbo = TableOps(self.schema, target_table_name, connection)
@@ -190,18 +184,12 @@ class AuditOps:
         if dialect in ("mariadb", "mysql") and target_tbo.is_temporal_table():
             from sqlalchemy import text
 
-            connection.execute(
-                text(f"DELETE HISTORY FROM {target_fqtn}")
-            )
+            connection.execute(text(f"DELETE HISTORY FROM {target_fqtn}"))
         DbOps(connection).execute_sqlalchemy(
             "sql.audit.reset_dataset.audit",
-            delete(audit_tbl).where(
-                audit_tbl.c["table_name"] == target_table_name
-            ),
+            delete(audit_tbl).where(audit_tbl.c["table_name"] == target_table_name),
         )
-        LOGGER.info(
-            "reset dataset %s (data + audit-log deleted)", target_fqtn
-        )
+        LOGGER.info("reset dataset %s (data + audit-log deleted)", target_fqtn)
 
     def purge(self, target_table_name: str, connection: Connection) -> int:
         LOGGER.debug("clearing audit for %s.%s", self.schema, target_table_name)

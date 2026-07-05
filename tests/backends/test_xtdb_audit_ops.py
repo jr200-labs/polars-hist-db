@@ -291,5 +291,3 @@ def test_xtdb_audit_add_entry_writes_via_backend_dataframe_ops(monkeypatch):
     assert inserted_df.select("table_name", "data_source").rows() == [
         ("trades", "trades.csv")
     ]
-
-
