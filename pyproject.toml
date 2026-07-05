@@ -80,6 +80,7 @@ module = [
     "adbc_driver_flightsql.*",
     "psycopg.*",
     "pyarrow.*",
+    "opentelemetry.*",
 ]
 ignore_missing_imports = true
 
