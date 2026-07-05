@@ -17,6 +17,7 @@ import polars as pl
 from sqlalchemy import Connection, Engine
 
 from ..core.audit import AuditOps
+from ..observability import record_uploader_batch
 from ..utils.exceptions import NonRetryableException
 
 from .ingest_payload import load_df_from_msg
@@ -161,6 +162,12 @@ class JetStreamInputSource(InputSource[JetStreamInputConfig]):
                         num_items_received,
                         js_sub_cfg.subject,
                         received_items_ts,
+                    )
+                    record_uploader_batch(
+                        table=f"{table_schema}.{table_name}",
+                        subject=js_sub_cfg.subject,
+                        received=num_items_received,
+                        written=len(df),
                     )
 
                     partitions = self._apply_time_partitioning(df, msg_ts)
