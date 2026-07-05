@@ -145,6 +145,52 @@ class AuditOps:
         assert tbl is not None
         return tbl
 
+    def reset_dataset(self, target_table_name: str, connection: Connection) -> None:
+        """Wipe a polars_hist_db-managed dataset: erase the target table
+        AND the paired audit-log entries in one transaction.
+
+        Raw `ERASE FROM <table>` on the data table alone leaves the
+        `__audit_log` high-water mark behind, which then silently drops
+        every subsequent ingest as historic (see WG-271 / WG-272). This
+        is the ONLY sanctioned way to wipe such a dataset.
+        """
+        target_fqtn = f"{self.schema}.{target_table_name}"
+        if _is_xtdb_connection(connection):
+            from ..backends.xtdb import _execute_xtdb_dml
+
+            self.create(connection)
+            _execute_xtdb_dml(connection, f"ERASE FROM {target_fqtn} WHERE TRUE")
+            _execute_xtdb_dml(
+                connection,
+                f"ERASE FROM {self._table_sql()} "
+                f"WHERE table_name = {_sql_literal(target_table_name)}",
+            )
+            LOGGER.info("reset dataset %s (data + audit-log erased)", target_fqtn)
+            return
+
+        target_tbo = TableOps(self.schema, target_table_name, connection)
+        target_tbl = target_tbo.get_table_metadata()
+        audit_tbl = TableOps(
+            self.schema, self._table_name, connection
+        ).get_table_metadata()
+
+        DbOps(connection).execute_sqlalchemy(
+            "sql.audit.reset_dataset.data", delete(target_tbl)
+        )
+        # MariaDB / MySQL system-versioned tables keep history rows after
+        # a normal DELETE; DELETE HISTORY drops them too. Skipped on
+        # non-temporal tables and non-MariaDB dialects.
+        dialect = getattr(connection.dialect, "name", "")
+        if dialect in ("mariadb", "mysql") and target_tbo.is_temporal_table():
+            from sqlalchemy import text
+
+            connection.execute(text(f"DELETE HISTORY FROM {target_fqtn}"))
+        DbOps(connection).execute_sqlalchemy(
+            "sql.audit.reset_dataset.audit",
+            delete(audit_tbl).where(audit_tbl.c["table_name"] == target_table_name),
+        )
+        LOGGER.info("reset dataset %s (data + audit-log deleted)", target_fqtn)
+
     def purge(self, target_table_name: str, connection: Connection) -> int:
         LOGGER.debug("clearing audit for %s.%s", self.schema, target_table_name)
         return self.purge_after_timestamp(
