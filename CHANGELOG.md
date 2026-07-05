@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.12.31](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.30...v0.12.31) (2026-07-05)
+
+
+### Features
+
+* **audit:** reset_dataset() erases data + audit-log atomically (WG-272) ([#144](https://github.com/jr200-labs/polars-hist-db/issues/144)) ([3465089](https://github.com/jr200-labs/polars-hist-db/commit/34650897a02f4bc2b8f412e9055ef85c85416412))
+
+
+### Bug Fixes
+
+* **deps:** update dependency jr200-labs/github-action-templates to shared-v0.1.27 ([#141](https://github.com/jr200-labs/polars-hist-db/issues/141)) ([34e0e58](https://github.com/jr200-labs/polars-hist-db/commit/34e0e5858bf32e22eea1faa3c841bba4bd216f77))
+* **deps:** update quarto-cli digest to 2c89bd9 ([#140](https://github.com/jr200-labs/polars-hist-db/issues/140)) ([a4859fa](https://github.com/jr200-labs/polars-hist-db/commit/a4859fa6895d08e4a5c69fb1c0927a9de4b33bf7))
+
 ## [0.12.30](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.29...v0.12.30) (2026-07-02)
 
 
