@@ -291,3 +291,39 @@ def test_xtdb_audit_add_entry_writes_via_backend_dataframe_ops(monkeypatch):
     assert inserted_df.select("table_name", "data_source").rows() == [
         ("trades", "trades.csv")
     ]
+
+
+def test_xtdb_audit_reset_dataset_erases_target_and_audit(monkeypatch):
+    executed = []
+
+    class _TableConfigOps:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def table_exists(self, table_schema, table_name):
+            return True
+
+        def from_table(self, table_schema, table_name):
+            return AuditOps(table_schema)._table_config()
+
+        def create(self, table_config):
+            return table_config
+
+    monkeypatch.setattr(
+        "polars_hist_db.core.audit._xtdb_table_config_ops",
+        _TableConfigOps,
+    )
+
+    def _fake_execute(connection, query, *args, **kwargs):
+        executed.append(query)
+
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb._execute_xtdb_dml", _fake_execute
+    )
+
+    AuditOps("fakedata").reset_dataset("cargos", _XtdbConnection())
+
+    assert len(executed) == 2
+    assert "ERASE FROM fakedata.cargos WHERE TRUE" in executed[0]
+    assert "ERASE FROM fakedata.__audit_log" in executed[1]
+    assert "WHERE table_name = 'cargos'" in executed[1]
