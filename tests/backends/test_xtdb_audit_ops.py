@@ -327,3 +327,111 @@ def test_xtdb_audit_reset_dataset_erases_target_and_audit(monkeypatch):
     assert "ERASE FROM fakedata.cargos WHERE TRUE" in executed[0]
     assert "ERASE FROM fakedata.__audit_log" in executed[1]
     assert "WHERE table_name = 'cargos'" in executed[1]
+
+
+def test_mariadb_audit_reset_dataset_wipes_history_on_temporal_table(monkeypatch):
+    """MariaDB path: system-versioned target table needs both DELETE and
+    DELETE HISTORY. Audit-log is non-temporal and only needs DELETE."""
+    from polars_hist_db.core import audit as audit_module
+
+    class _MariaDialect:
+        name = "mariadb"
+
+    class _MariaConnection:
+        dialect = _MariaDialect()
+
+        def __init__(self):
+            self.text_execs = []
+
+        def execute(self, clause):
+            self.text_execs.append(str(clause))
+
+    conn = _MariaConnection()
+
+    class _TableOps:
+        def __init__(self, schema, name, connection):
+            self.schema = schema
+            self.name = name
+
+        def get_table_metadata(self):
+            class _Fake:
+                c = {"table_name": None}
+            return _Fake()
+
+        def is_temporal_table(self):
+            return self.name == "cargos"
+
+    orm_deletes = []
+
+    class _DbOps:
+        def __init__(self, connection):
+            pass
+
+        def execute_sqlalchemy(self, label, stmt):
+            orm_deletes.append(label)
+
+    monkeypatch.setattr(audit_module, "TableOps", _TableOps)
+    monkeypatch.setattr(audit_module, "DbOps", _DbOps)
+    class _Stmt:
+        def where(self, *args, **kwargs):
+            return self
+
+    monkeypatch.setattr(audit_module, "delete", lambda tbl: _Stmt())
+
+    AuditOps("fakedata").reset_dataset("cargos", conn)
+
+    assert orm_deletes == [
+        "sql.audit.reset_dataset.data",
+        "sql.audit.reset_dataset.audit",
+    ]
+    assert conn.text_execs == ["DELETE HISTORY FROM fakedata.cargos"]
+
+
+def test_mariadb_audit_reset_dataset_skips_history_on_nontemporal(monkeypatch):
+    """Non-temporal target table: no DELETE HISTORY emitted."""
+    from polars_hist_db.core import audit as audit_module
+
+    class _MariaDialect:
+        name = "mariadb"
+
+    class _MariaConnection:
+        dialect = _MariaDialect()
+
+        def __init__(self):
+            self.text_execs = []
+
+        def execute(self, clause):
+            self.text_execs.append(str(clause))
+
+    conn = _MariaConnection()
+
+    class _TableOps:
+        def __init__(self, schema, name, connection):
+            self.name = name
+
+        def get_table_metadata(self):
+            class _Fake:
+                c = {"table_name": None}
+            return _Fake()
+
+        def is_temporal_table(self):
+            return False
+
+    class _DbOps:
+        def __init__(self, connection):
+            pass
+
+        def execute_sqlalchemy(self, label, stmt):
+            pass
+
+    monkeypatch.setattr(audit_module, "TableOps", _TableOps)
+    monkeypatch.setattr(audit_module, "DbOps", _DbOps)
+    class _Stmt:
+        def where(self, *args, **kwargs):
+            return self
+
+    monkeypatch.setattr(audit_module, "delete", lambda tbl: _Stmt())
+
+    AuditOps("fakedata").reset_dataset("stateless_flat", conn)
+
+    assert conn.text_execs == []

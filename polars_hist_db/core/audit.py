@@ -174,15 +174,25 @@ class AuditOps:
             )
             return
 
-        target_tbl = TableOps(
-            self.schema, target_table_name, connection
-        ).get_table_metadata()
+        target_tbo = TableOps(self.schema, target_table_name, connection)
+        target_tbl = target_tbo.get_table_metadata()
         audit_tbl = TableOps(
             self.schema, self._table_name, connection
         ).get_table_metadata()
+
         DbOps(connection).execute_sqlalchemy(
             "sql.audit.reset_dataset.data", delete(target_tbl)
         )
+        # MariaDB / MySQL system-versioned tables keep history rows after
+        # a normal DELETE; DELETE HISTORY drops them too. Skipped on
+        # non-temporal tables and non-MariaDB dialects.
+        dialect = getattr(connection.dialect, "name", "")
+        if dialect in ("mariadb", "mysql") and target_tbo.is_temporal_table():
+            from sqlalchemy import text
+
+            connection.execute(
+                text(f"DELETE HISTORY FROM {target_fqtn}")
+            )
         DbOps(connection).execute_sqlalchemy(
             "sql.audit.reset_dataset.audit",
             delete(audit_tbl).where(
