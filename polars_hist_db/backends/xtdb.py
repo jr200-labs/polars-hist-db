@@ -2182,10 +2182,7 @@ class XtdbBackend:
     def finalize_ingest_run(
         self, connection: Any, delta_table_config: TableConfig
     ) -> None:
-        # No-op: XTDB drains each partition's stage rows via
-        # XtdbStagingOps.cleanup_run inside the per-partition finally block,
-        # so by the time this fires the stage table is already empty across
-        # all system-time.
+        # Stage rows are already erased per partition by cleanup_run.
         return None
 
     def temporal_upsert(

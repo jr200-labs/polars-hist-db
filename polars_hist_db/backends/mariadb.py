@@ -45,9 +45,6 @@ class MariaDbBackend:
     def finalize_ingest_run(
         self, connection: Any, delta_table_config: TableConfig
     ) -> None:
-        # MariaDB DELETE is physical, so a plain DML statement satisfies the
-        # invariant. DELETE (not DROP) keeps this inside the surrounding
-        # transaction — a rollback must restore the pre-cleanup rows.
         connection.execute(
             text(f"DELETE FROM {delta_table_config.schema}.{delta_table_config.name}")
         )

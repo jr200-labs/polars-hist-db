@@ -1,16 +1,4 @@
-"""Backend-agnostic invariant: pipeline runs leave no rows in the stage/delta table.
-
-The pipeline uses a per-run scratch table (called `__<name>_stream_stage` on
-XTDB, `<name>` on MariaDB) to buffer partition rows before merging into the
-final table. That scratch table is ephemeral by design and must be empty
-after `run_datasets` completes — otherwise ingest volume compounds into the
-backing store forever.
-
-The failure mode this test guards against (JRL-47) is XTDB-specific in its
-mechanism — `DELETE FROM` is temporal so the tombstoned rows keep their
-Arrow files — but the *invariant* is backend-independent. This test runs
-against every backend `backend_params()` yields.
-"""
+"""Stage/delta table must carry no rows once run_datasets returns."""
 
 from datetime import datetime
 
@@ -37,29 +25,19 @@ def fixture_simple(request):
 
 
 def _stage_row_count(engine, dataset, backend_name: str) -> int:
-    """Read all rows the pipeline might have left behind in the stage table.
-
-    XTDB stage sits at `<schema>.__<name>_stream_stage` and needs
-    `FOR ALL SYSTEM_TIME` because a temporal DELETE would hide rows at the
-    current system-time while leaving files on disk.
-
-    MariaDB stage sits at `<schema>.<name>` and DELETE is physical, so a
-    plain SELECT is sufficient.
-    """
     schema = dataset.delta_table_schema
     if backend_name == "xtdb":
-        table = f"{schema}.__{dataset.name}_stream_stage"
-        sql = f"SELECT COUNT(*) FROM {table} FOR ALL SYSTEM_TIME"
+        sql = (
+            f"SELECT COUNT(*) FROM {schema}.__{dataset.name}_stream_stage "
+            "FOR ALL SYSTEM_TIME"
+        )
     else:
-        table = f"{schema}.{dataset.name}"
-        sql = f"SELECT COUNT(*) FROM {table}"
+        sql = f"SELECT COUNT(*) FROM {schema}.{dataset.name}"
 
     with engine.connect() as connection:
         try:
             result = connection.execute(text(sql)).scalar()
         except Exception:
-            # A missing table also satisfies the invariant (DROP is a
-            # valid implementation choice).
             return 0
     return int(result or 0)
 
