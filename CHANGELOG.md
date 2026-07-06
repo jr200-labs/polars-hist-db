@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.33](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.32...v0.12.33) (2026-07-06)
+
+
+### Bug Fixes
+
+* **deps:** update astral-sh/setup-uv action to v8.3.0 ([#147](https://github.com/jr200-labs/polars-hist-db/issues/147)) ([05d84b9](https://github.com/jr200-labs/polars-hist-db/commit/05d84b9e3d6ed2cf63dc56f025b9c61335842065))
+* **xtdb:** ERASE stage rows in cleanup_run ([#149](https://github.com/jr200-labs/polars-hist-db/issues/149)) ([0a8ef5e](https://github.com/jr200-labs/polars-hist-db/commit/0a8ef5e21ca6c20c4172e40a267325504aa8c930))
+
 ## [0.12.32](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.31...v0.12.32) (2026-07-05)
 
 
