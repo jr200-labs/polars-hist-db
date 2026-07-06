@@ -1,9 +1,10 @@
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
+from ..config import TableConfig
 from ..core import DataframeOps, TableConfigOps, TableOps
 from ..core import TimeHint
 from .config import DbEngineConfig
@@ -40,3 +41,16 @@ class MariaDbBackend:
 
     def time_hint_clause(self, time_hint: TimeHint) -> str | None:
         return system_time_hint_clause(time_hint)
+
+    def finalize_ingest_run(
+        self, connection: Any, delta_table_config: TableConfig
+    ) -> None:
+        # MariaDB DELETE is physical, so a plain DML statement satisfies the
+        # invariant. DELETE (not DROP) keeps this inside the surrounding
+        # transaction — a rollback must restore the pre-cleanup rows.
+        connection.execute(
+            text(
+                "DELETE FROM "
+                f"{delta_table_config.schema}.{delta_table_config.name}"
+            )
+        )

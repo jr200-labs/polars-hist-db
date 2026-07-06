@@ -2179,6 +2179,15 @@ class XtdbBackend:
     def time_hint_clause(self, time_hint: TimeHint) -> str | None:
         return system_time_hint_clause(time_hint)
 
+    def finalize_ingest_run(
+        self, connection: Any, delta_table_config: TableConfig
+    ) -> None:
+        # No-op: XTDB drains each partition's stage rows via
+        # XtdbStagingOps.cleanup_run inside the per-partition finally block,
+        # so by the time this fires the stage table is already empty across
+        # all system-time.
+        return None
+
     def temporal_upsert(
         self,
         df: pl.DataFrame,

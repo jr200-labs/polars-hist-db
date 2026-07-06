@@ -6,7 +6,7 @@ from typing import Any, Awaitable, Callable, List, Optional, Set, Tuple
 from uuid import uuid4
 
 import polars as pl
-from sqlalchemy import Connection, Engine, text
+from sqlalchemy import Connection, Engine
 
 from ..config import TableConfig, TableConfigs, DatasetConfig
 from ..core import DataframeOps, TableConfigOps
@@ -190,20 +190,8 @@ async def try_run_pipeline_as_transaction(
                             ):
                                 staging.cleanup_run(stage_run_id, delta_table_config)
 
-                    if not is_xtdb and delta_table_config is not None:
-                        # Stage/delta table is per-run scratch; drain it so
-                        # the "no rows survive after ingest" invariant holds
-                        # regardless of pool/session lifetime. DELETE (not
-                        # DROP) keeps the cleanup inside the surrounding
-                        # transaction so a rollback doesn't strand a
-                        # half-emptied table.
-                        connection.execute(
-                            text(
-                                "DELETE FROM "
-                                f"{delta_table_config.schema}."
-                                f"{delta_table_config.name}"
-                            )
-                        )
+                    if delta_table_config is not None:
+                        backend.finalize_ingest_run(connection, delta_table_config)
 
                     success = await commit_fn(connection, sorted(modified_tables))
                     if success:
