@@ -1,4 +1,9 @@
-from typing import Any, Protocol
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from ..config import TableConfig
 
 
 class HistoricalDbBackend(Protocol):
@@ -9,3 +14,9 @@ class HistoricalDbBackend(Protocol):
     def table_configs(self, connection: Any) -> Any: ...
 
     def tables(self, table_schema: str, table_name: str, connection: Any) -> Any: ...
+
+    def finalize_ingest_run(
+        self, connection: Any, delta_table_config: TableConfig
+    ) -> None:
+        """Ensure the delta/stage table carries no rows once ingest returns."""
+        ...

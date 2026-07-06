@@ -190,6 +190,9 @@ async def try_run_pipeline_as_transaction(
                             ):
                                 staging.cleanup_run(stage_run_id, delta_table_config)
 
+                    if delta_table_config is not None:
+                        backend.finalize_ingest_run(connection, delta_table_config)
+
                     success = await commit_fn(connection, sorted(modified_tables))
                     if success:
                         return

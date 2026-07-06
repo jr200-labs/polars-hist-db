@@ -650,7 +650,7 @@ def test_xtdb_staging_rejects_missing_required_pipeline_columns(monkeypatch):
         )
 
 
-def test_xtdb_staging_cleanup_deletes_only_batch_run():
+def test_xtdb_staging_cleanup_erases_only_batch_run():
     driver_connection = Mock()
     connection = Mock()
     connection.connection.driver_connection = driver_connection
@@ -666,7 +666,7 @@ def test_xtdb_staging_cleanup_deletes_only_batch_run():
     XtdbStagingOps(connection).cleanup_run("stage-1", delta_table_config)
 
     assert driver_connection.execute.call_args.args == (
-        "DELETE FROM fakedata.__record_stream_stage "
+        "ERASE FROM fakedata.__record_stream_stage "
         "WHERE stage_run_id = 'stage-1'::TEXT",
     )
 
