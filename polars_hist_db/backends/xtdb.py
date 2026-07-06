@@ -2108,7 +2108,7 @@ class XtdbStagingOps:
         stage_run_literal = _xtdb_sql_literal(stage_run_id, "TEXT")
         _execute_xtdb_dml(
             self.connection,
-            f"DELETE FROM {table_name} "
+            f"ERASE FROM {table_name} "
             f"WHERE {_XTDB_STAGE_RUN_ID_COLUMN} = {stage_run_literal}",
         )
 
