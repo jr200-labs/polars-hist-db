@@ -2108,7 +2108,7 @@ class XtdbStagingOps:
         stage_run_literal = _xtdb_sql_literal(stage_run_id, "TEXT")
         _execute_xtdb_dml(
             self.connection,
-            f"DELETE FROM {table_name} "
+            f"ERASE FROM {table_name} "
             f"WHERE {_XTDB_STAGE_RUN_ID_COLUMN} = {stage_run_literal}",
         )
 
@@ -2178,6 +2178,12 @@ class XtdbBackend:
 
     def time_hint_clause(self, time_hint: TimeHint) -> str | None:
         return system_time_hint_clause(time_hint)
+
+    def finalize_ingest_run(
+        self, connection: Any, delta_table_config: TableConfig
+    ) -> None:
+        # Stage rows are already erased per partition by cleanup_run.
+        return None
 
     def temporal_upsert(
         self,
