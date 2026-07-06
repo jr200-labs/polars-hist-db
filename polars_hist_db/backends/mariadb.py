@@ -49,8 +49,5 @@ class MariaDbBackend:
         # invariant. DELETE (not DROP) keeps this inside the surrounding
         # transaction — a rollback must restore the pre-cleanup rows.
         connection.execute(
-            text(
-                "DELETE FROM "
-                f"{delta_table_config.schema}.{delta_table_config.name}"
-            )
+            text(f"DELETE FROM {delta_table_config.schema}.{delta_table_config.name}")
         )
