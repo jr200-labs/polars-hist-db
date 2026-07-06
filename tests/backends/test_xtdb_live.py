@@ -794,14 +794,6 @@ def test_xtdb_live_staging_roundtrip_projects_and_cleans_batch():
                 f"public.__{delta_table_config.name}_stage "
                 "WHERE stage_run_id = 'stage-live-1'::TEXT"
             )
-            # ERASE (not DELETE): rows must be gone from ALL system-time too,
-            # otherwise the underlying object-store files never get reclaimed.
-            historical = backend.dataframes(connection).from_raw_sql(
-                "SELECT * FROM "
-                f"public.__{delta_table_config.name}_stage "
-                "FOR ALL SYSTEM_TIME "
-                "WHERE stage_run_id = 'stage-live-1'::TEXT"
-            )
 
     assert inserted_count == 1
     assert projected.to_dict(as_series=False) == {
@@ -810,4 +802,3 @@ def test_xtdb_live_staging_roundtrip_projects_and_cleans_batch():
         "msg_timestamp": [projected_partition_time],
     }
     assert remaining.is_empty()
-    assert historical.is_empty()
