@@ -1,14 +1,18 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
-from ..config import TableConfig
 from ..core import DataframeOps, TableConfigOps, TableOps
 from ..core import TimeHint
 from .config import DbEngineConfig
 from .temporal import system_time_hint_clause
+
+if TYPE_CHECKING:
+    from ..config import TableConfig
 
 
 @dataclass(frozen=True)

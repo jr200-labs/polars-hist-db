@@ -1,6 +1,9 @@
-from typing import Any, Protocol
+from __future__ import annotations
 
-from ..config import TableConfig
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from ..config import TableConfig
 
 
 class HistoricalDbBackend(Protocol):
