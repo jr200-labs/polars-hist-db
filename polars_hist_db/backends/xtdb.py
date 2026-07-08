@@ -1109,6 +1109,13 @@ def _apply_xtdb_valid_time_mapping(
             + ", ".join(missing_columns)
         )
 
+    null_columns = [source for source in mappings if df[source].null_count() > 0]
+    if null_columns:
+        raise ValueError(
+            "XTDB valid-time mapping references null source value(s): "
+            + ", ".join(null_columns)
+        )
+
     for source, target in mappings.items():
         if target in df.columns and source != target:
             raise ValueError(

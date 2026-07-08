@@ -16,15 +16,49 @@ def _include_valid_time_source_columns(
     if valid_time is None:
         return result
 
+    required_source_columns = valid_time_source_columns(src_tgt_colname_map, valid_time)
+    for source_column in required_source_columns:
+        if source_column not in result:
+            result.append(source_column)
+
+    missing_columns = [
+        source for source in required_source_columns if source not in stage_df.columns
+    ]
+    if missing_columns:
+        raise ValueError(
+            "valid-time mapping references missing source column(s): "
+            + ", ".join(missing_columns)
+        )
+
+    null_columns = [
+        source
+        for source in required_source_columns
+        if stage_df[source].null_count() > 0
+    ]
+    if null_columns:
+        raise ValueError(
+            "valid-time mapping references null source value(s): "
+            + ", ".join(null_columns)
+        )
+
+    return result
+
+
+def valid_time_source_columns(
+    src_tgt_colname_map: dict[str, str],
+    valid_time: Optional[ValidTimeConfig],
+) -> list[str]:
+    if valid_time is None:
+        return []
+
     target_to_source = {
         target: source for source, target in src_tgt_colname_map.items()
     }
+    result = []
     for valid_time_column in [valid_time.from_column, valid_time.to_column]:
         if valid_time_column is None:
             continue
-        source_column = target_to_source.get(valid_time_column, valid_time_column)
-        if source_column in stage_df.columns and source_column not in result:
-            result.append(source_column)
+        result.append(target_to_source.get(valid_time_column, valid_time_column))
     return result
 
 
