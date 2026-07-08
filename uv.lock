@@ -1592,7 +1592,7 @@ dev = [
     { name = "pyarrow-stubs", specifier = ">=20.0.0.20260625" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
-    { name = "quarto-cli", git = "https://github.com/quarto-dev/quarto-cli?rev=2c89bd91f1816f26f002a302f4329fa78d5040c4" },
+    { name = "quarto-cli", git = "https://github.com/quarto-dev/quarto-cli?rev=effe14586db57a9e09271ab9ac4ed35fcbd300dc" },
     { name = "ruff", specifier = ">=0.15.20" },
     { name = "types-python-dateutil", specifier = ">=2.9.0.20260518" },
     { name = "types-pytz", specifier = ">=2026.2.0.20260518" },
@@ -1991,7 +1991,7 @@ wheels = [
 [[package]]
 name = "quarto-cli"
 version = "1.10.14"
-source = { git = "https://github.com/quarto-dev/quarto-cli?rev=2c89bd91f1816f26f002a302f4329fa78d5040c4#2c89bd91f1816f26f002a302f4329fa78d5040c4" }
+source = { git = "https://github.com/quarto-dev/quarto-cli?rev=effe14586db57a9e09271ab9ac4ed35fcbd300dc#effe14586db57a9e09271ab9ac4ed35fcbd300dc" }
 dependencies = [
     { name = "jupyter" },
     { name = "nbclient" },
