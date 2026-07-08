@@ -691,6 +691,49 @@ def test_xtdb_temporal_upsert_rejects_missing_valid_time_source_column():
         )
 
 
+@pytest.mark.parametrize(
+    ("data", "valid_time", "missing_column"),
+    [
+        (
+            {
+                "id": [1],
+                "destination": ["Alpha"],
+                "msg_timestamp": [None],
+            },
+            ValidTimeConfig(table="records", from_column="msg_timestamp"),
+            "msg_timestamp",
+        ),
+        (
+            {
+                "id": [1],
+                "destination": ["Alpha"],
+                "msg_timestamp": [datetime(2030, 1, 1, tzinfo=timezone.utc)],
+                "valid_until": [None],
+            },
+            ValidTimeConfig(
+                table="records",
+                from_column="msg_timestamp",
+                to_column="valid_until",
+            ),
+            "valid_until",
+        ),
+    ],
+)
+def test_xtdb_temporal_upsert_rejects_null_valid_time_source_column(
+    data, valid_time, missing_column
+):
+    backend = XtdbBackend()
+
+    with pytest.raises(ValueError, match=f"null source value.*{missing_column}"):
+        backend.temporal_upsert(
+            pl.DataFrame(data),
+            "test",
+            "records",
+            dataframe_ops=Mock(),
+            valid_time=valid_time,
+        )
+
+
 def test_xtdb_temporal_upsert_rejects_valid_time_target_conflict():
     backend = XtdbBackend()
 
