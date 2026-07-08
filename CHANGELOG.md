@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.12.34](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.33...v0.12.34) (2026-07-08)
+
+
+### Features
+
+* **wg-258:** enforce valid-time ingestion contract ([#153](https://github.com/jr200-labs/polars-hist-db/issues/153)) ([33e8b8b](https://github.com/jr200-labs/polars-hist-db/commit/33e8b8b89d780ffc9834de647e07a865e068a3f3))
+
+
+### Bug Fixes
+
+* **deps:** update astral-sh/setup-uv action to v8.3.1 ([#152](https://github.com/jr200-labs/polars-hist-db/issues/152)) ([b9cebb2](https://github.com/jr200-labs/polars-hist-db/commit/b9cebb235438a558c9930c94399bd985a820a3ce))
+* **deps:** update dependency jr200-labs/github-action-templates to shared-v0.1.29 ([#151](https://github.com/jr200-labs/polars-hist-db/issues/151)) ([8630def](https://github.com/jr200-labs/polars-hist-db/commit/8630defa35e744f50f222327ca78789098995122))
+* **deps:** update quarto-cli digest to effe145 ([#150](https://github.com/jr200-labs/polars-hist-db/issues/150)) ([754240e](https://github.com/jr200-labs/polars-hist-db/commit/754240e1dbb1db64b7d42d46cbb67ab362dfb487))
+
 ## [0.12.33](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.32...v0.12.33) (2026-07-06)
 
 
