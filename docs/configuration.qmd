@@ -150,3 +150,47 @@ This task populates the `food_prices` table:
 - All columns are required (marked with `!`)
 - Table is marked as `type: primary` for system versioning
 - Note: Currently only one primary task is allowed per pipeline
+
+### Valid time
+
+Datasets can map source validity columns onto a backend's valid-time metadata
+with `valid_time` entries:
+
+```yaml
+datasets:
+- name: source_event_stream
+  delta_table_schema: source
+  valid_time:
+  - schema: source
+    table: events
+    from_column: event_timestamp
+
+  pipeline:
+  - schema: source
+    table: events
+    type: primary
+    columns:
+    - {source: id, target: id}
+    - {source: event_timestamp, target: event_timestamp}
+```
+
+The configured `from_column` identifies when a row becomes valid. An optional
+`to_column` identifies when the row stops being valid for rows with an explicit
+validity window:
+
+```yaml
+valid_time:
+- schema: overrides
+  table: data_override_operations
+  from_column: valid_from
+  to_column: valid_to
+```
+
+Mapped valid-time source columns are required. Ingest fails if a configured
+`from_column` or `to_column` is missing or contains null values, because
+falling back to upload/system time would change the source semantics.
+
+Backends decide how to materialize the backend-neutral valid-time contract. The
+XTDB backend maps `from_column` to `_valid_from` and `to_column` to `_valid_to`.
+SQL/MariaDB ingestion validates the configured source columns in the staging
+table, but does not materialize separate valid-time metadata.
