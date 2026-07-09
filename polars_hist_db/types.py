@@ -30,6 +30,7 @@ TYPE_PRIORITY_MAP: List[Tuple[str, pl.DataType, TypeEngine]] = [
     ("DOUBLE", pl.Float64(), sqlalchemy.types.DOUBLE()),
     ("FLOAT", pl.Float32(), sqlalchemy.types.FLOAT()),
     ("INT", pl.Int32(), sqlalchemy.types.INTEGER()),
+    ("JSON", pl.Utf8(), sqlalchemy.types.JSON()),
     ("REAL", pl.Float64(), sqlalchemy.types.REAL()),
     ("TIMESTAMP", pl.Datetime(), sqlalchemy.types.TIMESTAMP()),
     ("TIME", pl.Time(), sqlalchemy.types.TIME()),

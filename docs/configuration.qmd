@@ -194,3 +194,46 @@ Backends decide how to materialize the backend-neutral valid-time contract. The
 XTDB backend maps `from_column` to `_valid_from` and `to_column` to `_valid_to`.
 SQL/MariaDB ingestion validates the configured source columns in the staging
 table, but does not materialize separate valid-time metadata.
+
+## Override Ledgers
+
+`polars-hist-db` exposes a backend-independent override ledger contract for
+applications that need append-only user-authored corrections without mutating
+canonical source-feed tables.
+
+```python
+from polars_hist_db.overrides import (
+    OverrideLedgerConfig,
+    build_override_table_config,
+    build_override_valid_time_config,
+)
+
+config = OverrideLedgerConfig(
+    schema="overrides",
+    table="data_override_operations",
+)
+
+table_config = build_override_table_config(config)
+valid_time = build_override_valid_time_config(config)
+```
+
+Equivalent YAML shape for downstream applications:
+
+```yaml
+override_ledgers:
+  - schema: overrides
+    table: data_override_operations
+    valid_time:
+      from_column: valid_from
+      to_column: valid_to
+```
+
+`valid_from` and `valid_to` are explicit business-validity columns. XTDB also
+has built-in `_valid_from` and `_valid_to` columns, but applications should not
+depend on those system columns as the only representation of user correction
+windows.
+
+The generated table includes owner, actor, feed, entity, field path, operation
+type, typed JSON value, observed canonical value, stale-source flag, validity
+window, reason, comment, and metadata fields. The same table contract is
+intended to work with MariaDB and XTDB adapters.
