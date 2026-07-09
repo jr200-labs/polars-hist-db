@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.38">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Backend Contract – Polars Hist DB</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-33269adcf1721b81efc5ea7fcfe7f0ee.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-dark-5a2acb6f4ed5aeb23a104ba421924b87.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-33269adcf1721b81efc5ea7fcfe7f0ee.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-463465ba8d3f692556c2f6436c7d4884.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="site_libs/bootstrap/bootstrap-dark-72b16c4db8ef37be9bb921fe70362917.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="site_libs/bootstrap/bootstrap-463465ba8d3f692556c2f6436c7d4884.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light"><script id="quarto-html-before-body" type="application/javascript">
+    const toggleBodyColorMode = (bsSheetEl) => {
+      const mode = bsSheetEl.getAttribute("data-mode");
+      const bodyEl = window.document.querySelector("body");
+      if (mode === "dark") {
+        bodyEl.classList.add("quarto-dark");
+        bodyEl.classList.remove("quarto-light");
+      } else {
+        bodyEl.classList.add("quarto-light");
+        bodyEl.classList.remove("quarto-dark");
+      }
+    }
+    const toggleBodyColorPrimary = () => {
+      const bsSheetEl = window.document.querySelector("link#quarto-bootstrap:not([rel=disabled-stylesheet])");
+      if (bsSheetEl) {
+        toggleBodyColorMode(bsSheetEl);
+      }
+    }
+    const setColorSchemeToggle = (alternate) => {
+      const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+      for (let i=0; i < toggles.length; i++) {
+        const toggle = toggles[i];
+        if (toggle) {
+          if (alternate) {
+            toggle.classList.add("alternate");
+          } else {
+            toggle.classList.remove("alternate");
+          }
+        }
+      }
+    };
+    const toggleColorMode = (alternate) => {
+      // Switch the stylesheets
+      const primaryStylesheets = window.document.querySelectorAll('link.quarto-color-scheme:not(.quarto-color-alternate)');
+      const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+      manageTransitions('#quarto-margin-sidebar .nav-link', false);
+      if (alternate) {
+        // note: dark is layered on light, we don't disable primary!
+        enableStylesheet(alternateStylesheets);
+        for (const sheetNode of alternateStylesheets) {
+          if (sheetNode.id === "quarto-bootstrap") {
+            toggleBodyColorMode(sheetNode);
+          }
+        }
+      } else {
+        disableStylesheet(alternateStylesheets);
+        enableStylesheet(primaryStylesheets)
+        toggleBodyColorPrimary();
+      }
+      manageTransitions('#quarto-margin-sidebar .nav-link', true);
+      // Switch the toggles
+      setColorSchemeToggle(alternate)
+      // Hack to workaround the fact that safari doesn't
+      // properly recolor the scrollbar when toggling (#1455)
+      if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+        manageTransitions("body", false);
+        window.scrollTo(0, 1);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          manageTransitions("body", true);
+        }, 40);
+      }
+    }
+    const disableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        stylesheet.rel = 'disabled-stylesheet';
+      }
+    }
+    const enableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        if(stylesheet.rel !== 'stylesheet') { // for Chrome, which will still FOUC without this check
+          stylesheet.rel = 'stylesheet';
+        }
+      }
+    }
+    const manageTransitions = (selector, allowTransitions) => {
+      const els = window.document.querySelectorAll(selector);
+      for (let i=0; i < els.length; i++) {
+        const el = els[i];
+        if (allowTransitions) {
+          el.classList.remove('notransition');
+        } else {
+          el.classList.add('notransition');
+        }
+      }
+    }
+    const isFileUrl = () => {
+      return window.location.protocol === 'file:';
+    }
+    const hasAlternateSentinel = () => {
+      let styleSentinel = getColorSchemeSentinel();
+      if (styleSentinel !== null) {
+        return styleSentinel === "alternate";
+      } else {
+        return false;
+      }
+    }
+    const setStyleSentinel = (alternate) => {
+      const value = alternate ? "alternate" : "default";
+      if (!isFileUrl()) {
+        window.localStorage.setItem("quarto-color-scheme", value);
+      } else {
+        localAlternateSentinel = value;
+      }
+    }
+    const getColorSchemeSentinel = () => {
+      if (!isFileUrl()) {
+        const storageValue = window.localStorage.getItem("quarto-color-scheme");
+        return storageValue != null ? storageValue : localAlternateSentinel;
+      } else {
+        return localAlternateSentinel;
+      }
+    }
+    const toggleGiscusIfUsed = (isAlternate, darkModeDefault) => {
+      const baseTheme = document.querySelector('#giscus-base-theme')?.value ?? 'light';
+      const alternateTheme = document.querySelector('#giscus-alt-theme')?.value ?? 'dark';
+      let newTheme = '';
+      if(authorPrefersDark) {
+        newTheme = isAlternate ? baseTheme : alternateTheme;
+      } else {
+        newTheme = isAlternate ? alternateTheme : baseTheme;
+      }
+      const changeGiscusTheme = () => {
+        // From: https://github.com/giscus/giscus/issues/336
+        const sendMessage = (message) => {
+          const iframe = document.querySelector('iframe.giscus-frame');
+          if (!iframe) return;
+          iframe.contentWindow.postMessage({ giscus: message }, 'https://giscus.app');
+        }
+        sendMessage({
+          setConfig: {
+            theme: newTheme
+          }
+        });
+      }
+      const isGiscussLoaded = window.document.querySelector('iframe.giscus-frame') !== null;
+      if (isGiscussLoaded) {
+        changeGiscusTheme();
+      }
+    };
+    const authorPrefersDark = false;
+    const darkModeDefault = authorPrefersDark;
+      document.querySelector('link#quarto-text-highlighting-styles.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+      document.querySelector('link#quarto-bootstrap.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+    let localAlternateSentinel = darkModeDefault ? 'alternate' : 'default';
+    // Dark / light mode switch
+    window.quartoToggleColorScheme = () => {
+      // Read the current dark / light value
+      let toAlternate = !hasAlternateSentinel();
+      toggleColorMode(toAlternate);
+      setStyleSentinel(toAlternate);
+      toggleGiscusIfUsed(toAlternate, darkModeDefault);
+      window.dispatchEvent(new Event('resize'));
+    };
+    // Switch to dark mode if need be
+    if (hasAlternateSentinel()) {
+      toggleColorMode(true);
+    } else {
+      toggleColorMode(false);
+    }
+  </script>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">Polars Hist DB</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link active" href="./index.html" aria-current="page"> 
+<span class="menu-text">Overview</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./configuration.html"> 
+<span class="menu-text">Configuration</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./api.html"> 
+<span class="menu-text">API Reference</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item">
+    <a class="nav-link" href="https://github.com/jr200-labs/polars-hist-db"> <i class="bi bi-github" role="img">
+</i> 
+<span class="menu-text">GitHub</span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="Toggle dark mode"><i class="bi"></i></a>
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">Polars Hist DB</a></li><li class="breadcrumb-item"><a href="./backend-contract.html">Backend Contract</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="./index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Polars Hist DB</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./configuration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Configuration</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./api.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">API Reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./backend-contract.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Backend Contract</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./examples.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Examples</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#goal" id="toc-goal" class="nav-link active" data-scroll-target="#goal">Goal</a></li>
+  <li><a href="#public-behaviour" id="toc-public-behaviour" class="nav-link" data-scroll-target="#public-behaviour">Public Behaviour</a></li>
+  <li><a href="#current-mariadb-coupling" id="toc-current-mariadb-coupling" class="nav-link" data-scroll-target="#current-mariadb-coupling">Current MariaDB Coupling</a></li>
+  <li><a href="#backend-interface-shape" id="toc-backend-interface-shape" class="nav-link" data-scroll-target="#backend-interface-shape">Backend Interface Shape</a>
+  <ul class="collapse">
+  <li><a href="#connection-and-transactions" id="toc-connection-and-transactions" class="nav-link" data-scroll-target="#connection-and-transactions">Connection and Transactions</a></li>
+  <li><a href="#schema-management" id="toc-schema-management" class="nav-link" data-scroll-target="#schema-management">Schema Management</a></li>
+  <li><a href="#type-mapping" id="toc-type-mapping" class="nav-link" data-scroll-target="#type-mapping">Type Mapping</a></li>
+  <li><a href="#reads" id="toc-reads" class="nav-link" data-scroll-target="#reads">Reads</a></li>
+  <li><a href="#writes" id="toc-writes" class="nav-link" data-scroll-target="#writes">Writes</a></li>
+  <li><a href="#delta-and-finality-semantics" id="toc-delta-and-finality-semantics" class="nav-link" data-scroll-target="#delta-and-finality-semantics">Delta and Finality Semantics</a></li>
+  <li><a href="#audit-and-update-visibility" id="toc-audit-and-update-visibility" class="nav-link" data-scroll-target="#audit-and-update-visibility">Audit and Update Visibility</a></li>
+  </ul></li>
+  <li><a href="#xtdb-evaluation-requirements" id="toc-xtdb-evaluation-requirements" class="nav-link" data-scroll-target="#xtdb-evaluation-requirements">XTDB Evaluation Requirements</a></li>
+  <li><a href="#reuse-from-polars-xtdb" id="toc-reuse-from-polars-xtdb" class="nav-link" data-scroll-target="#reuse-from-polars-xtdb">Reuse From <code>polars-xtdb</code></a></li>
+  <li><a href="#migration-decision" id="toc-migration-decision" class="nav-link" data-scroll-target="#migration-decision">Migration Decision</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/jr200-labs/polars-hist-db/blob/main/backend-contract.qmd" class="toc-action"><i class="bi bi-github"></i>View source</a></li><li><a href="https://github.com/jr200-labs/polars-hist-db/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">Polars Hist DB</a></li><li class="breadcrumb-item"><a href="./backend-contract.html">Backend Contract</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Backend Contract</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>This document defines the storage-backend contract for <code>polars-hist-db</code>. The current implementation uses MariaDB system-versioned tables, but the consuming application should treat the stable product surface as typed Polars dataframes over temporal tables. A second backend, such as XTDB, should be evaluated against this contract before any migration is attempted.</p>
+<section id="goal" class="level2">
+<h2 class="anchored" data-anchor-id="goal">Goal</h2>
+<p>The backend layer must support repeatable ingestion of raw and derived data, typed dataframe reads and writes, and point-in-time views of historical state. It must also provide enough update visibility for downstream services to invalidate caches, publish events, and build user-facing projections.</p>
+<p>The goal of an XTDB spike is not to reproduce MariaDB SQL mechanics. The goal is to prove that the same <code>polars-hist-db</code> behaviours can be implemented with equivalent or better correctness, performance, and operability.</p>
+</section>
+<section id="public-behaviour" class="level2">
+<h2 class="anchored" data-anchor-id="public-behaviour">Public Behaviour</h2>
+<p>Backend implementations must preserve these behaviours:</p>
+<ul>
+<li>Read a whole table into a strongly typed <code>polars.DataFrame</code>.</li>
+<li>Read query results into a strongly typed <code>polars.DataFrame</code>.</li>
+<li>Write dataframes into configured tables using the configured schema.</li>
+<li>Create configured tables idempotently.</li>
+<li>Add missing configured columns without silently dropping existing data.</li>
+<li>Apply default values in the same places as the current dataframe insert path.</li>
+<li>Upsert temporal data using configured primary keys and delta semantics.</li>
+<li>Delete rows temporally when the source marks rows as final or removed.</li>
+<li>Query latest state, all historical states, an as-of state, and a bounded historical span through <code>TimeHint</code>.</li>
+<li>Track ingestion audit entries so repeated scrapes skip already-ingested source items.</li>
+<li>Expose table-update signals that downstream services can poll or publish.</li>
+<li>Preserve transaction boundaries for each file or message partition.</li>
+</ul>
+</section>
+<section id="current-mariadb-coupling" class="level2">
+<h2 class="anchored" data-anchor-id="current-mariadb-coupling">Current MariaDB Coupling</h2>
+<p>The existing implementation mixes the public behaviour above with several MariaDB-specific details:</p>
+<ul>
+<li>Temporal history is implemented with hidden <code>__valid_from</code> and <code>__valid_to</code> columns created as a <code>PERIOD FOR SYSTEM_TIME</code>.</li>
+<li>Historical reads are expressed with MariaDB <code>FOR SYSTEM_TIME</code> hints.</li>
+<li>Upsert timestamps are controlled with <code>SET @@timestamp</code> through <code>DbOps.set_system_versioning_time</code>.</li>
+<li>Table metadata is loaded with SQLAlchemy reflection and MariaDB SQL types.</li>
+<li>Delta upserts are implemented with temporary SQL tables, SQLAlchemy <code>UPDATE ... WHERE</code>, and <code>INSERT ... SELECT</code> statements.</li>
+<li>Some current query surfaces accept SQLAlchemy <code>Selectable</code> objects, so they implicitly assume a SQLAlchemy-compatible backend.</li>
+<li>Audit tables live in the same relational database as the target tables.</li>
+</ul>
+<p>These details are valid for the MariaDB adapter, but they should not leak into the storage-neutral contract.</p>
+</section>
+<section id="backend-interface-shape" class="level2">
+<h2 class="anchored" data-anchor-id="backend-interface-shape">Backend Interface Shape</h2>
+<p>A backend adapter should own the operations below. Naming can change during implementation, but the boundary should remain explicit.</p>
+<p>Backends are selected through the parsed <code>db.backend</code> configuration field. <code>mariadb</code> is the default and complete backend. <code>xtdb</code> is experimental while the spike proves parity. <code>mssql</code> is reserved for a future MS SQL adapter because MS SQL also has temporal-table support, but it should not be exposed as implemented until it passes the same contract tests.</p>
+<section id="connection-and-transactions" class="level3">
+<h3 class="anchored" data-anchor-id="connection-and-transactions">Connection and Transactions</h3>
+<ul>
+<li>Build and dispose backend connections from <code>DbEngineConfig</code>.</li>
+<li>Provide a transaction context compatible with dataset ingestion.</li>
+<li>Allow backend-specific tuning without changing dataset configuration shape.</li>
+</ul>
+</section>
+<section id="schema-management" class="level3">
+<h3 class="anchored" data-anchor-id="schema-management">Schema Management</h3>
+<ul>
+<li>Create schemas or namespaces.</li>
+<li>Create configured tables from <code>TableConfig</code>.</li>
+<li>Reflect an existing table into <code>TableConfig</code>.</li>
+<li>Add missing configured columns.</li>
+<li>Report primary keys, nullable columns, default values, and backend-native type information.</li>
+</ul>
+</section>
+<section id="type-mapping" class="level3">
+<h3 class="anchored" data-anchor-id="type-mapping">Type Mapping</h3>
+<ul>
+<li>Map configured SQL-like types to Polars dtypes.</li>
+<li>Map Polars dtypes to backend-native storage types.</li>
+<li>Round-trip dates, datetimes, decimals, booleans, categoricals, integers, floats, strings, and nulls without lossy conversion.</li>
+<li>Preserve decimal precision needed by finance and commodity-volume data.</li>
+</ul>
+</section>
+<section id="reads" class="level3">
+<h3 class="anchored" data-anchor-id="reads">Reads</h3>
+<ul>
+<li>Read table latest state.</li>
+<li>Read table history with <code>TimeHint(mode="all")</code>.</li>
+<li>Read an as-of state with <code>TimeHint(mode="asof")</code>.</li>
+<li>Read a bounded history with <code>TimeHint(mode="span")</code>.</li>
+<li>Read filtered/query results without forcing callers to hand-write backend SQL where a dataframe-key lookup would be sufficient.</li>
+</ul>
+</section>
+<section id="writes" class="level3">
+<h3 class="anchored" data-anchor-id="writes">Writes</h3>
+<ul>
+<li>Insert dataframes.</li>
+<li>Update dataframes by primary key.</li>
+<li>Upsert temporal dataframes by primary key.</li>
+<li>Delete rows temporally.</li>
+<li>Return changed-row counts where they are meaningful.</li>
+<li>Keep one source partition or message inside one atomic commit unit.</li>
+</ul>
+</section>
+<section id="delta-and-finality-semantics" class="level3">
+<h3 class="anchored" data-anchor-id="delta-and-finality-semantics">Delta and Finality Semantics</h3>
+<p>The adapter must support the existing <code>DeltaConfig</code> behaviours:</p>
+<ul>
+<li>Drop unchanged rows when configured.</li>
+<li>Handle duplicate source keys with <code>error</code>, <code>take_first</code>, or <code>take_last</code>.</li>
+<li>Apply <code>row_finality="disabled"</code> without deleting missing rows.</li>
+<li>Apply <code>row_finality="dropout"</code> by temporally deleting rows missing from the incoming source snapshot.</li>
+<li>Leave room for <code>row_finality="manual"</code> behaviour without blocking future implementation.</li>
+</ul>
+</section>
+<section id="audit-and-update-visibility" class="level3">
+<h3 class="anchored" data-anchor-id="audit-and-update-visibility">Audit and Update Visibility</h3>
+<ul>
+<li>Record source-item audit entries.</li>
+<li>Filter already-ingested source items.</li>
+<li>Query latest audit entry by table and source timestamp.</li>
+<li>Support table-update callbacks used by API services for cache invalidation and event publication.</li>
+</ul>
+</section>
+</section>
+<section id="xtdb-evaluation-requirements" class="level2">
+<h2 class="anchored" data-anchor-id="xtdb-evaluation-requirements">XTDB Evaluation Requirements</h2>
+<p>Official XTDB materials describe XTDB as an open-source immutable SQL database with comprehensive time-travel, bitemporal records, a columnar engine built on Apache Arrow, and object-storage-oriented architecture:</p>
+<ul>
+<li><a href="https://github.com/xtdb/xtdb" class="uri">https://github.com/xtdb/xtdb</a></li>
+<li><a href="https://docs.xtdb.com/intro/what-is-xtdb.html" class="uri">https://docs.xtdb.com/intro/what-is-xtdb.html</a></li>
+</ul>
+<p>Those properties are directly relevant to the consuming application because the data platform is already Polars/Arrow-oriented and needs historical views. The same materials also describe a strongly ordered transaction path, with writes for a database processed through a single leader. That is a valuable consistency model, but it means write throughput and batching must be measured on representative feeds.</p>
+<p>XTDB should only move beyond spike status if it passes the following gates:</p>
+<ul>
+<li>The adapter can run representative <code>polars-hist-db</code> ingestion tests without weakening type checks.</li>
+<li>Temporal query parity tests pass against MariaDB and XTDB for latest, all, as-of, and span reads.</li>
+<li>Delta upsert parity tests pass for inserts, updates, duplicate handling, unchanged-row dropping, and row-finality dropout.</li>
+<li>Finance-shaped data preserves decimal precision and timestamp semantics.</li>
+<li>application-shaped record and entity tables can be read into Arrow/Polars without row-by-row conversion becoming the bottleneck.</li>
+<li>Netbacks-style high-frequency update streams can be batched without violating freshness requirements.</li>
+<li>Operational work is understood: deployment, backup, restore, object storage, schema evolution, monitoring, and failure recovery.</li>
+<li>Migration can be run table-by-table with dual-read or dual-write validation.</li>
+</ul>
+</section>
+<section id="reuse-from-polars-xtdb" class="level2">
+<h2 class="anchored" data-anchor-id="reuse-from-polars-xtdb">Reuse From <code>polars-xtdb</code></h2>
+<p>The existing <code>polars-xtdb</code> prototype is useful prior art, but it should not be treated as a completed backend. It already explores XTDB reads, system-time columns, and basic type mapping. The current gaps are the important parts for the consuming application:</p>
+<ul>
+<li>Type mapping is incomplete for the schemas now used by <code>polars-hist-db</code>.</li>
+<li>Dataset ingestion, audit tracking, delta upserts, and finality are not wired into the prototype.</li>
+<li>The prototype exposes XTDB-specific helper functions rather than a storage adapter that implements the <code>polars-hist-db</code> contract.</li>
+</ul>
+<p>The XTDB spike should reuse lessons and test fixtures from that repo, not replace <code>polars-hist-db</code> with the prototype directly.</p>
+<p>The first adapter slice in <code>polars-hist-db</code> exposes an experimental <code>XtdbBackend.dataframes(connection)</code> helper for raw SQL reads, table reads, and dataframe appends. Temporal upsert, delta/finality, schema management, audit tracking, and update visibility remain explicit unsupported operations until the parity tickets prove them.</p>
+<p>The first temporal parity slice shares backend-level system-time hint clause generation between MariaDB and XTDB for <code>none</code>, <code>all</code>, <code>asof</code>, and <code>span</code>. MariaDB still applies those hints through its existing SQLAlchemy/MariaDB <code>TimeHint.apply</code> path. XTDB applies the same clause string to experimental table reads. This is query-shape parity only; live XTDB result parity still requires the dedicated parity tests and fixture data in JRL-240.</p>
+<p><code>XtdbBackend.table_configs(connection)</code> exists as the schema-management seam. Table reflection reads <code>information_schema.columns</code>, maps XTDB type names into <code>TableConfig</code>, filters XTDB system-time columns, and treats <code>_id</code> as the reflected key. Configured table creation declares XTDB’s required <code>_id</code> plus the configured columns with XTDB’s bare-column <code>CREATE TABLE schema.table (...)</code> form. For a table config with exactly one primary key, that key is mapped to XTDB’s required <code>_id</code> document identifier. For composite primary keys, the adapter generates a deterministic text <code>_id</code> using the configured key order and the <code>xtdb-pk-v1:</code> encoding while preserving the original key columns as normal data columns. Table creation records the original primary-key list in an internal XTDB adapter metadata table so <code>from_table(...)</code> can recover composite keys when reflecting tables created by <code>polars-hist-db</code>. Legacy XTDB tables without that metadata still fall back to <code>_id</code> as the reflected key.</p>
+<p>The same mapping is applied on experimental dataframe appends when callers pass the <code>TableConfig</code> to <code>XtdbDataframeOps.table_insert(...)</code>: a configured key such as <code>id</code> is renamed to <code>_id</code> before Polars writes to XTDB, while composite-key tables receive a synthetic <code>_id</code> column and keep their original key columns. Existing MariaDB insert behaviour remains unchanged.</p>
+<p>This is schema declaration, not MariaDB-style type enforcement. Empty declared XTDB columns surface through <code>information_schema</code>, and XTDB widens column types from inserted data. The adapter therefore keeps Arrow/Polars and <code>TableConfig</code> as the typed boundary while the spike proves whether live XTDB ingestion preserves the precision and nullability guarantees required by the consuming application.</p>
+<p>The first live pgwire round trip passes against <code>ghcr.io/xtdb/xtdb:nightly</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="va">POLARS_HIST_DB_XTDB_LIVE</span><span class="op">=</span>1 <span class="ex">uv</span> run <span class="at">--extra</span> xtdb <span class="dt">\</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  python <span class="at">-m</span> pytest tests/backends/test_xtdb_live.py <span class="at">-m</span> integration <span class="at">-q</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The live test exposed important pgwire compatibility details:</p>
+<ul>
+<li>The SQLAlchemy PostgreSQL dialect needs small XTDB-specific startup adjustments: connect to the <code>xtdb</code> database, disable native hstore probing, and skip the <code>SHOW standard_conforming_strings</code> dialect probe.</li>
+<li>XTDB separates query and DML transactions more strictly than PostgreSQL. The adapter leaves reads in normal read-only transactions and wraps DML in explicit <code>BEGIN READ WRITE</code> blocks.</li>
+<li>Psycopg parameter OIDs are not sufficient for the current DML path, so the spike emits typed SQL literals for inserts. This proves create/append/read viability, but bulk ingestion should move to XTDB ADBC because it is the Arrow-native path documented by XTDB and avoids row-by-row SQL literal work.</li>
+</ul>
+<p>The first live ADBC/FlightSQL round trip also passes against the same nightly image:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="va">POLARS_HIST_DB_XTDB_LIVE</span><span class="op">=</span>1 <span class="ex">uv</span> run <span class="at">--extra</span> xtdb <span class="dt">\</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  python <span class="at">-m</span> pytest tests/backends/test_xtdb_adbc_live.py <span class="at">-m</span> integration <span class="at">-q</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The current adapter keeps this as an explicit sidecar path:</p>
+<ul>
+<li><code>XtdbBackend.create_engine(...)</code> remains the pgwire/SQLAlchemy path for existing query and control-plane compatibility.</li>
+<li><code>XtdbBackend.create_adbc_connection(...)</code> opens <code>grpc://host:adbc_port</code>, defaulting XTDB <code>adbc_port</code> to <code>9832</code>.</li>
+<li><code>XtdbBackend.adbc_dataframes(connection)</code> ingests Polars dataframes through Arrow/ADBC and reads query results back through <code>fetch_arrow_table()</code>.</li>
+<li>XTDB FlightSQL accepts schema-targeted ingest through ADBC’s <code>db_schema_name</code> option, so the ADBC path can preserve configured table schemas.</li>
+<li>Polars emits Arrow <code>large_string</code> columns. The current XTDB nightly rejects <code>large_string</code> on ingest, so the adapter normalises large string and dictionary-large-string columns to Arrow <code>string</code> at the XTDB ingest boundary. This preserves values while avoiding the pgwire literal path.</li>
+</ul>
+<p>The first temporal upsert parity slice now uses XTDB’s native insert-as-upsert behaviour:</p>
+<ul>
+<li><code>XtdbBackend.temporal_upsert(...)</code> delegates to the configured dataframe insert path. XTDB creates a new temporal version when an existing <code>_id</code> changes.</li>
+<li>A live ADBC test proves latest state and <code>FOR SYSTEM_TIME AS OF</code> both work: after two upserts for the same configured primary key, latest reads the new value and an as-of checkpoint between commits reads the previous value.</li>
+<li>MariaDB’s synthetic system-versioning time (<code>SET @@timestamp</code>) maps to XTDB’s transaction-level <code>BEGIN READ WRITE WITH (SYSTEM_TIME = ...)</code> option on the SQL/pgwire path. This is intended for initial backfills and must be monotonic: XTDB rejects a transaction system-time earlier than the current database transaction time.</li>
+<li>A live pgwire test proves <code>update_time</code> is stored as XTDB system-time. The test imports two future system-time versions and queries with explicit <code>FOR VALID_TIME AS OF ... FOR SYSTEM_TIME AS OF ...</code> bases to account for XTDB’s independent valid-time and system-time axes.</li>
+<li>ADBC bulk ingest does not yet support <code>update_time</code> in this adapter. It still works for commit-time system history, but imported system-time currently uses pgwire SQL transactions.</li>
+<li>The current delta parity slice supports <code>DeltaConfig(drop_unchanged_rows=True)</code>, <code>on_duplicate_key</code>, and <code>row_finality</code> values <code>disabled</code> and <code>dropout</code> for single-key XTDB tables. The adapter applies the source duplicate policy before writing: the default <code>error</code> mode rejects duplicate source keys, while <code>take_first</code> and <code>take_last</code> preserve the selected source row. For dropout finality it temporally deletes current rows whose <code>_id</code> is missing from the incoming snapshot. It then compares incoming rows against the current row at the same temporal basis and skips rows whose configured values are unchanged.</li>
+<li>A live test proves the unchanged update returns zero changed rows and does not create a transaction at the unchanged <code>update_time</code>; the subsequent changed update remains visible through as-of valid-time/system-time queries. Full <code>FOR VALID_TIME ALL FOR SYSTEM_TIME ALL</code> history can show more rows than the count of submitted changes because XTDB exposes the full bitemporal matrix. Tests should assert transaction/system-time and as-of state invariants, not assume one displayed row per logical source update.</li>
+<li>A live test proves dropout finality removes a missing row from later valid-time/system-time as-of reads while preserving the earlier as-of snapshot.</li>
+<li>Explicit XTDB valid-time columns are supported on the pgwire insert path: <code>_valid_from</code> / <code>_valid_to</code> pass through dataframe upserts, and unchanged-row filtering treats source valid-window changes as meaningful changes. A live test proves a row with an explicit valid-time window is only visible inside that window.</li>
+<li>Dataset configs can declare per-table valid-time mappings: <code>valid_time: [{table: records, from_column: msg_timestamp}]</code>. The XTDB temporal upsert path copies the configured <code>from_column</code> to <code>_valid_from</code> and optional <code>to_column</code> to <code>_valid_to</code>, preserving the original source columns. This keeps feed semantics YAML-controlled: record snapshots can use message/as-of time, entity vectors can use source position time, and future rate feeds can use explicit validity windows.</li>
+<li>Dataset ingestion keeps an explicit staging phase for XTDB. The adapter writes each partition to a retained internal table named <code>__&lt;dataset&gt;_stage</code>, keyed by <code>stage_run_id</code> and <code>stage_row_index</code>, then deletes only that <code>stage_run_id</code> after the upload finishes. This mirrors the MariaDB pattern of reusing the staging schema while keeping staged data scoped to one upload.</li>
+<li>XTDB staging preserves pipeline source-to-target column mapping, duplicate removal, default filling, <code>update_time</code> system-time import, per-table valid-time mapping, and <code>deduce_foreign_key</code> normalization for textual target key columns. Missing normalized rows get deterministic IDs of the form <code>xtdb-fk-v1:&lt;schema&gt;.&lt;table&gt;:&lt;natural-key-json&gt;</code>. Numeric generated IDs need a separate allocator before they can be supported safely.</li>
+<li>MariaDB continues to treat <code>__valid_from</code> / <code>__valid_to</code> as system-version history. Dataset valid-time mappings are XTDB business valid-time inputs and are not equivalent to MariaDB’s generated system-time columns.</li>
+</ul>
+</section>
+<section id="migration-decision" class="level2">
+<h2 class="anchored" data-anchor-id="migration-decision">Migration Decision</h2>
+<p>Do not start by replacing MariaDB. Start by extracting the backend contract and building a minimal XTDB adapter behind it. The decision to migrate should be based on parity tests, representative benchmarks, and operational confidence.</p>
+<p>For the consuming application, the practical default is:</p>
+<ul>
+<li>Keep MariaDB as the production backend while the adapter boundary is created.</li>
+<li>Build XTDB as an experimental backend.</li>
+<li>Compare both backends with record, entity, netbacks, and pipe/storage-shaped datasets.</li>
+<li>Migrate only after typed temporal reads, writes, update visibility, and operational recovery are proven.</li>
+</ul>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    // Ensure there is a toggle, if there isn't float one in the top right
+    if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+      const a = window.document.createElement('a');
+      a.classList.add('top-right');
+      a.classList.add('quarto-color-scheme-toggle');
+      a.href = "";
+      a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+      const i = window.document.createElement("i");
+      i.classList.add('bi');
+      a.appendChild(i);
+      window.document.body.appendChild(a);
+    }
+    setColorSchemeToggle(hasAlternateSentinel())
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+            // target, if specified
+            link.setAttribute("target", "_blank");
+            if (link.getAttribute("rel") === null) {
+              link.setAttribute("rel", "noopener");
+            }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+<footer class="footer">
+  <div class="nav-footer">
+    <div class="nav-footer-left">
+<p><a href="https://github.com/jr200-labs/polars-hist-db">polars-hist-db</a></p>
+</div>   
+    <div class="nav-footer-center">
+      &nbsp;
+    <div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/jr200-labs/polars-hist-db/blob/main/backend-contract.qmd" class="toc-action"><i class="bi bi-github"></i>View source</a></li><li><a href="https://github.com/jr200-labs/polars-hist-db/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></div>
+    <div class="nav-footer-right">
+      &nbsp;
+    </div>
+  </div>
+</footer>
+
+
+
+
+</body></html>
