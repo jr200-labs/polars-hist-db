@@ -1,3 +1,4 @@
+from .config import build_override_table_config, build_override_valid_time_config
 from .types import (
     OverrideLedgerConfig,
     OverrideOperation,
@@ -10,4 +11,6 @@ __all__ = [
     "OverrideOperation",
     "OverrideOperationType",
     "OverrideTypedValue",
+    "build_override_table_config",
+    "build_override_valid_time_config",
 ]
