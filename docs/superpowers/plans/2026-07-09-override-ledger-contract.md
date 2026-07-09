@@ -392,14 +392,17 @@ def test_cargo_classification_set_replace_and_system_close_timeline():
         system=True,
     )
 
-    history = ledger.history_for_entity("user-1", "cargos", "cargo-1")
+    raw_history = ledger.history_for_entity("user-1", "cargos", "cargo-1")
+    history = ledger.projected_history_for_entity("user-1", "cargos", "cargo-1")
 
-    assert [operation.operation_type for operation in history] == [
+    assert [operation.operation_type for operation in raw_history] == [
         "set",
         "close",
         "set",
         "system_close",
     ]
+    assert raw_history[0].valid_to is None
+    assert raw_history[2].valid_to is None
     assert history[0].valid_from == _utc(13)
     assert history[0].valid_to == _utc(15)
     assert history[1].valid_from == _utc(15)
@@ -442,15 +445,9 @@ from .types import OverrideOperation, OverrideOperationType, OverrideTypedValue
 class OverrideLedgerStore(Protocol):
     def append(self, operation: OverrideOperation) -> None: ...
 
-    def replace(self, operation: OverrideOperation) -> None: ...
-
     def history_for_entity(
         self, owner_user_id: str, feed_id: str, entity_id: str
     ) -> list[OverrideOperation]: ...
-
-    def active_for_field(
-        self, owner_user_id: str, feed_id: str, entity_id: str, field_path: str
-    ) -> OverrideOperation | None: ...
 
 
 class InMemoryOverrideLedgerStore:
@@ -459,13 +456,6 @@ class InMemoryOverrideLedgerStore:
 
     def append(self, operation: OverrideOperation) -> None:
         self._operations.append(operation)
-
-    def replace(self, operation: OverrideOperation) -> None:
-        for index, existing in enumerate(self._operations):
-            if existing.operation_id == operation.operation_id:
-                self._operations[index] = operation
-                return
-        raise ValueError(f"unknown override operation {operation.operation_id!r}")
 
     def history_for_entity(
         self, owner_user_id: str, feed_id: str, entity_id: str
@@ -477,22 +467,6 @@ class InMemoryOverrideLedgerStore:
             and operation.feed_id == feed_id
             and operation.entity_id == entity_id
         ]
-
-    def active_for_field(
-        self, owner_user_id: str, feed_id: str, entity_id: str, field_path: str
-    ) -> OverrideOperation | None:
-        active = [
-            operation
-            for operation in self.history_for_entity(owner_user_id, feed_id, entity_id)
-            if operation.field_path == field_path
-            and operation.operation_type == "set"
-            and operation.valid_to is None
-        ]
-        if len(active) > 1:
-            raise ValueError(
-                "override ledger invariant violation: more than one active override"
-            )
-        return active[0] if active else None
 
 
 class OverrideLedger:
@@ -517,11 +491,8 @@ class OverrideLedger:
     ) -> OverrideOperation:
         self._require_timezone(valid_from, "valid_from")
         resolved_change_set_id = change_set_id or self._id("chg")
-        active = self.store.active_for_field(
-            owner_user_id, feed_id, entity_id, field_path
-        )
+        active = self.active_for_field(owner_user_id, feed_id, entity_id, field_path)
         if active is not None:
-            self.store.replace(replace(active, valid_to=valid_from))
             self.store.append(
                 self._operation(
                     change_set_id=resolved_change_set_id,
@@ -578,12 +549,6 @@ class OverrideLedger:
         metadata_json: dict[str, object] | None = None,
     ) -> OverrideOperation:
         self._require_timezone(valid_to, "valid_to")
-        active = self.store.active_for_field(
-            owner_user_id, feed_id, entity_id, field_path
-        )
-        if active is not None:
-            self.store.replace(replace(active, valid_to=valid_to))
-
         operation = self._operation(
             change_set_id=change_set_id or self._id("chg"),
             owner_user_id=owner_user_id,
@@ -607,21 +572,45 @@ class OverrideLedger:
     def active_for_entity(
         self, owner_user_id: str, feed_id: str, entity_id: str
     ) -> list[OverrideOperation]:
-        return [
-            operation
-            for operation in self.history_for_entity(owner_user_id, feed_id, entity_id)
-            if operation.operation_type == "set" and operation.valid_to is None
-        ]
+        active: dict[str, OverrideOperation] = {}
+        for operation in self.history_for_entity(owner_user_id, feed_id, entity_id):
+            if operation.operation_type == "set":
+                active[operation.field_path] = operation
+            elif operation.operation_type in {"close", "system_close"}:
+                active.pop(operation.field_path, None)
+        return list(active.values())
 
     def active_for_field(
         self, owner_user_id: str, feed_id: str, entity_id: str, field_path: str
     ) -> OverrideOperation | None:
-        return self.store.active_for_field(owner_user_id, feed_id, entity_id, field_path)
+        for operation in self.active_for_entity(owner_user_id, feed_id, entity_id):
+            if operation.field_path == field_path:
+                return operation
+        return None
 
     def history_for_entity(
         self, owner_user_id: str, feed_id: str, entity_id: str
     ) -> list[OverrideOperation]:
         return self.store.history_for_entity(owner_user_id, feed_id, entity_id)
+
+    def projected_history_for_entity(
+        self, owner_user_id: str, feed_id: str, entity_id: str
+    ) -> list[OverrideOperation]:
+        history = self.history_for_entity(owner_user_id, feed_id, entity_id)
+        projected: list[OverrideOperation] = []
+        open_sets: dict[str, int] = {}
+        for operation in history:
+            if operation.operation_type == "set":
+                open_sets[operation.field_path] = len(projected)
+            elif operation.operation_type in {"close", "system_close"}:
+                open_index = open_sets.pop(operation.field_path, None)
+                if open_index is not None:
+                    projected[open_index] = replace(
+                        projected[open_index],
+                        valid_to=operation.valid_from,
+                    )
+            projected.append(operation)
+        return projected
 
     def _operation(
         self,

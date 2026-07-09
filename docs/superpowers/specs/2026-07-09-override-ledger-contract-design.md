@@ -26,7 +26,8 @@ columns that define the user's correction window. XTDB `_valid_from` and
 place where application validity is represented.
 
 History is append-only. Closing or replacing an override appends operations; it
-does not physically delete audit history.
+does not update or physically delete audit history. Interval views are
+projections derived by replaying the operation log.
 
 ## Public API
 
@@ -128,6 +129,7 @@ Read API:
 ledger.active_for_entity(owner_user_id, feed_id, entity_id)
 ledger.active_for_field(owner_user_id, feed_id, entity_id, field_path)
 ledger.history_for_entity(owner_user_id, feed_id, entity_id)
+ledger.projected_history_for_entity(owner_user_id, feed_id, entity_id)
 ```
 
 ## Config Shape
@@ -193,11 +195,11 @@ to_column = valid_to
 There is at most one active `set` operation per
 `owner_user_id + feed_id + entity_id + field_path`.
 
-`set_field` closes the previous active `set` for that key at the new operation's
-`valid_from`, then appends a new active `set`.
+`set_field` appends a `close` operation for the previous active `set` at the
+new operation's `valid_from`, then appends a new active `set`.
 
-`close_field` closes the previous active `set` for that key at `valid_to`, then
-appends a close operation. The close operation has `valid_from == valid_to` and
+`close_field` appends a close operation for the previous active `set` at
+`valid_to`. The close operation has `valid_from == valid_to` and
 `value is None`.
 
 `system_close` follows the same interval behavior as `close`, but records that
@@ -221,7 +223,7 @@ The schema must express this example:
 3. At 20:00, system closes the override because the canonical source now
    matches, deletes, or delivers the cargo.
 
-Expected history:
+Expected projected interval history:
 
 ```text
 set(probable, valid_from=13:00, valid_to=15:00)
@@ -229,6 +231,11 @@ close(valid_from=15:00, valid_to=15:00, reason=replaced)
 set(possible, valid_from=15:00, valid_to=20:00)
 system_close(valid_from=20:00, valid_to=20:00, reason=source_match)
 ```
+
+The raw operation log remains append-only: `set` rows are written with
+`valid_to=None` unless the caller supplied a bounded operation at creation time.
+`projected_history_for_entity` may annotate returned `set` operations with the
+derived end time caused by later close or replacement operations.
 
 Expected active state after 20:00: no active classification override.
 
