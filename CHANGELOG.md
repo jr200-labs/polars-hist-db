@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.35](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.34...v0.12.35) (2026-07-10)
+
+
+### Features
+
+* **jrl-222:** add override ledger contract ([#158](https://github.com/jr200-labs/polars-hist-db/issues/158)) ([7313ecc](https://github.com/jr200-labs/polars-hist-db/commit/7313ecc5a9e593fe03c1b2db950c0b4204381acd))
+
+
+### Bug Fixes
+
+* **deps:** update astral-sh/setup-uv action to v8.3.2 ([#155](https://github.com/jr200-labs/polars-hist-db/issues/155)) ([dd89afd](https://github.com/jr200-labs/polars-hist-db/commit/dd89afde904b9e4f90e65043c232c72241574d15))
+
 ## [0.12.34](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.33...v0.12.34) (2026-07-08)
 
 
