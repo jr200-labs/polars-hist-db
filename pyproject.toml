@@ -34,7 +34,7 @@ polars-hist-db-parity = "polars_hist_db.parity:main"
 dev = [
     "coverage>=7.15.0",
     "ipykernel>=7.3.0",
-    "mypy>=2.1.0",
+    "mypy>=2.2.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "quarto-cli",
