@@ -55,6 +55,8 @@ def test_build_override_table_config_contains_required_columns():
         "removes_operation_ids_json",
         "recorded_at",
         "payload_hash",
+        "crdt_document_id",
+        "crdt_document_revision",
     }
 
 

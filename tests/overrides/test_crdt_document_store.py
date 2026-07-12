@@ -1,8 +1,19 @@
+from datetime import datetime, timezone
+from uuid import uuid4
+
 from pycrdt import Doc, Map
 import pytest
 from typing import Any
 
-from polars_hist_db.overrides import InMemoryCrdtDocumentStore
+from polars_hist_db.config import TableColumnConfig, TableConfig
+from polars_hist_db.overrides import (
+    AtomicInsert,
+    CrdtPreconditionFailed,
+    CrdtRevisionConflict,
+    InMemoryCrdtDocumentStore,
+    RowGuard,
+    prepare_crdt_update,
+)
 
 
 def _document_update() -> bytes:
@@ -60,5 +71,114 @@ def test_document_store_deduplicates_exact_updates_and_checks_revisions():
 
     with pytest.raises(ValueError, match="expected revision"):
         store.append_update("document-2", update, expected_revision=1)
-    with pytest.raises(KeyError):
-        store.load_document("document-2")
+    assert store.load_document("document-2") is None
+
+
+def _operation_update(operation_id: str) -> bytes:
+    document: Any = Doc()
+    document["operations"] = Map(
+        {
+            operation_id: {
+                "format_version": 1,
+                "operation_id": operation_id,
+                "change_set_id": str(uuid4()),
+                "layer_id": "team",
+                "feed_id": "records",
+                "entity_id": "record-1",
+                "field_path": "status",
+                "operation_type": "set",
+                "value": {"value_type": "enum", "value_json": {"value": "open"}},
+                "supersedes_operation_ids": [],
+                "removes_operation_ids": [],
+                "valid_from": "2026-07-12T10:00:00+00:00",
+                "valid_to": None,
+            }
+        }
+    )
+    return document.get_update()
+
+
+def test_prepared_commit_finalizes_operations_and_rejects_later_mutation():
+    operation_id = str(uuid4())
+    source_update = _operation_update(operation_id)
+    accepted_at = datetime(2026, 7, 12, 11, tzinfo=timezone.utc)
+
+    prepared = prepare_crdt_update(
+        "document-1",
+        None,
+        source_update,
+        actor_id="user-1",
+        recorded_at=accepted_at,
+    )
+    store = InMemoryCrdtDocumentStore()
+    committed = store.commit(prepared)
+
+    assert committed.accepted is True
+    assert committed.revision == 1
+    assert prepared.source_update_hash != prepared.accepted_update_hash
+    assert store.projected_operations("document-1")[0].actor_id == "user-1"
+    assert store.projected_operations("document-1")[0].payload_hash is not None
+
+    document: Any = Doc()
+    assert committed.document is not None
+    document.apply_update(committed.document.update)
+    operations = document.get("operations", type=Map)
+    operation = operations.get(operation_id)
+    operations[operation_id] = {**operation, "comment": "changed"}
+
+    with pytest.raises(ValueError, match="cannot be mutated"):
+        prepare_crdt_update(
+            "document-1",
+            committed.document,
+            document.get_update(committed.document.state_vector),
+            actor_id="user-1",
+            recorded_at=accepted_at,
+        )
+
+
+def test_prepared_commit_checks_revision_guards_and_atomic_inserts():
+    table = TableConfig(
+        name="outbox",
+        schema="overrides",
+        primary_keys=("id",),
+        columns=[TableColumnConfig("outbox", "id", "VARCHAR(64)", nullable=False)],
+    )
+    store = InMemoryCrdtDocumentStore()
+    store.seed_row(table, {"id": "layer-1", "version": 2})
+    prepared = prepare_crdt_update(
+        "document-1",
+        None,
+        _document_update(),
+        actor_id="user-1",
+        recorded_at=datetime(2026, 7, 12, 11, tzinfo=timezone.utc),
+    )
+
+    result = store.commit(
+        prepared,
+        guards=[RowGuard(table, {"id": "layer-1"}, {"version": 2})],
+        inserts=[AtomicInsert(table, {"id": "outbox-1"})],
+    )
+
+    assert result.accepted is True
+    stale = prepare_crdt_update(
+        "document-1",
+        None,
+        _document_update(),
+        actor_id="user-1",
+        recorded_at=datetime(2026, 7, 12, 11, tzinfo=timezone.utc),
+    )
+    with pytest.raises(CrdtRevisionConflict):
+        store.commit(stale)
+
+    rejected = prepare_crdt_update(
+        "document-2",
+        None,
+        _document_update(),
+        actor_id="user-1",
+        recorded_at=datetime(2026, 7, 12, 11, tzinfo=timezone.utc),
+    )
+    with pytest.raises(CrdtPreconditionFailed):
+        store.commit(
+            rejected,
+            guards=[RowGuard(table, {"id": "layer-1"}, {"version": 3})],
+        )
