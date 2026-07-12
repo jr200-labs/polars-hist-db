@@ -148,7 +148,11 @@ def test_replacing_same_field_leaves_one_active_override_and_keeps_audit_history
     history = ledger.projected_history_for_entity("user-1", "records", "record-1")
     active = ledger.active_for_entity("user-1", "records", "record-1")
 
-    assert [operation.operation_type for operation in history] == ["set", "close", "set"]
+    assert [operation.operation_type for operation in history] == [
+        "set",
+        "close",
+        "set",
+    ]
     assert history[0].operation_id == first.operation_id
     assert history[0].valid_to == _utc(14)
     assert history[2].operation_id == second.operation_id
