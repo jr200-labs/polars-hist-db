@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>Replicated override operation sets – Polars Hist DB</title>
+<title>Yjs-compatible replicated documents and overrides – Polars Hist DB</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -323,7 +323,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">Polars Hist DB</a></li><li class="breadcrumb-item"><a href="./replicated-overrides.html">Replicated override operation sets</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">Polars Hist DB</a></li><li class="breadcrumb-item"><a href="./replicated-overrides.html">Yjs-compatible replicated documents and overrides</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -353,7 +353,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="./replicated-overrides.html" class="sidebar-item-text sidebar-link active">
- <span class="menu-text">Replicated override operation sets</span></a>
+ <span class="menu-text">Yjs-compatible replicated documents and overrides</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -387,15 +387,15 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
    
   <ul>
   <li><a href="#scope" id="toc-scope" class="nav-link active" data-scroll-target="#scope">Scope</a></li>
-  <li><a href="#operation-format" id="toc-operation-format" class="nav-link" data-scroll-target="#operation-format">Operation format</a></li>
-  <li><a href="#convergence" id="toc-convergence" class="nav-link" data-scroll-target="#convergence">Convergence</a></li>
+  <li><a href="#document-model" id="toc-document-model" class="nav-link" data-scroll-target="#document-model">Document model</a></li>
+  <li><a href="#synchronization" id="toc-synchronization" class="nav-link" data-scroll-target="#synchronization">Synchronization</a></li>
+  <li><a href="#presence-and-undo" id="toc-presence-and-undo" class="nav-link" data-scroll-target="#presence-and-undo">Presence and undo</a></li>
+  <li><a href="#override-convergence" id="toc-override-convergence" class="nav-link" data-scroll-target="#override-convergence">Override convergence</a></li>
   <li><a href="#validation-and-idempotency" id="toc-validation-and-idempotency" class="nav-link" data-scroll-target="#validation-and-idempotency">Validation and idempotency</a></li>
   <li><a href="#library-api" id="toc-library-api" class="nav-link" data-scroll-target="#library-api">Library API</a></li>
   <li><a href="#storage" id="toc-storage" class="nav-link" data-scroll-target="#storage">Storage</a></li>
   <li><a href="#existing-personal-ledgers" id="toc-existing-personal-ledgers" class="nav-link" data-scroll-target="#existing-personal-ledgers">Existing personal ledgers</a></li>
-  <li><a href="#projection-and-audit" id="toc-projection-and-audit" class="nav-link" data-scroll-target="#projection-and-audit">Projection and audit</a></li>
-  <li><a href="#worked-cases" id="toc-worked-cases" class="nav-link" data-scroll-target="#worked-cases">Worked cases</a></li>
-  <li><a href="#future-crdt-engines" id="toc-future-crdt-engines" class="nav-link" data-scroll-target="#future-crdt-engines">Future CRDT engines</a></li>
+  <li><a href="#test-contract" id="toc-test-contract" class="nav-link" data-scroll-target="#test-contract">Test contract</a></li>
   <li><a href="#deferred-work" id="toc-deferred-work" class="nav-link" data-scroll-target="#deferred-work">Deferred work</a></li>
   </ul>
 <div class="toc-actions"><ul><li><a href="https://github.com/jr200-labs/polars-hist-db/blob/main/replicated-overrides.qmd" class="toc-action"><i class="bi bi-github"></i>View source</a></li><li><a href="https://github.com/jr200-labs/polars-hist-db/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></nav>
@@ -404,9 +404,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <main class="content" id="quarto-document-content">
 
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">Polars Hist DB</a></li><li class="breadcrumb-item"><a href="./replicated-overrides.html">Replicated override operation sets</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">Polars Hist DB</a></li><li class="breadcrumb-item"><a href="./replicated-overrides.html">Yjs-compatible replicated documents and overrides</a></li></ol></nav>
 <div class="quarto-title">
-<h1 class="title">Replicated override operation sets</h1>
+<h1 class="title">Yjs-compatible replicated documents and overrides</h1>
 </div>
 
 
@@ -425,12 +425,17 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 <section id="scope" class="level2">
 <h2 class="anchored" data-anchor-id="scope">Scope</h2>
-<p><code>polars-hist-db</code> owns a reusable append-only operation model, deterministic projection, and backend storage contract for shared override layers. Applications own authentication, authorization, transport, field declarations, and business conflict policy.</p>
-<p>The initial implementation is a grow-only set of immutable operations keyed by <code>operation_id</code>. It does not implement an OR-map, vector clock, synchronization protocol, or general CRDT framework. Set union is associative, commutative, and idempotent, which is sufficient while writes pass through an authoritative application service.</p>
+<p><code>polars-hist-db</code> provides backend-independent persistence for Yjs-compatible document updates and snapshots, plus a reusable immutable operation model for valid-time overrides. Applications own authentication, authorization, transport, document membership, field declarations, and business conflict policy.</p>
+<p>The implementation uses the maintained Yjs/Yrs ecosystem instead of implementing a CRDT algorithm. Browser clients use Yjs. Python services use <code>pycrdt</code>, whose Yrs updates are binary-compatible with Yjs. Binary updates are commutative, associative, and idempotent, so every backend stores the same protocol rather than implementing its own merge rules.</p>
 </section>
-<section id="operation-format" class="level2">
-<h2 class="anchored" data-anchor-id="operation-format">Operation format</h2>
-<p>Every persisted operation has this backend-independent envelope:</p>
+<section id="document-model" class="level2">
+<h2 class="anchored" data-anchor-id="document-model">Document model</h2>
+<p>The library does not prescribe a complete application schema. It reserves two conventions for reusable override documents:</p>
+<pre class="text"><code>root
+  drafts       application-owned Y.Map/Y.Array/Y.Text collaborative state
+  operations   Y.Map keyed by immutable operation_id</code></pre>
+<p>Draft values may be edited, removed, and undone. Published operation entries are immutable. An application may add other shared types without changing the storage contract.</p>
+<p>Each value in <code>operations</code> has this backend-independent envelope:</p>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 33%">
@@ -463,12 +468,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <tr class="even">
 <td><code>layer_id</code></td>
 <td>string</td>
-<td>Shared layer identity</td>
+<td>Override layer identity</td>
 </tr>
 <tr class="odd">
 <td><code>actor_id</code></td>
 <td>string</td>
-<td>Authoritative principal supplied by the application</td>
+<td>Server-derived principal finalized at acceptance</td>
 </tr>
 <tr class="even">
 <td><code>feed_id</code></td>
@@ -518,12 +523,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <tr class="odd">
 <td><code>recorded_at</code></td>
 <td>UTC timestamp</td>
-<td>Set when first persisted</td>
+<td>Server time finalized at acceptance</td>
 </tr>
 <tr class="even">
 <td><code>payload_hash</code></td>
 <td>string</td>
-<td>Canonical hash of immutable persisted fields</td>
+<td>Server-computed hash of immutable persisted fields</td>
 </tr>
 <tr class="odd">
 <td><code>observed_canonical_value_json</code></td>
@@ -533,7 +538,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <tr class="even">
 <td><code>comment</code></td>
 <td>string or null</td>
-<td>Optional audit comment</td>
+<td>Immutable snapshot of any collaborative rationale</td>
 </tr>
 <tr class="odd">
 <td><code>metadata_json</code></td>
@@ -542,109 +547,108 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </tr>
 </tbody>
 </table>
-<p>Typed values reuse <code>OverrideTypedValue</code>; replication does not introduce domain-specific value types:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"value_type"</span><span class="fu">:</span> <span class="st">"structured_location"</span><span class="fu">,</span></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"value_json"</span><span class="fu">:</span> <span class="fu">{</span></span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"value"</span><span class="fu">:</span> <span class="fu">{</span></span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"name"</span><span class="fu">:</span> <span class="st">"Futtsu"</span><span class="fu">,</span></span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"country_code"</span><span class="fu">:</span> <span class="st">"JP"</span></span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"unit"</span><span class="fu">:</span> <span class="kw">null</span></span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>A sequential edit lists the active operations visible to its author in <code>supersedes_operation_ids</code>. A remove lists them in <code>removes_operation_ids</code>. Those explicit references are the causal information needed by the scalar override domain; replica counters and version vectors add no required behavior.</p>
-<p><code>recorded_at</code> is explicit so MariaDB, XTDB, in-memory stores, and future backends expose the same transaction-time audit field. Backend system time may also record the write, but is not used for convergence.</p>
+<p>Concurrent published edits use different operation IDs and therefore coexist in the map. Explicit supersede/remove references preserve business conflicts; Y.Map’s scalar conflict choice is never used to choose an effective override.</p>
+<p>An offline client creates a provisional entry without authoritative <code>actor_id</code>, <code>recorded_at</code>, or <code>payload_hash</code>. After applying and validating that entry in a temporary document, the server replaces it causally with a finalized entry containing those fields. It persists and broadcasts the combined server-origin update. Subsequent replay of the provisional client update is idempotent and cannot supersede the finalized value. Once finalized, any mutation or deletion of the operation is rejected.</p>
 </section>
-<section id="convergence" class="level2">
-<h2 class="anchored" data-anchor-id="convergence">Convergence</h2>
-<p>Merging ledgers is set union by <code>operation_id</code>. An identical operation delivered twice remains one member of the set. Arrival order, backend row order, wall-clock time, and <code>recorded_at</code> do not affect projection.</p>
+<section id="synchronization" class="level2">
+<h2 class="anchored" data-anchor-id="synchronization">Synchronization</h2>
+<p>Clients persist documents locally and may create changes without a network. On reconnect they exchange state vectors and only missing Yjs updates. The library stores opaque update bytes and can reconstruct or merge a document with <code>pycrdt</code>; it does not define HTTP, WebSocket, NATS, or peer-to-peer transport.</p>
+<p>The accepting service must serialize validation per document:</p>
+<ol type="1">
+<li>lock the document revision;</li>
+<li>apply the candidate update to the latest accepted state in a temporary document;</li>
+<li>validate newly added operation entries and reject mutation/deletion of existing entries;</li>
+<li>authorize the current principal and document state;</li>
+<li>finalize server-owned operation fields;</li>
+<li>atomically persist the resulting update and relational operation projection;</li>
+<li>release the revision and broadcast the accepted update.</li>
+</ol>
+<p>Rejected updates are never broadcast or persisted. The client keeps them in a quarantined local branch so work can be copied or retargeted, but it must reset the shared document to the last accepted server state before further sync.</p>
+</section>
+<section id="presence-and-undo" class="level2">
+<h2 class="anchored" data-anchor-id="presence-and-undo">Presence and undo</h2>
+<p>Presence, selections, and cursor positions use the Yjs Awareness protocol. They are ephemeral, expire when a client disconnects, and are never written to the database or audit history.</p>
+<p>Undo/redo is client-local and scoped to mutable draft/shared-text types. Undo must not track the immutable <code>operations</code> map. Reversing a published override creates a new <code>remove</code> or <code>set</code> operation so audit history remains append-only.</p>
+</section>
+<section id="override-convergence" class="level2">
+<h2 class="anchored" data-anchor-id="override-convergence">Override convergence</h2>
 <p>For one layer, feed, entity, field, and requested valid time:</p>
 <ol type="1">
 <li>Select <code>set</code> operations whose half-open interval <code>[valid_from, valid_to)</code> contains the requested time.</li>
-<li>Discard a set when its ID appears in <code>removes_operation_ids</code> on a <code>remove</code> whose <code>valid_from</code> is not later than the requested time.</li>
-<li>Discard a set when its ID appears in <code>supersedes_operation_ids</code> on another <code>set</code> whose <code>valid_from</code> is not later than the requested time. Replacement remains effective after the newer set’s optional <code>valid_to</code>; the older value does not reappear automatically.</li>
-<li>The remaining sets are the frontier. One value is clean state, multiple values are concurrent, and no values means no override.</li>
-<li>Sort concurrent values by <code>operation_id</code> for stable output only. Projection does not silently choose a winner.</li>
+<li>Discard a set referenced by an applicable <code>remove</code>.</li>
+<li>Discard a set referenced by an applicable superseding <code>set</code>.</li>
+<li>The remaining sets are the frontier. One distinct value is clean, several distinct values are concurrent, and no value means no override.</li>
+<li>Sort concurrent values by operation ID for stable output only.</li>
 </ol>
-<p>Two concurrent edits have not observed each other, so neither references the other and both survive. Two edits may both supersede the same prior operation; they still remain concurrent with each other. A remove affects only the operations its author observed, so an unseen concurrent set survives. A later set has a new operation ID and reopens the field.</p>
-<p>Business policies operate on the frontier after projection. A consuming application may expose all values, reject concurrent editing, apply precedence, or deterministically select one. Policy must not delete or mutate competing operations.</p>
+<p>Arrival order, client clocks, backend row order, and Y.Map scalar conflict selection never choose an effective value. Equal normalized values may be grouped for display while retaining all provenance.</p>
 </section>
 <section id="validation-and-idempotency" class="level2">
 <h2 class="anchored" data-anchor-id="validation-and-idempotency">Validation and idempotency</h2>
-<p>The ledger validates:</p>
+<p>The reusable validator enforces:</p>
 <ul>
-<li>unique <code>operation_id</code>;</li>
+<li>unique and immutable <code>operation_id</code> entries;</li>
 <li>timezone-aware UTC timestamps;</li>
-<li>bounded <code>set</code> intervals have <code>valid_to &gt; valid_from</code>;</li>
-<li><code>remove</code> requires <code>valid_to = null</code> and applies from <code>valid_from</code> onward;</li>
-<li><code>set</code> has one typed value and no <code>removes_operation_ids</code>;</li>
-<li><code>remove</code> has no value and no <code>supersedes_operation_ids</code>;</li>
-<li>every referenced operation belongs to the same layer, feed, entity, and field;</li>
-<li>referenced operations already exist or are included earlier in the same atomic batch.</li>
+<li>bounded <code>set</code> intervals with <code>valid_to &gt; valid_from</code>;</li>
+<li><code>set</code>/<code>remove</code> value and reference rules;</li>
+<li>references within the same layer, feed, entity, and field;</li>
+<li>references to existing operations or earlier operations in one atomic batch;</li>
+<li>exact replay as a no-op and conflicting reuse of an ID as an error.</li>
 </ul>
-<p>The application validates actor permissions, allowed fields, and domain value types before calling the ledger.</p>
-<p>An exact replay of an accepted <code>operation_id</code> returns the original operation and does not append a row. Reusing an operation ID with different immutable content raises an idempotency conflict. A canonical payload hash makes that comparison consistent across stores.</p>
+<p>Applications additionally validate the authenticated actor, permissions, allowed fields, document lifecycle, and domain value types.</p>
 </section>
 <section id="library-api" class="level2">
 <h2 class="anchored" data-anchor-id="library-api">Library API</h2>
-<p>The implementation extends <code>polars_hist_db.overrides</code>; it does not create a second package.</p>
-<p>The minimum public surface is:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>append(operation) <span class="op">-&gt;</span> AppendResult</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>append_batch(operations) <span class="op">-&gt;</span> <span class="bu">list</span>[AppendResult]</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>history_for_entity(layer_id, feed_id, entity_id) <span class="op">-&gt;</span> <span class="bu">list</span>[OverrideOperation]</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>project_operations(operations, valid_at) <span class="op">-&gt;</span> <span class="bu">dict</span>[<span class="bu">str</span>, OverrideFrontier]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p><code>AppendResult</code> reports <code>accepted</code> or <code>duplicate</code> and returns the immutable persisted operation. Batch append is atomic. <code>project_operations</code> is a pure function shared by every backend and directly testable without a database.</p>
-<p>Applications may expose these methods through HTTP, NATS, a CLI, or an embedded process. Transport and client synchronization are outside the initial library contract.</p>
+<p>CRDT support is an optional <code>crdt</code> extra so ingestion-only users do not install Yrs bindings.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>load_document(document_id) <span class="op">-&gt;</span> CrdtDocument</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>append_update(document_id, update, expected_revision) <span class="op">-&gt;</span> AppendUpdateResult</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>diff(document_id, state_vector) <span class="op">-&gt;</span> <span class="bu">bytes</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>write_snapshot(document_id) <span class="op">-&gt;</span> CrdtSnapshot</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>validate_override_changes(before, after) <span class="op">-&gt;</span> <span class="bu">list</span>[OverrideOperation]</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>project_operations(operations, valid_at) <span class="op">-&gt;</span> <span class="bu">dict</span>[<span class="bu">str</span>, OverrideFrontier]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>append_update</code> deduplicates exact update bytes, advances a monotonic storage revision, and supports an application transaction that also writes relational projections. <code>diff</code> returns the Yjs update missing from a supplied state vector. The pure override projector is shared by every backend.</p>
 </section>
 <section id="storage" class="level2">
 <h2 class="anchored" data-anchor-id="storage">Storage</h2>
-<p>Shared operations extend the existing override table with nullable <code>format_version</code>, <code>layer_id</code>, <code>actor_id</code>, <code>supersedes_operation_ids_json</code>, <code>removes_operation_ids_json</code>, <code>recorded_at</code>, and <code>payload_hash</code> columns. Existing typed-value, source identity, validity, comment, and metadata columns are reused.</p>
-<p>The only additional uniqueness requirement is:</p>
-<pre class="text"><code>UNIQUE (operation_id)</code></pre>
-<p>An adapter must provide equivalent atomic behavior when its backend cannot express the constraint directly.</p>
-<p>The existing ingestion valid-time mapping remains authoritative:</p>
+<p>Every backend exposes equivalent logical tables:</p>
+<pre class="text"><code>crdt_documents(document_id, revision, snapshot_bytes, state_vector,
+               snapshot_through_revision, updated_at)
+crdt_updates(document_id, revision, update_hash, update_bytes,
+             accepted_at, metadata_json)</code></pre>
+<p><code>(document_id, revision)</code> and <code>(document_id, update_hash)</code> are unique. Update bytes and snapshots are opaque binary values. MariaDB uses binary large-object columns; XTDB stores the same bytes through its supported binary value type. In-memory storage follows the same revision and deduplication rules.</p>
+<p>Snapshots contain a full merged Yjs update and state vector through a known revision. Updates covered by a verified snapshot may be archived, but the snapshot itself remains available to every rebuild path. Snapshotting is introduced with the storage contract because unbounded replay would make offline reconnect progressively slower; frequency remains application policy.</p>
+<p>The relational valid-time projection remains configured independently:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">override_ledgers</span><span class="kw">:</span></span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">schema</span><span class="kw">:</span><span class="at"> overrides</span></span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">table</span><span class="kw">:</span><span class="at"> data_override_operations</span></span>
 <span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">valid_time</span><span class="kw">:</span></span>
 <span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">from_column</span><span class="kw">:</span><span class="at"> valid_from</span></span>
 <span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">to_column</span><span class="kw">:</span><span class="at"> valid_to</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>No projection rule depends on XTDB <code>_valid_from</code>, MariaDB system-version columns, or backend-specific conflict handling. The relational operation row is both the mergeable record and the SQL-queryable audit record; there is no opaque CRDT document requiring a second relational projection.</p>
+<p>A CRDT update may contain several valid-time operations, so the update’s acceptance time must never be used as their business valid time. CRDT storage is the synchronization source of truth; normalized operation rows are the SQL query/audit projection and must be reproducible from accepted snapshots and updates.</p>
 </section>
 <section id="existing-personal-ledgers" class="level2">
 <h2 class="anchored" data-anchor-id="existing-personal-ledgers">Existing personal ledgers</h2>
-<p>Existing <code>OverrideLedger</code> operations remain valid and require no migration. Their layer identity can be derived from <code>owner_user_id</code>. Their current ordered set/close projection remains appropriate when an application serializes writes and allows one active value per field.</p>
-<p>Personal and shared layers may use the same physical operation table and typed value representation. Shared projection additionally interprets explicit supersede and remove references.</p>
+<p>Existing <code>OverrideLedger</code> rows remain valid and require no migration. Online personal edits may continue using the current command path. When personal offline editing is enabled, the same Yjs document and immutable operation conventions apply, with layer identity derived from the owner.</p>
 </section>
-<section id="projection-and-audit" class="level2">
-<h2 class="anchored" data-anchor-id="projection-and-audit">Projection and audit</h2>
-<p>Raw operations are never updated or deleted by compaction. A materialized projection may contain field frontiers and the last consumed storage cursor. It is a disposable cache and must be reproducible by replaying the raw log.</p>
-<p>Archival is valid only when the immutable archive remains available to the rebuild path. The initial implementation retains the raw log; it has no replica tombstones or distributed garbage collection.</p>
-</section>
-<section id="worked-cases" class="level2">
-<h2 class="anchored" data-anchor-id="worked-cases">Worked cases</h2>
+<section id="test-contract" class="level2">
+<h2 class="anchored" data-anchor-id="test-contract">Test contract</h2>
 <ul>
-<li>Operations A and B set one field without referencing each other. Both remain in the frontier regardless of insertion order.</li>
-<li>Operation B sets a field with <code>supersedes_operation_ids: [A]</code>. B replaces A without mutating A’s audit record.</li>
-<li>Operations B and C both supersede A but do not reference each other. B and C remain as a visible conflict.</li>
-<li>Remove R contains <code>removes_operation_ids: [A]</code> while concurrent B is unseen. A closes and B survives.</li>
-<li>Retrying A with identical content returns <code>duplicate</code>; retrying A with changed content raises an idempotency conflict.</li>
-<li>Deleting a materialized projection and replaying the operation rows produces identical state on every backend.</li>
+<li>A Yjs browser update can be loaded by <code>pycrdt</code>, and a <code>pycrdt</code> update can be loaded by Yjs.</li>
+<li>Offline updates from two replicas converge after reconnect in either order.</li>
+<li>Duplicate updates do not advance logical content or create duplicate rows.</li>
+<li>Mutation or deletion of a published operation is rejected.</li>
+<li>Undo affects local draft/text changes but cannot erase published operations.</li>
+<li>Awareness data is not persisted.</li>
+<li>Snapshots plus later updates reproduce the same document and override rows.</li>
+<li>MariaDB, XTDB, and in-memory adapters expose equivalent revision, binary, snapshot, and valid-time behavior.</li>
 </ul>
-</section>
-<section id="future-crdt-engines" class="level2">
-<h2 class="anchored" data-anchor-id="future-crdt-engines">Future CRDT engines</h2>
-<p>Adopt Automerge, Yrs, or another maintained engine when clients must create changes offline and synchronize without an authoritative service, or when rich collaborative text/list structures become requirements.</p>
-<p>The operation format preserves that migration path. Each immutable operation can become an entry in a CRDT document keyed by <code>operation_id</code>; supersede and remove references retain the business conflict semantics. A CRDT engine would then own change exchange, state vectors, snapshots, and cross-language sync, while the relational operation projection would continue to serve audit and valid-time queries.</p>
-<p>Until that trigger exists, the implementation deliberately excludes replica IDs, logical clocks, version vectors, binary document state, synchronization, undo, presence, and tombstone garbage collection.</p>
 </section>
 <section id="deferred-work" class="level2">
 <h2 class="anchored" data-anchor-id="deferred-work">Deferred work</h2>
 <ul>
-<li>Implement the operation fields, pure projection, and append idempotency.</li>
-<li>Add backend contract tests for MariaDB, XTDB, and in-memory stores.</li>
-<li>Add optional materialized projection support only when replay cost requires it.</li>
+<li>Peer-to-peer transport. The initial topology remains authenticated client/server synchronization.</li>
+<li>End-to-end encryption. Server-side authorization and projection require the server to inspect accepted documents.</li>
+<li>A rich-text editor binding. Y.Text is the portable data model; applications select an editor appropriate to their UI.</li>
 </ul>
 
 

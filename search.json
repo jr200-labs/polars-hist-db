@@ -238,145 +238,145 @@
   {
     "objectID": "replicated-overrides.html",
     "href": "replicated-overrides.html",
-    "title": "Replicated override operation sets",
+    "title": "Yjs-compatible replicated documents and overrides",
     "section": "",
-    "text": "polars-hist-db owns a reusable append-only operation model, deterministic projection, and backend storage contract for shared override layers. Applications own authentication, authorization, transport, field declarations, and business conflict policy.\nThe initial implementation is a grow-only set of immutable operations keyed by operation_id. It does not implement an OR-map, vector clock, synchronization protocol, or general CRDT framework. Set union is associative, commutative, and idempotent, which is sufficient while writes pass through an authoritative application service.",
+    "text": "polars-hist-db provides backend-independent persistence for Yjs-compatible document updates and snapshots, plus a reusable immutable operation model for valid-time overrides. Applications own authentication, authorization, transport, document membership, field declarations, and business conflict policy.\nThe implementation uses the maintained Yjs/Yrs ecosystem instead of implementing a CRDT algorithm. Browser clients use Yjs. Python services use pycrdt, whose Yrs updates are binary-compatible with Yjs. Binary updates are commutative, associative, and idempotent, so every backend stores the same protocol rather than implementing its own merge rules.",
     "crumbs": [
       "Overview",
       "Polars Hist DB",
-      "Replicated override operation sets"
+      "Yjs-compatible replicated documents and overrides"
     ]
   },
   {
     "objectID": "replicated-overrides.html#scope",
     "href": "replicated-overrides.html#scope",
-    "title": "Replicated override operation sets",
+    "title": "Yjs-compatible replicated documents and overrides",
     "section": "",
-    "text": "polars-hist-db owns a reusable append-only operation model, deterministic projection, and backend storage contract for shared override layers. Applications own authentication, authorization, transport, field declarations, and business conflict policy.\nThe initial implementation is a grow-only set of immutable operations keyed by operation_id. It does not implement an OR-map, vector clock, synchronization protocol, or general CRDT framework. Set union is associative, commutative, and idempotent, which is sufficient while writes pass through an authoritative application service.",
+    "text": "polars-hist-db provides backend-independent persistence for Yjs-compatible document updates and snapshots, plus a reusable immutable operation model for valid-time overrides. Applications own authentication, authorization, transport, document membership, field declarations, and business conflict policy.\nThe implementation uses the maintained Yjs/Yrs ecosystem instead of implementing a CRDT algorithm. Browser clients use Yjs. Python services use pycrdt, whose Yrs updates are binary-compatible with Yjs. Binary updates are commutative, associative, and idempotent, so every backend stores the same protocol rather than implementing its own merge rules.",
     "crumbs": [
       "Overview",
       "Polars Hist DB",
-      "Replicated override operation sets"
+      "Yjs-compatible replicated documents and overrides"
     ]
   },
   {
-    "objectID": "replicated-overrides.html#operation-format",
-    "href": "replicated-overrides.html#operation-format",
-    "title": "Replicated override operation sets",
-    "section": "Operation format",
-    "text": "Operation format\nEvery persisted operation has this backend-independent envelope:\n\n\n\n\n\n\n\n\nField\nType\nRule\n\n\n\n\nformat_version\ninteger\n1 for this contract\n\n\noperation_id\nUUID\nCaller-generated idempotency key; globally unique\n\n\nchange_set_id\nUUID\nGroups one multi-field action\n\n\nlayer_id\nstring\nShared layer identity\n\n\nactor_id\nstring\nAuthoritative principal supplied by the application\n\n\nfeed_id\nstring\nSource dataset identity\n\n\nentity_id\nstring\nStable source entity identity\n\n\nfield_path\nstring\nField or nested path being overridden\n\n\noperation_type\nenum\nset or remove\n\n\nvalue\nOverrideTypedValue or null\nRequired for set only\n\n\nsupersedes_operation_ids\narray of UUIDs\nValues observed and replaced by set\n\n\nremoves_operation_ids\narray of UUIDs\nValues observed and closed by remove\n\n\nvalid_from\nUTC timestamp\nInclusive business-valid start\n\n\nvalid_to\nUTC timestamp or null\nExclusive business-valid end\n\n\nrecorded_at\nUTC timestamp\nSet when first persisted\n\n\npayload_hash\nstring\nCanonical hash of immutable persisted fields\n\n\nobserved_canonical_value_json\nJSON or null\nSource value seen by the editor\n\n\ncomment\nstring or null\nOptional audit comment\n\n\nmetadata_json\nobject\nVersioned extension data only\n\n\n\nTyped values reuse OverrideTypedValue; replication does not introduce domain-specific value types:\n{\n  \"value_type\": \"structured_location\",\n  \"value_json\": {\n    \"value\": {\n      \"name\": \"Futtsu\",\n      \"country_code\": \"JP\"\n    }\n  },\n  \"unit\": null\n}\nA sequential edit lists the active operations visible to its author in supersedes_operation_ids. A remove lists them in removes_operation_ids. Those explicit references are the causal information needed by the scalar override domain; replica counters and version vectors add no required behavior.\nrecorded_at is explicit so MariaDB, XTDB, in-memory stores, and future backends expose the same transaction-time audit field. Backend system time may also record the write, but is not used for convergence.",
+    "objectID": "replicated-overrides.html#document-model",
+    "href": "replicated-overrides.html#document-model",
+    "title": "Yjs-compatible replicated documents and overrides",
+    "section": "Document model",
+    "text": "Document model\nThe library does not prescribe a complete application schema. It reserves two conventions for reusable override documents:\nroot\n  drafts       application-owned Y.Map/Y.Array/Y.Text collaborative state\n  operations   Y.Map keyed by immutable operation_id\nDraft values may be edited, removed, and undone. Published operation entries are immutable. An application may add other shared types without changing the storage contract.\nEach value in operations has this backend-independent envelope:\n\n\n\n\n\n\n\n\nField\nType\nRule\n\n\n\n\nformat_version\ninteger\n1 for this contract\n\n\noperation_id\nUUID\nCaller-generated idempotency key; globally unique\n\n\nchange_set_id\nUUID\nGroups one multi-field action\n\n\nlayer_id\nstring\nOverride layer identity\n\n\nactor_id\nstring\nServer-derived principal finalized at acceptance\n\n\nfeed_id\nstring\nSource dataset identity\n\n\nentity_id\nstring\nStable source entity identity\n\n\nfield_path\nstring\nField or nested path being overridden\n\n\noperation_type\nenum\nset or remove\n\n\nvalue\nOverrideTypedValue or null\nRequired for set only\n\n\nsupersedes_operation_ids\narray of UUIDs\nValues observed and replaced by set\n\n\nremoves_operation_ids\narray of UUIDs\nValues observed and closed by remove\n\n\nvalid_from\nUTC timestamp\nInclusive business-valid start\n\n\nvalid_to\nUTC timestamp or null\nExclusive business-valid end\n\n\nrecorded_at\nUTC timestamp\nServer time finalized at acceptance\n\n\npayload_hash\nstring\nServer-computed hash of immutable persisted fields\n\n\nobserved_canonical_value_json\nJSON or null\nSource value seen by the editor\n\n\ncomment\nstring or null\nImmutable snapshot of any collaborative rationale\n\n\nmetadata_json\nobject\nVersioned extension data only\n\n\n\nConcurrent published edits use different operation IDs and therefore coexist in the map. Explicit supersede/remove references preserve business conflicts; Y.Map’s scalar conflict choice is never used to choose an effective override.\nAn offline client creates a provisional entry without authoritative actor_id, recorded_at, or payload_hash. After applying and validating that entry in a temporary document, the server replaces it causally with a finalized entry containing those fields. It persists and broadcasts the combined server-origin update. Subsequent replay of the provisional client update is idempotent and cannot supersede the finalized value. Once finalized, any mutation or deletion of the operation is rejected.",
     "crumbs": [
       "Overview",
       "Polars Hist DB",
-      "Replicated override operation sets"
+      "Yjs-compatible replicated documents and overrides"
     ]
   },
   {
-    "objectID": "replicated-overrides.html#convergence",
-    "href": "replicated-overrides.html#convergence",
-    "title": "Replicated override operation sets",
-    "section": "Convergence",
-    "text": "Convergence\nMerging ledgers is set union by operation_id. An identical operation delivered twice remains one member of the set. Arrival order, backend row order, wall-clock time, and recorded_at do not affect projection.\nFor one layer, feed, entity, field, and requested valid time:\n\nSelect set operations whose half-open interval [valid_from, valid_to) contains the requested time.\nDiscard a set when its ID appears in removes_operation_ids on a remove whose valid_from is not later than the requested time.\nDiscard a set when its ID appears in supersedes_operation_ids on another set whose valid_from is not later than the requested time. Replacement remains effective after the newer set’s optional valid_to; the older value does not reappear automatically.\nThe remaining sets are the frontier. One value is clean state, multiple values are concurrent, and no values means no override.\nSort concurrent values by operation_id for stable output only. Projection does not silently choose a winner.\n\nTwo concurrent edits have not observed each other, so neither references the other and both survive. Two edits may both supersede the same prior operation; they still remain concurrent with each other. A remove affects only the operations its author observed, so an unseen concurrent set survives. A later set has a new operation ID and reopens the field.\nBusiness policies operate on the frontier after projection. A consuming application may expose all values, reject concurrent editing, apply precedence, or deterministically select one. Policy must not delete or mutate competing operations.",
+    "objectID": "replicated-overrides.html#synchronization",
+    "href": "replicated-overrides.html#synchronization",
+    "title": "Yjs-compatible replicated documents and overrides",
+    "section": "Synchronization",
+    "text": "Synchronization\nClients persist documents locally and may create changes without a network. On reconnect they exchange state vectors and only missing Yjs updates. The library stores opaque update bytes and can reconstruct or merge a document with pycrdt; it does not define HTTP, WebSocket, NATS, or peer-to-peer transport.\nThe accepting service must serialize validation per document:\n\nlock the document revision;\napply the candidate update to the latest accepted state in a temporary document;\nvalidate newly added operation entries and reject mutation/deletion of existing entries;\nauthorize the current principal and document state;\nfinalize server-owned operation fields;\natomically persist the resulting update and relational operation projection;\nrelease the revision and broadcast the accepted update.\n\nRejected updates are never broadcast or persisted. The client keeps them in a quarantined local branch so work can be copied or retargeted, but it must reset the shared document to the last accepted server state before further sync.",
     "crumbs": [
       "Overview",
       "Polars Hist DB",
-      "Replicated override operation sets"
+      "Yjs-compatible replicated documents and overrides"
+    ]
+  },
+  {
+    "objectID": "replicated-overrides.html#presence-and-undo",
+    "href": "replicated-overrides.html#presence-and-undo",
+    "title": "Yjs-compatible replicated documents and overrides",
+    "section": "Presence and undo",
+    "text": "Presence and undo\nPresence, selections, and cursor positions use the Yjs Awareness protocol. They are ephemeral, expire when a client disconnects, and are never written to the database or audit history.\nUndo/redo is client-local and scoped to mutable draft/shared-text types. Undo must not track the immutable operations map. Reversing a published override creates a new remove or set operation so audit history remains append-only.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Yjs-compatible replicated documents and overrides"
+    ]
+  },
+  {
+    "objectID": "replicated-overrides.html#override-convergence",
+    "href": "replicated-overrides.html#override-convergence",
+    "title": "Yjs-compatible replicated documents and overrides",
+    "section": "Override convergence",
+    "text": "Override convergence\nFor one layer, feed, entity, field, and requested valid time:\n\nSelect set operations whose half-open interval [valid_from, valid_to) contains the requested time.\nDiscard a set referenced by an applicable remove.\nDiscard a set referenced by an applicable superseding set.\nThe remaining sets are the frontier. One distinct value is clean, several distinct values are concurrent, and no value means no override.\nSort concurrent values by operation ID for stable output only.\n\nArrival order, client clocks, backend row order, and Y.Map scalar conflict selection never choose an effective value. Equal normalized values may be grouped for display while retaining all provenance.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Yjs-compatible replicated documents and overrides"
     ]
   },
   {
     "objectID": "replicated-overrides.html#validation-and-idempotency",
     "href": "replicated-overrides.html#validation-and-idempotency",
-    "title": "Replicated override operation sets",
+    "title": "Yjs-compatible replicated documents and overrides",
     "section": "Validation and idempotency",
-    "text": "Validation and idempotency\nThe ledger validates:\n\nunique operation_id;\ntimezone-aware UTC timestamps;\nbounded set intervals have valid_to &gt; valid_from;\nremove requires valid_to = null and applies from valid_from onward;\nset has one typed value and no removes_operation_ids;\nremove has no value and no supersedes_operation_ids;\nevery referenced operation belongs to the same layer, feed, entity, and field;\nreferenced operations already exist or are included earlier in the same atomic batch.\n\nThe application validates actor permissions, allowed fields, and domain value types before calling the ledger.\nAn exact replay of an accepted operation_id returns the original operation and does not append a row. Reusing an operation ID with different immutable content raises an idempotency conflict. A canonical payload hash makes that comparison consistent across stores.",
+    "text": "Validation and idempotency\nThe reusable validator enforces:\n\nunique and immutable operation_id entries;\ntimezone-aware UTC timestamps;\nbounded set intervals with valid_to &gt; valid_from;\nset/remove value and reference rules;\nreferences within the same layer, feed, entity, and field;\nreferences to existing operations or earlier operations in one atomic batch;\nexact replay as a no-op and conflicting reuse of an ID as an error.\n\nApplications additionally validate the authenticated actor, permissions, allowed fields, document lifecycle, and domain value types.",
     "crumbs": [
       "Overview",
       "Polars Hist DB",
-      "Replicated override operation sets"
+      "Yjs-compatible replicated documents and overrides"
     ]
   },
   {
     "objectID": "replicated-overrides.html#library-api",
     "href": "replicated-overrides.html#library-api",
-    "title": "Replicated override operation sets",
+    "title": "Yjs-compatible replicated documents and overrides",
     "section": "Library API",
-    "text": "Library API\nThe implementation extends polars_hist_db.overrides; it does not create a second package.\nThe minimum public surface is:\nappend(operation) -&gt; AppendResult\nappend_batch(operations) -&gt; list[AppendResult]\nhistory_for_entity(layer_id, feed_id, entity_id) -&gt; list[OverrideOperation]\nproject_operations(operations, valid_at) -&gt; dict[str, OverrideFrontier]\nAppendResult reports accepted or duplicate and returns the immutable persisted operation. Batch append is atomic. project_operations is a pure function shared by every backend and directly testable without a database.\nApplications may expose these methods through HTTP, NATS, a CLI, or an embedded process. Transport and client synchronization are outside the initial library contract.",
+    "text": "Library API\nCRDT support is an optional crdt extra so ingestion-only users do not install Yrs bindings.\nload_document(document_id) -&gt; CrdtDocument\nappend_update(document_id, update, expected_revision) -&gt; AppendUpdateResult\ndiff(document_id, state_vector) -&gt; bytes\nwrite_snapshot(document_id) -&gt; CrdtSnapshot\n\nvalidate_override_changes(before, after) -&gt; list[OverrideOperation]\nproject_operations(operations, valid_at) -&gt; dict[str, OverrideFrontier]\nappend_update deduplicates exact update bytes, advances a monotonic storage revision, and supports an application transaction that also writes relational projections. diff returns the Yjs update missing from a supplied state vector. The pure override projector is shared by every backend.",
     "crumbs": [
       "Overview",
       "Polars Hist DB",
-      "Replicated override operation sets"
+      "Yjs-compatible replicated documents and overrides"
     ]
   },
   {
     "objectID": "replicated-overrides.html#storage",
     "href": "replicated-overrides.html#storage",
-    "title": "Replicated override operation sets",
+    "title": "Yjs-compatible replicated documents and overrides",
     "section": "Storage",
-    "text": "Storage\nShared operations extend the existing override table with nullable format_version, layer_id, actor_id, supersedes_operation_ids_json, removes_operation_ids_json, recorded_at, and payload_hash columns. Existing typed-value, source identity, validity, comment, and metadata columns are reused.\nThe only additional uniqueness requirement is:\nUNIQUE (operation_id)\nAn adapter must provide equivalent atomic behavior when its backend cannot express the constraint directly.\nThe existing ingestion valid-time mapping remains authoritative:\noverride_ledgers:\n  - schema: overrides\n    table: data_override_operations\n    valid_time:\n      from_column: valid_from\n      to_column: valid_to\nNo projection rule depends on XTDB _valid_from, MariaDB system-version columns, or backend-specific conflict handling. The relational operation row is both the mergeable record and the SQL-queryable audit record; there is no opaque CRDT document requiring a second relational projection.",
+    "text": "Storage\nEvery backend exposes equivalent logical tables:\ncrdt_documents(document_id, revision, snapshot_bytes, state_vector,\n               snapshot_through_revision, updated_at)\ncrdt_updates(document_id, revision, update_hash, update_bytes,\n             accepted_at, metadata_json)\n(document_id, revision) and (document_id, update_hash) are unique. Update bytes and snapshots are opaque binary values. MariaDB uses binary large-object columns; XTDB stores the same bytes through its supported binary value type. In-memory storage follows the same revision and deduplication rules.\nSnapshots contain a full merged Yjs update and state vector through a known revision. Updates covered by a verified snapshot may be archived, but the snapshot itself remains available to every rebuild path. Snapshotting is introduced with the storage contract because unbounded replay would make offline reconnect progressively slower; frequency remains application policy.\nThe relational valid-time projection remains configured independently:\noverride_ledgers:\n  - schema: overrides\n    table: data_override_operations\n    valid_time:\n      from_column: valid_from\n      to_column: valid_to\nA CRDT update may contain several valid-time operations, so the update’s acceptance time must never be used as their business valid time. CRDT storage is the synchronization source of truth; normalized operation rows are the SQL query/audit projection and must be reproducible from accepted snapshots and updates.",
     "crumbs": [
       "Overview",
       "Polars Hist DB",
-      "Replicated override operation sets"
+      "Yjs-compatible replicated documents and overrides"
     ]
   },
   {
     "objectID": "replicated-overrides.html#existing-personal-ledgers",
     "href": "replicated-overrides.html#existing-personal-ledgers",
-    "title": "Replicated override operation sets",
+    "title": "Yjs-compatible replicated documents and overrides",
     "section": "Existing personal ledgers",
-    "text": "Existing personal ledgers\nExisting OverrideLedger operations remain valid and require no migration. Their layer identity can be derived from owner_user_id. Their current ordered set/close projection remains appropriate when an application serializes writes and allows one active value per field.\nPersonal and shared layers may use the same physical operation table and typed value representation. Shared projection additionally interprets explicit supersede and remove references.",
+    "text": "Existing personal ledgers\nExisting OverrideLedger rows remain valid and require no migration. Online personal edits may continue using the current command path. When personal offline editing is enabled, the same Yjs document and immutable operation conventions apply, with layer identity derived from the owner.",
     "crumbs": [
       "Overview",
       "Polars Hist DB",
-      "Replicated override operation sets"
+      "Yjs-compatible replicated documents and overrides"
     ]
   },
   {
-    "objectID": "replicated-overrides.html#projection-and-audit",
-    "href": "replicated-overrides.html#projection-and-audit",
-    "title": "Replicated override operation sets",
-    "section": "Projection and audit",
-    "text": "Projection and audit\nRaw operations are never updated or deleted by compaction. A materialized projection may contain field frontiers and the last consumed storage cursor. It is a disposable cache and must be reproducible by replaying the raw log.\nArchival is valid only when the immutable archive remains available to the rebuild path. The initial implementation retains the raw log; it has no replica tombstones or distributed garbage collection.",
+    "objectID": "replicated-overrides.html#test-contract",
+    "href": "replicated-overrides.html#test-contract",
+    "title": "Yjs-compatible replicated documents and overrides",
+    "section": "Test contract",
+    "text": "Test contract\n\nA Yjs browser update can be loaded by pycrdt, and a pycrdt update can be loaded by Yjs.\nOffline updates from two replicas converge after reconnect in either order.\nDuplicate updates do not advance logical content or create duplicate rows.\nMutation or deletion of a published operation is rejected.\nUndo affects local draft/text changes but cannot erase published operations.\nAwareness data is not persisted.\nSnapshots plus later updates reproduce the same document and override rows.\nMariaDB, XTDB, and in-memory adapters expose equivalent revision, binary, snapshot, and valid-time behavior.",
     "crumbs": [
       "Overview",
       "Polars Hist DB",
-      "Replicated override operation sets"
-    ]
-  },
-  {
-    "objectID": "replicated-overrides.html#worked-cases",
-    "href": "replicated-overrides.html#worked-cases",
-    "title": "Replicated override operation sets",
-    "section": "Worked cases",
-    "text": "Worked cases\n\nOperations A and B set one field without referencing each other. Both remain in the frontier regardless of insertion order.\nOperation B sets a field with supersedes_operation_ids: [A]. B replaces A without mutating A’s audit record.\nOperations B and C both supersede A but do not reference each other. B and C remain as a visible conflict.\nRemove R contains removes_operation_ids: [A] while concurrent B is unseen. A closes and B survives.\nRetrying A with identical content returns duplicate; retrying A with changed content raises an idempotency conflict.\nDeleting a materialized projection and replaying the operation rows produces identical state on every backend.",
-    "crumbs": [
-      "Overview",
-      "Polars Hist DB",
-      "Replicated override operation sets"
-    ]
-  },
-  {
-    "objectID": "replicated-overrides.html#future-crdt-engines",
-    "href": "replicated-overrides.html#future-crdt-engines",
-    "title": "Replicated override operation sets",
-    "section": "Future CRDT engines",
-    "text": "Future CRDT engines\nAdopt Automerge, Yrs, or another maintained engine when clients must create changes offline and synchronize without an authoritative service, or when rich collaborative text/list structures become requirements.\nThe operation format preserves that migration path. Each immutable operation can become an entry in a CRDT document keyed by operation_id; supersede and remove references retain the business conflict semantics. A CRDT engine would then own change exchange, state vectors, snapshots, and cross-language sync, while the relational operation projection would continue to serve audit and valid-time queries.\nUntil that trigger exists, the implementation deliberately excludes replica IDs, logical clocks, version vectors, binary document state, synchronization, undo, presence, and tombstone garbage collection.",
-    "crumbs": [
-      "Overview",
-      "Polars Hist DB",
-      "Replicated override operation sets"
+      "Yjs-compatible replicated documents and overrides"
     ]
   },
   {
     "objectID": "replicated-overrides.html#deferred-work",
     "href": "replicated-overrides.html#deferred-work",
-    "title": "Replicated override operation sets",
+    "title": "Yjs-compatible replicated documents and overrides",
     "section": "Deferred work",
-    "text": "Deferred work\n\nImplement the operation fields, pure projection, and append idempotency.\nAdd backend contract tests for MariaDB, XTDB, and in-memory stores.\nAdd optional materialized projection support only when replay cost requires it.",
+    "text": "Deferred work\n\nPeer-to-peer transport. The initial topology remains authenticated client/server synchronization.\nEnd-to-end encryption. Server-side authorization and projection require the server to inspect accepted documents.\nA rich-text editor binding. Y.Text is the portable data model; applications select an editor appropriate to their UI.",
     "crumbs": [
       "Overview",
       "Polars Hist DB",
-      "Replicated override operation sets"
+      "Yjs-compatible replicated documents and overrides"
     ]
   },
   {
