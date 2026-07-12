@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.38](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.37...v0.12.38) (2026-07-12)
+
+
+### Features
+
+* support atomic CRDT state updates ([#180](https://github.com/jr200-labs/polars-hist-db/issues/180)) ([5d43438](https://github.com/jr200-labs/polars-hist-db/commit/5d43438eec3238e2950cf8e27b0711089e2bff0d))
+
 ## [0.12.37](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.36...v0.12.37) (2026-07-12)
 
 
