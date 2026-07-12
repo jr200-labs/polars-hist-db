@@ -15,7 +15,13 @@ def build_crdt_document_table_config(config: CrdtDocumentStoreConfig) -> TableCo
         schema=config.schema,
         primary_keys=("document_id",),
         columns=[
-            TableColumnConfig(table, "document_id", "VARCHAR(128)", nullable=False),
+            TableColumnConfig(
+                table,
+                "document_id",
+                "VARCHAR(128)",
+                nullable=False,
+                unique_constraint=["document_source_update_hash"],
+            ),
             TableColumnConfig(table, "revision", "BIGINT", nullable=False),
             TableColumnConfig(table, "head_state_vector_base64", "MEDIUMTEXT"),
             TableColumnConfig(table, "snapshot_update_base64", "MEDIUMTEXT"),
