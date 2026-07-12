@@ -1,11 +1,12 @@
 from pycrdt import Doc, Map
 import pytest
+from typing import Any
 
 from polars_hist_db.overrides import InMemoryCrdtDocumentStore
 
 
 def _document_update() -> bytes:
-    document = Doc()
+    document: Any = Doc()
     document["drafts"] = Map({"title": "Initial"})
     return document.get_update()
 
