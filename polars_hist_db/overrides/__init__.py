@@ -4,7 +4,18 @@ from .config import (
     build_override_table_config,
     build_override_valid_time_config,
 )
-from .crdt import CrdtAppendResult, CrdtDocument, InMemoryCrdtDocumentStore
+from .crdt import (
+    AtomicInsert,
+    CrdtAppendResult,
+    CrdtCommitResult,
+    CrdtDocument,
+    CrdtPreconditionFailed,
+    CrdtRevisionConflict,
+    InMemoryCrdtDocumentStore,
+    PreparedCrdtCommit,
+    RowGuard,
+    prepare_crdt_update,
+)
 from .ledger import InMemoryOverrideLedgerStore, OverrideLedger
 from .replicated import (
     InMemoryReplicatedOverrideLedger,
@@ -27,6 +38,7 @@ from .types import (
 __all__ = [
     "InMemoryOverrideLedgerStore",
     "InMemoryCrdtDocumentStore",
+    "AtomicInsert",
     "InMemoryReplicatedOverrideLedger",
     "OverrideLedger",
     "OverrideLedgerConfig",
@@ -34,11 +46,15 @@ __all__ = [
     "OverrideOperationType",
     "OverrideTypedValue",
     "CrdtAppendResult",
+    "CrdtCommitResult",
     "CrdtDocument",
+    "CrdtPreconditionFailed",
+    "CrdtRevisionConflict",
     "CrdtDocumentStoreConfig",
     "build_crdt_document_table_config",
     "build_crdt_update_table_config",
     "OverrideFrontier",
+    "PreparedCrdtCommit",
     "ReplicatedOverrideAppendResult",
     "ReplicatedOverrideOperation",
     "build_override_table_config",
@@ -46,5 +62,7 @@ __all__ = [
     "finalize_replicated_override_operation",
     "operation_payload_hash",
     "project_replicated_override_operations",
+    "prepare_crdt_update",
+    "RowGuard",
     "validate_replicated_override_operation",
 ]

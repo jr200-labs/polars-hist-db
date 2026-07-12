@@ -14,8 +14,10 @@ def build_crdt_document_table_config(config: CrdtDocumentStoreConfig) -> TableCo
         columns=[
             TableColumnConfig(table, "document_id", "VARCHAR(128)", nullable=False),
             TableColumnConfig(table, "revision", "BIGINT", nullable=False),
-            TableColumnConfig(table, "state_vector_base64", "MEDIUMTEXT"),
+            TableColumnConfig(table, "head_state_vector_base64", "MEDIUMTEXT"),
             TableColumnConfig(table, "snapshot_update_base64", "MEDIUMTEXT"),
+            TableColumnConfig(table, "snapshot_update_hash", "VARCHAR(64)"),
+            TableColumnConfig(table, "snapshot_state_vector_base64", "MEDIUMTEXT"),
             TableColumnConfig(table, "snapshot_through_revision", "BIGINT"),
             TableColumnConfig(table, "updated_at", "DATETIME(6)", nullable=False),
         ],
@@ -34,15 +36,18 @@ def build_crdt_update_table_config(config: CrdtDocumentStoreConfig) -> TableConf
                 "document_id",
                 "VARCHAR(128)",
                 nullable=False,
-                unique_constraint=["document_update_hash"],
+                unique_constraint=["document_source_update_hash"],
             ),
             TableColumnConfig(table, "revision", "BIGINT", nullable=False),
             TableColumnConfig(
                 table,
-                "update_hash",
+                "source_update_hash",
                 "VARCHAR(64)",
                 nullable=False,
-                unique_constraint=["document_update_hash"],
+                unique_constraint=["document_source_update_hash"],
+            ),
+            TableColumnConfig(
+                table, "accepted_update_hash", "VARCHAR(64)", nullable=False
             ),
             TableColumnConfig(table, "update_base64", "MEDIUMTEXT", nullable=False),
             TableColumnConfig(table, "accepted_at", "DATETIME(6)", nullable=False),
@@ -94,6 +99,8 @@ def build_override_table_config(config: OverrideLedgerConfig) -> TableConfig:
             TableColumnConfig(table, "removes_operation_ids_json", "JSON"),
             TableColumnConfig(table, "recorded_at", "DATETIME(6)"),
             TableColumnConfig(table, "payload_hash", "VARCHAR(64)"),
+            TableColumnConfig(table, "crdt_document_id", "VARCHAR(128)"),
+            TableColumnConfig(table, "crdt_document_revision", "BIGINT"),
         ],
     )
 

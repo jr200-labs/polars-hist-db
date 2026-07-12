@@ -19,15 +19,24 @@ def test_crdt_document_tables_use_portable_base64_payload_columns():
     assert {column.name for column in documents.columns} == {
         "document_id",
         "revision",
-        "state_vector_base64",
+        "head_state_vector_base64",
         "snapshot_update_base64",
+        "snapshot_update_hash",
+        "snapshot_state_vector_base64",
         "snapshot_through_revision",
         "updated_at",
     }
     assert {
         column.name for column in documents.columns if column.data_type == "MEDIUMTEXT"
-    } == {"state_vector_base64", "snapshot_update_base64"}
+    } == {
+        "head_state_vector_base64",
+        "snapshot_update_base64",
+        "snapshot_state_vector_base64",
+    }
     assert updates.primary_keys == ("document_id", "revision")
+    assert {
+        column.name for column in updates.columns if column.data_type == "VARCHAR(64)"
+    } == {"source_update_hash", "accepted_update_hash"}
     assert (
         next(
             column for column in updates.columns if column.name == "update_base64"
