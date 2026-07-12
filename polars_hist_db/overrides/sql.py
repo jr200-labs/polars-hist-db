@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Sequence
@@ -234,23 +235,27 @@ class MariaDbCrdtDocumentStore:
                     value_type=None
                     if operation.value is None
                     else operation.value.value_type,
-                    value_json=None
-                    if operation.value is None
-                    else operation.value.value_json,
+                    value_json=_json(
+                        None if operation.value is None else operation.value.value_json
+                    ),
                     unit=None if operation.value is None else operation.value.unit,
-                    observed_canonical_value_json=operation.observed_canonical_value_json,
+                    observed_canonical_value_json=_json(
+                        operation.observed_canonical_value_json
+                    ),
                     created_against_stale_source=False,
                     valid_from=operation.valid_from,
                     valid_to=operation.valid_to,
                     comment=operation.comment,
-                    metadata_json=operation.metadata_json or {},
+                    metadata_json=_json(operation.metadata_json or {}),
                     format_version=operation.format_version,
                     layer_id=operation.layer_id,
                     actor_id=operation.actor_id,
-                    supersedes_operation_ids_json=list(
-                        operation.supersedes_operation_ids
+                    supersedes_operation_ids_json=_json(
+                        list(operation.supersedes_operation_ids)
                     ),
-                    removes_operation_ids_json=list(operation.removes_operation_ids),
+                    removes_operation_ids_json=_json(
+                        list(operation.removes_operation_ids)
+                    ),
                     recorded_at=operation.recorded_at,
                     payload_hash=operation.payload_hash,
                     crdt_document_id=prepared.document_id,
@@ -269,3 +274,7 @@ def _encode(value: bytes) -> str:
 
 def _decode(value: str) -> bytes:
     return base64.b64decode(value)
+
+
+def _json(value: object | None) -> str | None:
+    return None if value is None else json.dumps(value, separators=(",", ":"))
