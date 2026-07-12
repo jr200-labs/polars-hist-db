@@ -71,3 +71,21 @@ def test_xtdb_store_submits_one_asserted_transaction(monkeypatch):
         "INSERT INTO overrides.crdt_documents" in statement for statement in statements
     )
     assert any("_valid_from" in statement for statement in statements)
+
+
+def test_xtdb_store_bootstraps_every_configured_column(monkeypatch):
+    statements: list[list[str]] = []
+    store = XtdbCrdtDocumentStore(
+        object(), CrdtDocumentStoreConfig(), OverrideLedgerConfig()
+    )
+    monkeypatch.setattr(store, "_rows", lambda _: [])
+    monkeypatch.setattr(
+        "polars_hist_db.overrides.xtdb._execute_xtdb_transaction",
+        lambda _, transaction: statements.append(list(transaction)),
+    )
+
+    store._ensure_tables()
+
+    assert "document_id" in statements[0][0]
+    assert "head_state_vector_base64" in statements[0][0]
+    assert statements[0][1].startswith("ERASE FROM overrides.crdt_documents")
