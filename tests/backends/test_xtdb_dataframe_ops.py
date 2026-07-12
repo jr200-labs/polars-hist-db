@@ -47,11 +47,15 @@ def test_xtdb_dml_retries_with_append_time_when_system_time_is_too_old():
 
         def execute(self, sql):
             self.executed.append(sql)
+            if sql == "COMMIT":
+                self.commit_count += 1
+                if self.commit_count == 1:
+                    raise RuntimeError(
+                        "invalid-system-time: specified system-time older"
+                    )
 
         def commit(self):
             self.commit_count += 1
-            if self.commit_count == 1:
-                raise RuntimeError("invalid-system-time: specified system-time older")
 
         def rollback(self):
             self.rollback_count += 1
@@ -77,8 +81,11 @@ def test_xtdb_dml_retries_with_append_time_when_system_time_is_too_old():
     assert connection.connection.driver_connection.executed == [
         "BEGIN READ WRITE WITH (SYSTEM_TIME = TIMESTAMP '2025-01-01T00:00:00+00:00')",
         "INSERT INTO test.records (_id) VALUES (1)",
+        "COMMIT",
+        "ROLLBACK",
         "BEGIN READ WRITE",
         "INSERT INTO test.records (_id) VALUES (1)",
+        "COMMIT",
     ]
 
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
@@ -258,12 +258,16 @@ class XtdbCrdtDocumentStore:
                 f"table_name = {_literal(config.name, 'TEXT')}"
             ):
                 continue
-            bootstrap_id = "__polars_hist_db_crdt_bootstrap__"
             table_name = _table_name(config)
+            bootstrap_row = {
+                column.name: _bootstrap_value(column.data_type)
+                for column in config.columns
+            }
+            bootstrap_id = _document_id(config, bootstrap_row)
             _execute_xtdb_transaction(
                 self.connection,
                 [
-                    f"INSERT INTO {table_name} (_id) VALUES ({_literal(bootstrap_id, 'TEXT')})",
+                    _insert_statement(config, bootstrap_row),
                     f"ERASE FROM {table_name} WHERE _id = {_literal(bootstrap_id, 'TEXT')}",
                 ],
             )
@@ -348,3 +352,28 @@ def _accepted_at(prepared: PreparedCrdtCommit) -> datetime:
     if prepared.operations:
         return prepared.operations[0].recorded_at
     return datetime.now(timezone.utc)
+
+
+def _bootstrap_value(data_type: str) -> object:
+    normalized = data_type.upper()
+    if normalized.startswith(
+        (
+            "BIGINT",
+            "INT",
+            "SMALLINT",
+            "TINYINT",
+            "DECIMAL",
+            "NUMERIC",
+            "FLOAT",
+            "DOUBLE",
+            "REAL",
+        )
+    ):
+        return 0
+    if normalized.startswith(("BOOL", "BOOLEAN")):
+        return False
+    if normalized.startswith(("DATETIME", "TIMESTAMP")):
+        return datetime(1970, 1, 1, tzinfo=timezone.utc)
+    if normalized.startswith("DATE"):
+        return date(1970, 1, 1)
+    return ""
