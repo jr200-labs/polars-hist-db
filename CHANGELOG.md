@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.12.37](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.36...v0.12.37) (2026-07-12)
+
+
+### Features
+
+* add persistent CRDT storage contract (JWL-13) ([#171](https://github.com/jr200-labs/polars-hist-db/issues/171)) ([da01297](https://github.com/jr200-labs/polars-hist-db/commit/da012974b36da5186e0dcfb54b9b7ec76a5a65c3))
+* add replicated override CRDT core (JWL-13) ([#169](https://github.com/jr200-labs/polars-hist-db/issues/169)) ([7056739](https://github.com/jr200-labs/polars-hist-db/commit/7056739fd165a4b3834923d7efe9e6b34f280d30))
+* persist CRDT commits in MariaDB (JWL-13) ([#175](https://github.com/jr200-labs/polars-hist-db/issues/175)) ([bd81d7a](https://github.com/jr200-labs/polars-hist-db/commit/bd81d7a4374d7016e9ae26c7cc8c2031a2432a41))
+* persist CRDT commits in XTDB (JWL-13) ([#176](https://github.com/jr200-labs/polars-hist-db/issues/176)) ([1e2d546](https://github.com/jr200-labs/polars-hist-db/commit/1e2d546c812b75cab10858407646b916b8777961))
+* prepare CRDT commits in memory (JWL-13) ([#173](https://github.com/jr200-labs/polars-hist-db/issues/173)) ([1c523b2](https://github.com/jr200-labs/polars-hist-db/commit/1c523b2065e9fbe743057e744441cc40b1172621))
+
+
+### Bug Fixes
+
+* clear implicit XTDB DML transactions ([#179](https://github.com/jr200-labs/polars-hist-db/issues/179)) ([8c510ed](https://github.com/jr200-labs/polars-hist-db/commit/8c510ed5a3c0f127d603e6baf42e5d4e5bdfbc04))
+* repair CRDT adapter integration paths ([#178](https://github.com/jr200-labs/polars-hist-db/issues/178)) ([909554e](https://github.com/jr200-labs/polars-hist-db/commit/909554ec9a8630abcd4f444da1b6c0a1b956e29c))
+* support shared override projection ownership (JWL-13) ([#174](https://github.com/jr200-labs/polars-hist-db/issues/174)) ([c836b96](https://github.com/jr200-labs/polars-hist-db/commit/c836b9684ba3c901aa719616271828ef1401b25d))
+
 ## [0.12.36](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.35...v0.12.36) (2026-07-12)
 
 
