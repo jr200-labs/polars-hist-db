@@ -48,6 +48,13 @@ def test_build_override_table_config_contains_required_columns():
         "reason",
         "comment",
         "metadata_json",
+        "format_version",
+        "layer_id",
+        "actor_id",
+        "supersedes_operation_ids_json",
+        "removes_operation_ids_json",
+        "recorded_at",
+        "payload_hash",
     }
 
 

@@ -17,6 +17,13 @@ def test_override_table_config_builds_sqlalchemy_columns_for_mariadb_path():
         "valid_from",
         "valid_to",
         "metadata_json",
+        "format_version",
+        "layer_id",
+        "actor_id",
+        "supersedes_operation_ids_json",
+        "removes_operation_ids_json",
+        "recorded_at",
+        "payload_hash",
     }
     operation_id = next(column for column in columns if column.name == "operation_id")
     assert operation_id.primary_key is True
