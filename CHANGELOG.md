@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.12.36](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.35...v0.12.36) (2026-07-12)
+
+
+### Features
+
+* **deps:** update dependency pyarrow to v25 ([#163](https://github.com/jr200-labs/polars-hist-db/issues/163)) ([46fa4b8](https://github.com/jr200-labs/polars-hist-db/commit/46fa4b89daf16efb6e091b2e1f519e7d6b0a47c2))
+
+
+### Bug Fixes
+
+* **deps:** update dependency ruff to &gt;=0.15.21 ([#162](https://github.com/jr200-labs/polars-hist-db/issues/162)) ([b4cead8](https://github.com/jr200-labs/polars-hist-db/commit/b4cead88aab165c7ec2e854fb27e64c2f5d60d6f))
+* **deps:** update quarto-cli digest to 8577ed1 ([#161](https://github.com/jr200-labs/polars-hist-db/issues/161)) ([ae4c31b](https://github.com/jr200-labs/polars-hist-db/commit/ae4c31bee434abaaa6c8cc0e3da5d6706b29ccd9))
+
+
+### Tests
+
+* cover override ledger audit invariants ([#166](https://github.com/jr200-labs/polars-hist-db/issues/166)) ([66060b6](https://github.com/jr200-labs/polars-hist-db/commit/66060b613f91a233c7cd5d92cdec9520c8ae0849))
+
 ## [0.12.35](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.34...v0.12.35) (2026-07-10)
 
 
