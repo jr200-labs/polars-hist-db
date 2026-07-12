@@ -48,8 +48,9 @@ def test_xtdb_backend_builds_crdt_document_store(monkeypatch):
     assert isinstance(store, Store)
 
 
-def test_xtdb_transaction_commits_implicit_read_before_begin():
+def test_xtdb_transaction_uses_driver_autocommit_for_explicit_begin():
     driver_connection = Mock()
+    driver_connection.autocommit = False
     connection = Mock()
     connection.connection.driver_connection = driver_connection
     connection.in_transaction.return_value = False
@@ -59,11 +60,13 @@ def test_xtdb_transaction_commits_implicit_read_before_begin():
     )
 
     assert driver_connection.execute.call_args_list[0].args == ("BEGIN READ WRITE",)
-    assert driver_connection.commit.call_count == 2
+    assert driver_connection.execute.call_args_list[-1].args == ("COMMIT",)
+    assert driver_connection.autocommit is False
 
 
-def test_xtdb_dml_commits_implicit_read_before_begin():
+def test_xtdb_dml_uses_driver_autocommit_for_explicit_begin():
     driver_connection = Mock()
+    driver_connection.autocommit = False
     connection = Mock()
     connection.connection.driver_connection = driver_connection
     connection.in_transaction.return_value = False
@@ -71,7 +74,8 @@ def test_xtdb_dml_commits_implicit_read_before_begin():
     _execute_xtdb_dml(connection, "INSERT INTO test.x (_id) VALUES ('x')")
 
     assert driver_connection.execute.call_args_list[0].args == ("BEGIN READ WRITE",)
-    assert driver_connection.commit.call_count == 2
+    assert driver_connection.execute.call_args_list[-1].args == ("COMMIT",)
+    assert driver_connection.autocommit is False
 
 
 def test_xtdb_create_engine_includes_configured_credentials(monkeypatch):

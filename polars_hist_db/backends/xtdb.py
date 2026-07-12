@@ -789,9 +789,9 @@ def _execute_xtdb_dml(
         connection.execute(text(sql))
         return 0
 
-    if getattr(connection, "in_transaction", lambda: False)():
-        connection.commit()
-    driver_connection.commit()
+    _rollback_xtdb_connection(connection)
+    autocommit = driver_connection.autocommit
+    driver_connection.autocommit = True
 
     begin_sql = "BEGIN READ WRITE"
     if system_time is not None:
@@ -815,12 +815,14 @@ def _execute_xtdb_dml(
                 if callable(close):
                     close()
             row_count = len(rows)
-        driver_connection.commit()
+        driver_connection.execute("COMMIT")
     except Exception as exc:
-        driver_connection.rollback()
+        driver_connection.execute("ROLLBACK")
         if system_time is not None and _is_xtdb_invalid_system_time_error(exc):
             return _execute_xtdb_dml(connection, sql, rows, system_time=None)
         raise
+    finally:
+        driver_connection.autocommit = autocommit
     return row_count
 
 
@@ -830,18 +832,20 @@ def _execute_xtdb_transaction(connection: Any, statements: Iterable[str]) -> Non
     driver_connection = _driver_connection(connection)
     if driver_connection is None:
         raise ValueError("XTDB transactions require a live DBAPI connection")
-    if getattr(connection, "in_transaction", lambda: False)():
-        connection.commit()
-    driver_connection.commit()
+    _rollback_xtdb_connection(connection)
+    autocommit = driver_connection.autocommit
+    driver_connection.autocommit = True
 
     driver_connection.execute("BEGIN READ WRITE")
     try:
         for statement in statements:
             driver_connection.execute(statement)
-        driver_connection.commit()
+        driver_connection.execute("COMMIT")
     except Exception:
-        driver_connection.rollback()
+        driver_connection.execute("ROLLBACK")
         raise
+    finally:
+        driver_connection.autocommit = autocommit
 
 
 def _xtdb_sql_literal(value: Any, cast_type: str) -> str:
