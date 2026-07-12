@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from sqlalchemy import Connection, inspect, text
+from sqlalchemy.schema import CreateColumn
+
 from polars_hist_db.config import TableColumnConfig, TableConfig, ValidTimeConfig
 
 from .types import CrdtDocumentStoreConfig, OverrideLedgerConfig
@@ -65,7 +68,8 @@ def build_override_table_config(config: OverrideLedgerConfig) -> TableConfig:
         columns=[
             TableColumnConfig(table, "operation_id", "VARCHAR(64)", nullable=False),
             TableColumnConfig(table, "change_set_id", "VARCHAR(64)", nullable=False),
-            TableColumnConfig(table, "owner_user_id", "VARCHAR(128)", nullable=False),
+            # Personal rows retain an owner; shared rows are scoped by layer_id.
+            TableColumnConfig(table, "owner_user_id", "VARCHAR(128)"),
             TableColumnConfig(table, "actor_user_id", "VARCHAR(128)", nullable=False),
             TableColumnConfig(table, "feed_id", "VARCHAR(128)", nullable=False),
             TableColumnConfig(table, "entity_id", "VARCHAR(256)", nullable=False),
@@ -111,4 +115,31 @@ def build_override_valid_time_config(config: OverrideLedgerConfig) -> ValidTimeC
         table=config.table,
         from_column=config.valid_from_column,
         to_column=config.valid_to_column,
+    )
+
+
+def migrate_override_owner_nullable(
+    connection: Connection, config: OverrideLedgerConfig
+) -> None:
+    """Relax the legacy personal-owner column for shared projection rows."""
+
+    inspector = inspect(connection)
+    if not inspector.has_table(config.table, schema=config.schema):
+        return
+    owner_column = next(
+        column
+        for column in inspector.get_columns(config.table, schema=config.schema)
+        if column["name"] == "owner_user_id"
+    )
+    if owner_column["nullable"]:
+        return
+    table_config = build_override_table_config(config)
+    column = next(
+        column
+        for column in table_config.build_sqlalchemy_columns(is_delta_table=False)
+        if column.name == "owner_user_id"
+    )
+    column_sql = str(CreateColumn(column).compile(connection))
+    connection.execute(
+        text(f"ALTER TABLE {config.schema}.{config.table} MODIFY COLUMN {column_sql}")
     )

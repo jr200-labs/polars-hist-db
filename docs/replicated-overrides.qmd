@@ -304,6 +304,11 @@ personal-ledger rows. The provenance makes per-document comparison and repair
 possible without inferring document membership from application-owned layer
 names.
 
+`owner_user_id` is required by the personal command model but nullable in the
+shared projection schema. Shared rows use `layer_id`, `actor_id`, and CRDT
+document provenance; they never invent a personal owner. Existing deployments
+must relax the legacy `NOT NULL` constraint before shared rows are written.
+
 The portable repository receives the existing two config objects:
 
 ```python

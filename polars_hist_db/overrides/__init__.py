@@ -3,6 +3,7 @@ from .config import (
     build_crdt_update_table_config,
     build_override_table_config,
     build_override_valid_time_config,
+    migrate_override_owner_nullable,
 )
 from .crdt import (
     AtomicInsert,
@@ -59,6 +60,7 @@ __all__ = [
     "ReplicatedOverrideOperation",
     "build_override_table_config",
     "build_override_valid_time_config",
+    "migrate_override_owner_nullable",
     "finalize_replicated_override_operation",
     "operation_payload_hash",
     "project_replicated_override_operations",

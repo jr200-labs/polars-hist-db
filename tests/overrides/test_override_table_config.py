@@ -58,6 +58,12 @@ def test_build_override_table_config_contains_required_columns():
         "crdt_document_id",
         "crdt_document_revision",
     }
+    assert (
+        next(
+            column for column in table.columns if column.name == "owner_user_id"
+        ).nullable
+        is True
+    )
 
 
 def test_build_override_valid_time_config_uses_business_columns():
