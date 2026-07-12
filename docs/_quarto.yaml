@@ -28,6 +28,7 @@ website:
     - section: index.qmd
       contents:
       - configuration.qmd
+      - replicated-overrides.qmd
       - api.qmd
       - backend-contract.qmd
       - examples.qmd
