@@ -13,6 +13,8 @@ from .temporal import system_time_hint_clause
 
 if TYPE_CHECKING:
     from ..config import TableConfig
+    from ..overrides import CrdtDocumentStoreConfig, OverrideLedgerConfig
+    from ..overrides.sql import MariaDbCrdtDocumentStore
 
 
 @dataclass(frozen=True)
@@ -39,6 +41,16 @@ class MariaDbBackend:
 
     def table_configs(self, connection: Any) -> TableConfigOps:
         return TableConfigOps(connection)
+
+    def crdt_documents(
+        self,
+        connection: Any,
+        document_store: "CrdtDocumentStoreConfig",
+        projection: "OverrideLedgerConfig",
+    ) -> "MariaDbCrdtDocumentStore":
+        from ..overrides.sql import MariaDbCrdtDocumentStore
+
+        return MariaDbCrdtDocumentStore(connection, document_store, projection)
 
     def tables(self, table_schema: str, table_name: str, connection: Any) -> TableOps:
         return TableOps(table_schema, table_name, connection)

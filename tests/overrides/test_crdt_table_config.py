@@ -34,6 +34,15 @@ def test_crdt_document_tables_use_portable_base64_payload_columns():
         "snapshot_state_vector_base64",
     }
     assert updates.primary_keys == ("document_id", "revision")
+    source_hash_constraint = [
+        column
+        for column in updates.columns
+        if "document_source_update_hash" in column.unique_constraint
+    ]
+    assert {column.name for column in source_hash_constraint} == {
+        "document_id",
+        "source_update_hash",
+    }
     assert {
         column.name for column in updates.columns if column.data_type == "VARCHAR(64)"
     } == {"source_update_hash", "accepted_update_hash"}
