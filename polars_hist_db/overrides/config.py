@@ -40,6 +40,14 @@ def build_override_table_config(config: OverrideLedgerConfig) -> TableConfig:
             TableColumnConfig(table, "reason", "VARCHAR(128)"),
             TableColumnConfig(table, "comment", "VARCHAR(2048)"),
             TableColumnConfig(table, "metadata_json", "JSON"),
+            # Nullable fields preserve compatibility with existing personal rows.
+            TableColumnConfig(table, "format_version", "INT"),
+            TableColumnConfig(table, "layer_id", "VARCHAR(128)"),
+            TableColumnConfig(table, "actor_id", "VARCHAR(128)"),
+            TableColumnConfig(table, "supersedes_operation_ids_json", "JSON"),
+            TableColumnConfig(table, "removes_operation_ids_json", "JSON"),
+            TableColumnConfig(table, "recorded_at", "DATETIME(6)"),
+            TableColumnConfig(table, "payload_hash", "VARCHAR(64)"),
         ],
     )
 
