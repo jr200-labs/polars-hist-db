@@ -10,7 +10,7 @@ dependencies = [
     "nats-py>=2.15.0",
     "pandas>=3.0.3",
     "polars[sqlalchemy]>=1.42.1",
-    "pyarrow>=24.0.0",
+    "pyarrow>=25.0.0",
     "pymysql>=1.2.0",
     "pytz>=2026.2",
     "pyyaml>=6.0.3",
@@ -38,7 +38,7 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "quarto-cli",
-    "ruff>=0.15.20",
+    "ruff>=0.15.21",
     "types-python-dateutil>=2.9.0.20260518",
     "types-pytz>=2026.2.0.20260518",
     "types-pyyaml>=6.0.12.20260518",
@@ -64,7 +64,7 @@ testpaths = [
 ]
 
 [tool.uv.sources]
-quarto-cli = { git = "https://github.com/quarto-dev/quarto-cli", rev = "effe14586db57a9e09271ab9ac4ed35fcbd300dc" }
+quarto-cli = { git = "https://github.com/quarto-dev/quarto-cli", rev = "8577ed1c69b3b9a551f1669c8256abc4a1731266" }
 
 [tool.mypy]
 warn_unused_configs = true
