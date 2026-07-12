@@ -121,6 +121,78 @@ def test_grouped_sets_share_change_set_id():
     assert len(ledger.active_for_entity("user-1", "records", "record-1")) == 2
 
 
+def test_replacing_same_field_leaves_one_active_override_and_keeps_audit_history():
+    ledger = OverrideLedger(InMemoryOverrideLedgerStore())
+
+    first = ledger.set_field(
+        owner_user_id="user-1",
+        actor_user_id="user-1",
+        feed_id="records",
+        entity_id="record-1",
+        field_path="status",
+        value=OverrideTypedValue("enum", {"value": "loading"}),
+        observed_canonical_value_json={"value": "scheduled"},
+        valid_from=_utc(13),
+    )
+    second = ledger.set_field(
+        owner_user_id="user-1",
+        actor_user_id="user-1",
+        feed_id="records",
+        entity_id="record-1",
+        field_path="status",
+        value=OverrideTypedValue("enum", {"value": "in_transit"}),
+        observed_canonical_value_json={"value": "scheduled"},
+        valid_from=_utc(14),
+    )
+
+    history = ledger.projected_history_for_entity("user-1", "records", "record-1")
+    active = ledger.active_for_entity("user-1", "records", "record-1")
+
+    assert [operation.operation_type for operation in history] == [
+        "set",
+        "close",
+        "set",
+    ]
+    assert history[0].operation_id == first.operation_id
+    assert history[0].valid_to == _utc(14)
+    assert history[2].operation_id == second.operation_id
+    assert active == [second]
+
+
+def test_user_close_preserves_prior_operation_history():
+    ledger = OverrideLedger(InMemoryOverrideLedgerStore())
+
+    set_operation = ledger.set_field(
+        owner_user_id="user-1",
+        actor_user_id="user-1",
+        feed_id="records",
+        entity_id="record-1",
+        field_path="status",
+        value=OverrideTypedValue("enum", {"value": "in_transit"}),
+        observed_canonical_value_json={"value": "loading"},
+        valid_from=_utc(13),
+    )
+    close_operation = ledger.close_field(
+        owner_user_id="user-1",
+        actor_user_id="user-1",
+        feed_id="records",
+        entity_id="record-1",
+        field_path="status",
+        valid_to=_utc(16),
+        reason="user_close",
+    )
+
+    history = ledger.projected_history_for_entity("user-1", "records", "record-1")
+
+    assert [operation.operation_id for operation in history] == [
+        set_operation.operation_id,
+        close_operation.operation_id,
+    ]
+    assert [operation.operation_type for operation in history] == ["set", "close"]
+    assert history[0].valid_to == _utc(16)
+    assert ledger.active_for_entity("user-1", "records", "record-1") == []
+
+
 def test_stale_source_flag_and_observed_canonical_value_are_preserved():
     ledger = OverrideLedger(InMemoryOverrideLedgerStore())
 
@@ -140,3 +212,35 @@ def test_stale_source_flag_and_observed_canonical_value_are_preserved():
     assert operation.created_against_stale_source is True
     assert operation.value is not None
     assert operation.value.unit == "mcm"
+
+
+def test_operation_shape_keeps_shared_layer_metadata():
+    ledger = OverrideLedger(InMemoryOverrideLedgerStore())
+
+    operation = ledger.set_field(
+        owner_user_id="user-1",
+        actor_user_id="user-2",
+        feed_id="records",
+        entity_id="record-1",
+        field_path="status",
+        value=OverrideTypedValue("enum", {"value": "in_transit"}),
+        observed_canonical_value_json={"value": "loading"},
+        created_against_stale_source=True,
+        valid_from=_utc(13),
+        change_set_id="change-1",
+        comment="reviewed",
+        metadata_json={"client_operation_id": "client-op-1"},
+    )
+
+    assert operation.operation_id
+    assert operation.change_set_id == "change-1"
+    assert operation.owner_user_id == "user-1"
+    assert operation.actor_user_id == "user-2"
+    assert operation.feed_id == "records"
+    assert operation.entity_id == "record-1"
+    assert operation.field_path == "status"
+    assert operation.value == OverrideTypedValue("enum", {"value": "in_transit"})
+    assert operation.observed_canonical_value_json == {"value": "loading"}
+    assert operation.created_against_stale_source is True
+    assert operation.comment == "reviewed"
+    assert operation.metadata_json == {"client_operation_id": "client-op-1"}
