@@ -12,6 +12,7 @@ from polars_hist_db.backends.xtdb import (
     XtdbAdbcDataframeOps,
     XtdbDataframeOps,
     XtdbTableConfigOps,
+    _execute_xtdb_dml,
     _execute_xtdb_transaction,
     _xtdb_cast_type,
     _xtdb_declared_columns,
@@ -56,6 +57,18 @@ def test_xtdb_transaction_commits_implicit_read_before_begin():
     _execute_xtdb_transaction(
         connection, ["ASSERT TRUE", "INSERT INTO test.x (_id) VALUES ('x')"]
     )
+
+    assert driver_connection.execute.call_args_list[0].args == ("BEGIN READ WRITE",)
+    assert driver_connection.commit.call_count == 2
+
+
+def test_xtdb_dml_commits_implicit_read_before_begin():
+    driver_connection = Mock()
+    connection = Mock()
+    connection.connection.driver_connection = driver_connection
+    connection.in_transaction.return_value = False
+
+    _execute_xtdb_dml(connection, "INSERT INTO test.x (_id) VALUES ('x')")
 
     assert driver_connection.execute.call_args_list[0].args == ("BEGIN READ WRITE",)
     assert driver_connection.commit.call_count == 2

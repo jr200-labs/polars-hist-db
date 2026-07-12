@@ -791,6 +791,7 @@ def _execute_xtdb_dml(
 
     if getattr(connection, "in_transaction", lambda: False)():
         connection.commit()
+    driver_connection.commit()
 
     begin_sql = "BEGIN READ WRITE"
     if system_time is not None:
