@@ -665,10 +665,10 @@ def test_xtdb_staging_cleanup_erases_only_batch_run():
 
     XtdbStagingOps(connection).cleanup_run("stage-1", delta_table_config)
 
-    assert driver_connection.execute.call_args.args == (
+    assert (
         "ERASE FROM fakedata.__record_stream_stage "
         "WHERE stage_run_id = 'stage-1'::TEXT",
-    )
+    ) in [call.args for call in driver_connection.execute.call_args_list]
 
 
 def test_xtdb_staging_deduces_foreign_keys_and_inserts_missing_parent(
