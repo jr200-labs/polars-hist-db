@@ -236,6 +236,150 @@
     ]
   },
   {
+    "objectID": "replicated-overrides.html",
+    "href": "replicated-overrides.html",
+    "title": "Replicated override operation sets",
+    "section": "",
+    "text": "polars-hist-db owns a reusable append-only operation model, deterministic projection, and backend storage contract for shared override layers. Applications own authentication, authorization, transport, field declarations, and business conflict policy.\nThe initial implementation is a grow-only set of immutable operations keyed by operation_id. It does not implement an OR-map, vector clock, synchronization protocol, or general CRDT framework. Set union is associative, commutative, and idempotent, which is sufficient while writes pass through an authoritative application service.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Replicated override operation sets"
+    ]
+  },
+  {
+    "objectID": "replicated-overrides.html#scope",
+    "href": "replicated-overrides.html#scope",
+    "title": "Replicated override operation sets",
+    "section": "",
+    "text": "polars-hist-db owns a reusable append-only operation model, deterministic projection, and backend storage contract for shared override layers. Applications own authentication, authorization, transport, field declarations, and business conflict policy.\nThe initial implementation is a grow-only set of immutable operations keyed by operation_id. It does not implement an OR-map, vector clock, synchronization protocol, or general CRDT framework. Set union is associative, commutative, and idempotent, which is sufficient while writes pass through an authoritative application service.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Replicated override operation sets"
+    ]
+  },
+  {
+    "objectID": "replicated-overrides.html#operation-format",
+    "href": "replicated-overrides.html#operation-format",
+    "title": "Replicated override operation sets",
+    "section": "Operation format",
+    "text": "Operation format\nEvery persisted operation has this backend-independent envelope:\n\n\n\n\n\n\n\n\nField\nType\nRule\n\n\n\n\nformat_version\ninteger\n1 for this contract\n\n\noperation_id\nUUID\nCaller-generated idempotency key; globally unique\n\n\nchange_set_id\nUUID\nGroups one multi-field action\n\n\nlayer_id\nstring\nShared layer identity\n\n\nactor_id\nstring\nAuthoritative principal supplied by the application\n\n\nfeed_id\nstring\nSource dataset identity\n\n\nentity_id\nstring\nStable source entity identity\n\n\nfield_path\nstring\nField or nested path being overridden\n\n\noperation_type\nenum\nset or remove\n\n\nvalue\nOverrideTypedValue or null\nRequired for set only\n\n\nsupersedes_operation_ids\narray of UUIDs\nValues observed and replaced by set\n\n\nremoves_operation_ids\narray of UUIDs\nValues observed and closed by remove\n\n\nvalid_from\nUTC timestamp\nInclusive business-valid start\n\n\nvalid_to\nUTC timestamp or null\nExclusive business-valid end\n\n\nrecorded_at\nUTC timestamp\nSet when first persisted\n\n\npayload_hash\nstring\nCanonical hash of immutable persisted fields\n\n\nobserved_canonical_value_json\nJSON or null\nSource value seen by the editor\n\n\ncomment\nstring or null\nOptional audit comment\n\n\nmetadata_json\nobject\nVersioned extension data only\n\n\n\nTyped values reuse OverrideTypedValue; replication does not introduce domain-specific value types:\n{\n  \"value_type\": \"structured_location\",\n  \"value_json\": {\n    \"value\": {\n      \"name\": \"Futtsu\",\n      \"country_code\": \"JP\"\n    }\n  },\n  \"unit\": null\n}\nA sequential edit lists the active operations visible to its author in supersedes_operation_ids. A remove lists them in removes_operation_ids. Those explicit references are the causal information needed by the scalar override domain; replica counters and version vectors add no required behavior.\nrecorded_at is explicit so MariaDB, XTDB, in-memory stores, and future backends expose the same transaction-time audit field. Backend system time may also record the write, but is not used for convergence.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Replicated override operation sets"
+    ]
+  },
+  {
+    "objectID": "replicated-overrides.html#convergence",
+    "href": "replicated-overrides.html#convergence",
+    "title": "Replicated override operation sets",
+    "section": "Convergence",
+    "text": "Convergence\nMerging ledgers is set union by operation_id. An identical operation delivered twice remains one member of the set. Arrival order, backend row order, wall-clock time, and recorded_at do not affect projection.\nFor one layer, feed, entity, field, and requested valid time:\n\nSelect set operations whose half-open interval [valid_from, valid_to) contains the requested time.\nDiscard a set when its ID appears in removes_operation_ids on a remove whose valid_from is not later than the requested time.\nDiscard a set when its ID appears in supersedes_operation_ids on another set whose valid_from is not later than the requested time. Replacement remains effective after the newer set’s optional valid_to; the older value does not reappear automatically.\nThe remaining sets are the frontier. One value is clean state, multiple values are concurrent, and no values means no override.\nSort concurrent values by operation_id for stable output only. Projection does not silently choose a winner.\n\nTwo concurrent edits have not observed each other, so neither references the other and both survive. Two edits may both supersede the same prior operation; they still remain concurrent with each other. A remove affects only the operations its author observed, so an unseen concurrent set survives. A later set has a new operation ID and reopens the field.\nBusiness policies operate on the frontier after projection. A consuming application may expose all values, reject concurrent editing, apply precedence, or deterministically select one. Policy must not delete or mutate competing operations.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Replicated override operation sets"
+    ]
+  },
+  {
+    "objectID": "replicated-overrides.html#validation-and-idempotency",
+    "href": "replicated-overrides.html#validation-and-idempotency",
+    "title": "Replicated override operation sets",
+    "section": "Validation and idempotency",
+    "text": "Validation and idempotency\nThe ledger validates:\n\nunique operation_id;\ntimezone-aware UTC timestamps;\nbounded set intervals have valid_to &gt; valid_from;\nremove requires valid_to = null and applies from valid_from onward;\nset has one typed value and no removes_operation_ids;\nremove has no value and no supersedes_operation_ids;\nevery referenced operation belongs to the same layer, feed, entity, and field;\nreferenced operations already exist or are included earlier in the same atomic batch.\n\nThe application validates actor permissions, allowed fields, and domain value types before calling the ledger.\nAn exact replay of an accepted operation_id returns the original operation and does not append a row. Reusing an operation ID with different immutable content raises an idempotency conflict. A canonical payload hash makes that comparison consistent across stores.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Replicated override operation sets"
+    ]
+  },
+  {
+    "objectID": "replicated-overrides.html#library-api",
+    "href": "replicated-overrides.html#library-api",
+    "title": "Replicated override operation sets",
+    "section": "Library API",
+    "text": "Library API\nThe implementation extends polars_hist_db.overrides; it does not create a second package.\nThe minimum public surface is:\nappend(operation) -&gt; AppendResult\nappend_batch(operations) -&gt; list[AppendResult]\nhistory_for_entity(layer_id, feed_id, entity_id) -&gt; list[OverrideOperation]\nproject_operations(operations, valid_at) -&gt; dict[str, OverrideFrontier]\nAppendResult reports accepted or duplicate and returns the immutable persisted operation. Batch append is atomic. project_operations is a pure function shared by every backend and directly testable without a database.\nApplications may expose these methods through HTTP, NATS, a CLI, or an embedded process. Transport and client synchronization are outside the initial library contract.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Replicated override operation sets"
+    ]
+  },
+  {
+    "objectID": "replicated-overrides.html#storage",
+    "href": "replicated-overrides.html#storage",
+    "title": "Replicated override operation sets",
+    "section": "Storage",
+    "text": "Storage\nShared operations extend the existing override table with nullable format_version, layer_id, actor_id, supersedes_operation_ids_json, removes_operation_ids_json, recorded_at, and payload_hash columns. Existing typed-value, source identity, validity, comment, and metadata columns are reused.\nThe only additional uniqueness requirement is:\nUNIQUE (operation_id)\nAn adapter must provide equivalent atomic behavior when its backend cannot express the constraint directly.\nThe existing ingestion valid-time mapping remains authoritative:\noverride_ledgers:\n  - schema: overrides\n    table: data_override_operations\n    valid_time:\n      from_column: valid_from\n      to_column: valid_to\nNo projection rule depends on XTDB _valid_from, MariaDB system-version columns, or backend-specific conflict handling. The relational operation row is both the mergeable record and the SQL-queryable audit record; there is no opaque CRDT document requiring a second relational projection.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Replicated override operation sets"
+    ]
+  },
+  {
+    "objectID": "replicated-overrides.html#existing-personal-ledgers",
+    "href": "replicated-overrides.html#existing-personal-ledgers",
+    "title": "Replicated override operation sets",
+    "section": "Existing personal ledgers",
+    "text": "Existing personal ledgers\nExisting OverrideLedger operations remain valid and require no migration. Their layer identity can be derived from owner_user_id. Their current ordered set/close projection remains appropriate when an application serializes writes and allows one active value per field.\nPersonal and shared layers may use the same physical operation table and typed value representation. Shared projection additionally interprets explicit supersede and remove references.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Replicated override operation sets"
+    ]
+  },
+  {
+    "objectID": "replicated-overrides.html#projection-and-audit",
+    "href": "replicated-overrides.html#projection-and-audit",
+    "title": "Replicated override operation sets",
+    "section": "Projection and audit",
+    "text": "Projection and audit\nRaw operations are never updated or deleted by compaction. A materialized projection may contain field frontiers and the last consumed storage cursor. It is a disposable cache and must be reproducible by replaying the raw log.\nArchival is valid only when the immutable archive remains available to the rebuild path. The initial implementation retains the raw log; it has no replica tombstones or distributed garbage collection.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Replicated override operation sets"
+    ]
+  },
+  {
+    "objectID": "replicated-overrides.html#worked-cases",
+    "href": "replicated-overrides.html#worked-cases",
+    "title": "Replicated override operation sets",
+    "section": "Worked cases",
+    "text": "Worked cases\n\nOperations A and B set one field without referencing each other. Both remain in the frontier regardless of insertion order.\nOperation B sets a field with supersedes_operation_ids: [A]. B replaces A without mutating A’s audit record.\nOperations B and C both supersede A but do not reference each other. B and C remain as a visible conflict.\nRemove R contains removes_operation_ids: [A] while concurrent B is unseen. A closes and B survives.\nRetrying A with identical content returns duplicate; retrying A with changed content raises an idempotency conflict.\nDeleting a materialized projection and replaying the operation rows produces identical state on every backend.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Replicated override operation sets"
+    ]
+  },
+  {
+    "objectID": "replicated-overrides.html#future-crdt-engines",
+    "href": "replicated-overrides.html#future-crdt-engines",
+    "title": "Replicated override operation sets",
+    "section": "Future CRDT engines",
+    "text": "Future CRDT engines\nAdopt Automerge, Yrs, or another maintained engine when clients must create changes offline and synchronize without an authoritative service, or when rich collaborative text/list structures become requirements.\nThe operation format preserves that migration path. Each immutable operation can become an entry in a CRDT document keyed by operation_id; supersede and remove references retain the business conflict semantics. A CRDT engine would then own change exchange, state vectors, snapshots, and cross-language sync, while the relational operation projection would continue to serve audit and valid-time queries.\nUntil that trigger exists, the implementation deliberately excludes replica IDs, logical clocks, version vectors, binary document state, synchronization, undo, presence, and tombstone garbage collection.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Replicated override operation sets"
+    ]
+  },
+  {
+    "objectID": "replicated-overrides.html#deferred-work",
+    "href": "replicated-overrides.html#deferred-work",
+    "title": "Replicated override operation sets",
+    "section": "Deferred work",
+    "text": "Deferred work\n\nImplement the operation fields, pure projection, and append idempotency.\nAdd backend contract tests for MariaDB, XTDB, and in-memory stores.\nAdd optional materialized projection support only when replay cost requires it.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Replicated override operation sets"
+    ]
+  },
+  {
     "objectID": "backend-contract.html",
     "href": "backend-contract.html",
     "title": "Backend Contract",

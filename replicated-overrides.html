@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>scratch – Polars Hist DB</title>
+<title>Replicated override operation sets – Polars Hist DB</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -61,27 +61,27 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </style>
 
 
-<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
-<script src="../site_libs/quarto-nav/headroom.min.js"></script>
-<script src="../site_libs/clipboard/clipboard.min.js"></script>
-<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
-<script src="../site_libs/quarto-search/fuse.min.js"></script>
-<script src="../site_libs/quarto-search/quarto-search.js"></script>
-<meta name="quarto:offset" content="../">
-<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
-<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
-<script src="../site_libs/quarto-html/popper.min.js"></script>
-<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
-<script src="../site_libs/quarto-html/anchor.min.js"></script>
-<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-33269adcf1721b81efc5ea7fcfe7f0ee.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-5a2acb6f4ed5aeb23a104ba421924b87.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-33269adcf1721b81efc5ea7fcfe7f0ee.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
-<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
-<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-463465ba8d3f692556c2f6436c7d4884.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
-<link href="../site_libs/bootstrap/bootstrap-dark-72b16c4db8ef37be9bb921fe70362917.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
-<link href="../site_libs/bootstrap/bootstrap-463465ba8d3f692556c2f6436c7d4884.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-33269adcf1721b81efc5ea7fcfe7f0ee.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-dark-5a2acb6f4ed5aeb23a104ba421924b87.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-33269adcf1721b81efc5ea7fcfe7f0ee.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-463465ba8d3f692556c2f6436c7d4884.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="site_libs/bootstrap/bootstrap-dark-72b16c4db8ef37be9bb921fe70362917.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="site_libs/bootstrap/bootstrap-463465ba8d3f692556c2f6436c7d4884.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -282,7 +282,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
-    <a class="navbar-brand" href="../index.html">
+    <a class="navbar-brand" href="./index.html">
     <span class="navbar-title">Polars Hist DB</span>
     </a>
   </div>
@@ -293,15 +293,15 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           <div class="collapse navbar-collapse" id="navbarCollapse">
             <ul class="navbar-nav navbar-nav-scroll me-auto">
   <li class="nav-item">
-    <a class="nav-link active" href="../index.html" aria-current="page"> 
+    <a class="nav-link active" href="./index.html" aria-current="page"> 
 <span class="menu-text">Overview</span></a>
   </li>  
   <li class="nav-item">
-    <a class="nav-link" href="../configuration.html"> 
+    <a class="nav-link" href="./configuration.html"> 
 <span class="menu-text">Configuration</span></a>
   </li>  
   <li class="nav-item">
-    <a class="nav-link" href="../api.html"> 
+    <a class="nav-link" href="./api.html"> 
 <span class="menu-text">API Reference</span></a>
   </li>  
 </ul>
@@ -323,7 +323,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">Polars Hist DB</a></li><li class="breadcrumb-item"><a href="./replicated-overrides.html">Replicated override operation sets</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -337,7 +337,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <ul class="list-unstyled mt-1">
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a href="../index.html" class="sidebar-item-text sidebar-link">
+            <a href="./index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Polars Hist DB</span></a>
           <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
@@ -346,31 +346,31 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../configuration.html" class="sidebar-item-text sidebar-link">
+  <a href="./configuration.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Configuration</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../replicated-overrides.html" class="sidebar-item-text sidebar-link">
+  <a href="./replicated-overrides.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Replicated override operation sets</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../api.html" class="sidebar-item-text sidebar-link">
+  <a href="./api.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">API Reference</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../backend-contract.html" class="sidebar-item-text sidebar-link">
+  <a href="./backend-contract.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Backend Contract</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../examples.html" class="sidebar-item-text sidebar-link">
+  <a href="./examples.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Examples</span></a>
   </div>
 </li>
@@ -381,51 +381,274 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </nav>
 <div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
 <!-- margin-sidebar -->
-    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar zindex-bottom">
-        
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#scope" id="toc-scope" class="nav-link active" data-scroll-target="#scope">Scope</a></li>
+  <li><a href="#operation-format" id="toc-operation-format" class="nav-link" data-scroll-target="#operation-format">Operation format</a></li>
+  <li><a href="#convergence" id="toc-convergence" class="nav-link" data-scroll-target="#convergence">Convergence</a></li>
+  <li><a href="#validation-and-idempotency" id="toc-validation-and-idempotency" class="nav-link" data-scroll-target="#validation-and-idempotency">Validation and idempotency</a></li>
+  <li><a href="#library-api" id="toc-library-api" class="nav-link" data-scroll-target="#library-api">Library API</a></li>
+  <li><a href="#storage" id="toc-storage" class="nav-link" data-scroll-target="#storage">Storage</a></li>
+  <li><a href="#existing-personal-ledgers" id="toc-existing-personal-ledgers" class="nav-link" data-scroll-target="#existing-personal-ledgers">Existing personal ledgers</a></li>
+  <li><a href="#projection-and-audit" id="toc-projection-and-audit" class="nav-link" data-scroll-target="#projection-and-audit">Projection and audit</a></li>
+  <li><a href="#worked-cases" id="toc-worked-cases" class="nav-link" data-scroll-target="#worked-cases">Worked cases</a></li>
+  <li><a href="#future-crdt-engines" id="toc-future-crdt-engines" class="nav-link" data-scroll-target="#future-crdt-engines">Future CRDT engines</a></li>
+  <li><a href="#deferred-work" id="toc-deferred-work" class="nav-link" data-scroll-target="#deferred-work">Deferred work</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/jr200-labs/polars-hist-db/blob/main/replicated-overrides.qmd" class="toc-action"><i class="bi bi-github"></i>View source</a></li><li><a href="https://github.com/jr200-labs/polars-hist-db/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
+<main class="content" id="quarto-document-content">
 
 
-
-
-
-<div id="cell-0" class="cell" data-execution_count="11">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> polars <span class="im">as</span> pl</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> sqlalchemy <span class="im">import</span> select, text</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> polars_hist_db.core <span class="im">import</span> DataframeOps, TableOps, make_engine</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</div>
-<div id="cell-1" class="cell" data-execution_count="12">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>engine <span class="op">=</span> make_engine(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    backend<span class="op">=</span><span class="st">"mariadb"</span>,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    hostname<span class="op">=</span><span class="st">"127.0.0.1"</span>,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    port<span class="op">=</span><span class="dv">3306</span>,</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    username<span class="op">=</span><span class="st">"root"</span>,</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    password<span class="op">=</span><span class="st">"admin"</span>,</span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</div>
-<div id="cell-2" class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> engine.begin() <span class="im">as</span> connection:</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    res <span class="op">=</span> connection.execute(text(<span class="st">"select * from information_schema.users"</span>))</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    rows <span class="op">=</span> res.fetchall()</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>pl.from_records(rows)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</div>
-<div id="cell-3" class="cell" data-execution_count="14">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> engine.begin() <span class="im">as</span> connection:</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    tbl <span class="op">=</span> TableOps(<span class="st">"information_schema"</span>, <span class="st">"users"</span>, connection).get_table_metadata()</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    query <span class="op">=</span> select(tbl).limit(<span class="dv">5</span>)</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    df <span class="op">=</span> DataframeOps(connection).from_selectable(</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>        query, {<span class="st">"PASSWORD_EXPIRATION_TIME"</span>: pl.String}</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</div>
-<div id="cell-4" class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(df)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">Polars Hist DB</a></li><li class="breadcrumb-item"><a href="./replicated-overrides.html">Replicated override operation sets</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Replicated override operation sets</h1>
 </div>
 
 
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<section id="scope" class="level2">
+<h2 class="anchored" data-anchor-id="scope">Scope</h2>
+<p><code>polars-hist-db</code> owns a reusable append-only operation model, deterministic projection, and backend storage contract for shared override layers. Applications own authentication, authorization, transport, field declarations, and business conflict policy.</p>
+<p>The initial implementation is a grow-only set of immutable operations keyed by <code>operation_id</code>. It does not implement an OR-map, vector clock, synchronization protocol, or general CRDT framework. Set union is associative, commutative, and idempotent, which is sufficient while writes pass through an authoritative application service.</p>
+</section>
+<section id="operation-format" class="level2">
+<h2 class="anchored" data-anchor-id="operation-format">Operation format</h2>
+<p>Every persisted operation has this backend-independent envelope:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Field</th>
+<th>Type</th>
+<th>Rule</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>format_version</code></td>
+<td>integer</td>
+<td><code>1</code> for this contract</td>
+</tr>
+<tr class="even">
+<td><code>operation_id</code></td>
+<td>UUID</td>
+<td>Caller-generated idempotency key; globally unique</td>
+</tr>
+<tr class="odd">
+<td><code>change_set_id</code></td>
+<td>UUID</td>
+<td>Groups one multi-field action</td>
+</tr>
+<tr class="even">
+<td><code>layer_id</code></td>
+<td>string</td>
+<td>Shared layer identity</td>
+</tr>
+<tr class="odd">
+<td><code>actor_id</code></td>
+<td>string</td>
+<td>Authoritative principal supplied by the application</td>
+</tr>
+<tr class="even">
+<td><code>feed_id</code></td>
+<td>string</td>
+<td>Source dataset identity</td>
+</tr>
+<tr class="odd">
+<td><code>entity_id</code></td>
+<td>string</td>
+<td>Stable source entity identity</td>
+</tr>
+<tr class="even">
+<td><code>field_path</code></td>
+<td>string</td>
+<td>Field or nested path being overridden</td>
+</tr>
+<tr class="odd">
+<td><code>operation_type</code></td>
+<td>enum</td>
+<td><code>set</code> or <code>remove</code></td>
+</tr>
+<tr class="even">
+<td><code>value</code></td>
+<td><code>OverrideTypedValue</code> or null</td>
+<td>Required for <code>set</code> only</td>
+</tr>
+<tr class="odd">
+<td><code>supersedes_operation_ids</code></td>
+<td>array of UUIDs</td>
+<td>Values observed and replaced by <code>set</code></td>
+</tr>
+<tr class="even">
+<td><code>removes_operation_ids</code></td>
+<td>array of UUIDs</td>
+<td>Values observed and closed by <code>remove</code></td>
+</tr>
+<tr class="odd">
+<td><code>valid_from</code></td>
+<td>UTC timestamp</td>
+<td>Inclusive business-valid start</td>
+</tr>
+<tr class="even">
+<td><code>valid_to</code></td>
+<td>UTC timestamp or null</td>
+<td>Exclusive business-valid end</td>
+</tr>
+<tr class="odd">
+<td><code>recorded_at</code></td>
+<td>UTC timestamp</td>
+<td>Set when first persisted</td>
+</tr>
+<tr class="even">
+<td><code>payload_hash</code></td>
+<td>string</td>
+<td>Canonical hash of immutable persisted fields</td>
+</tr>
+<tr class="odd">
+<td><code>observed_canonical_value_json</code></td>
+<td>JSON or null</td>
+<td>Source value seen by the editor</td>
+</tr>
+<tr class="even">
+<td><code>comment</code></td>
+<td>string or null</td>
+<td>Optional audit comment</td>
+</tr>
+<tr class="odd">
+<td><code>metadata_json</code></td>
+<td>object</td>
+<td>Versioned extension data only</td>
+</tr>
+</tbody>
+</table>
+<p>Typed values reuse <code>OverrideTypedValue</code>; replication does not introduce domain-specific value types:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"value_type"</span><span class="fu">:</span> <span class="st">"structured_location"</span><span class="fu">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"value_json"</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"value"</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"name"</span><span class="fu">:</span> <span class="st">"Futtsu"</span><span class="fu">,</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">"country_code"</span><span class="fu">:</span> <span class="st">"JP"</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"unit"</span><span class="fu">:</span> <span class="kw">null</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>A sequential edit lists the active operations visible to its author in <code>supersedes_operation_ids</code>. A remove lists them in <code>removes_operation_ids</code>. Those explicit references are the causal information needed by the scalar override domain; replica counters and version vectors add no required behavior.</p>
+<p><code>recorded_at</code> is explicit so MariaDB, XTDB, in-memory stores, and future backends expose the same transaction-time audit field. Backend system time may also record the write, but is not used for convergence.</p>
+</section>
+<section id="convergence" class="level2">
+<h2 class="anchored" data-anchor-id="convergence">Convergence</h2>
+<p>Merging ledgers is set union by <code>operation_id</code>. An identical operation delivered twice remains one member of the set. Arrival order, backend row order, wall-clock time, and <code>recorded_at</code> do not affect projection.</p>
+<p>For one layer, feed, entity, field, and requested valid time:</p>
+<ol type="1">
+<li>Select <code>set</code> operations whose half-open interval <code>[valid_from, valid_to)</code> contains the requested time.</li>
+<li>Discard a set when its ID appears in <code>removes_operation_ids</code> on a <code>remove</code> whose <code>valid_from</code> is not later than the requested time.</li>
+<li>Discard a set when its ID appears in <code>supersedes_operation_ids</code> on another <code>set</code> whose <code>valid_from</code> is not later than the requested time. Replacement remains effective after the newer set’s optional <code>valid_to</code>; the older value does not reappear automatically.</li>
+<li>The remaining sets are the frontier. One value is clean state, multiple values are concurrent, and no values means no override.</li>
+<li>Sort concurrent values by <code>operation_id</code> for stable output only. Projection does not silently choose a winner.</li>
+</ol>
+<p>Two concurrent edits have not observed each other, so neither references the other and both survive. Two edits may both supersede the same prior operation; they still remain concurrent with each other. A remove affects only the operations its author observed, so an unseen concurrent set survives. A later set has a new operation ID and reopens the field.</p>
+<p>Business policies operate on the frontier after projection. A consuming application may expose all values, reject concurrent editing, apply precedence, or deterministically select one. Policy must not delete or mutate competing operations.</p>
+</section>
+<section id="validation-and-idempotency" class="level2">
+<h2 class="anchored" data-anchor-id="validation-and-idempotency">Validation and idempotency</h2>
+<p>The ledger validates:</p>
+<ul>
+<li>unique <code>operation_id</code>;</li>
+<li>timezone-aware UTC timestamps;</li>
+<li>bounded <code>set</code> intervals have <code>valid_to &gt; valid_from</code>;</li>
+<li><code>remove</code> requires <code>valid_to = null</code> and applies from <code>valid_from</code> onward;</li>
+<li><code>set</code> has one typed value and no <code>removes_operation_ids</code>;</li>
+<li><code>remove</code> has no value and no <code>supersedes_operation_ids</code>;</li>
+<li>every referenced operation belongs to the same layer, feed, entity, and field;</li>
+<li>referenced operations already exist or are included earlier in the same atomic batch.</li>
+</ul>
+<p>The application validates actor permissions, allowed fields, and domain value types before calling the ledger.</p>
+<p>An exact replay of an accepted <code>operation_id</code> returns the original operation and does not append a row. Reusing an operation ID with different immutable content raises an idempotency conflict. A canonical payload hash makes that comparison consistent across stores.</p>
+</section>
+<section id="library-api" class="level2">
+<h2 class="anchored" data-anchor-id="library-api">Library API</h2>
+<p>The implementation extends <code>polars_hist_db.overrides</code>; it does not create a second package.</p>
+<p>The minimum public surface is:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>append(operation) <span class="op">-&gt;</span> AppendResult</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>append_batch(operations) <span class="op">-&gt;</span> <span class="bu">list</span>[AppendResult]</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>history_for_entity(layer_id, feed_id, entity_id) <span class="op">-&gt;</span> <span class="bu">list</span>[OverrideOperation]</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>project_operations(operations, valid_at) <span class="op">-&gt;</span> <span class="bu">dict</span>[<span class="bu">str</span>, OverrideFrontier]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>AppendResult</code> reports <code>accepted</code> or <code>duplicate</code> and returns the immutable persisted operation. Batch append is atomic. <code>project_operations</code> is a pure function shared by every backend and directly testable without a database.</p>
+<p>Applications may expose these methods through HTTP, NATS, a CLI, or an embedded process. Transport and client synchronization are outside the initial library contract.</p>
+</section>
+<section id="storage" class="level2">
+<h2 class="anchored" data-anchor-id="storage">Storage</h2>
+<p>Shared operations extend the existing override table with nullable <code>format_version</code>, <code>layer_id</code>, <code>actor_id</code>, <code>supersedes_operation_ids_json</code>, <code>removes_operation_ids_json</code>, <code>recorded_at</code>, and <code>payload_hash</code> columns. Existing typed-value, source identity, validity, comment, and metadata columns are reused.</p>
+<p>The only additional uniqueness requirement is:</p>
+<pre class="text"><code>UNIQUE (operation_id)</code></pre>
+<p>An adapter must provide equivalent atomic behavior when its backend cannot express the constraint directly.</p>
+<p>The existing ingestion valid-time mapping remains authoritative:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">override_ledgers</span><span class="kw">:</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">schema</span><span class="kw">:</span><span class="at"> overrides</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">table</span><span class="kw">:</span><span class="at"> data_override_operations</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">valid_time</span><span class="kw">:</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">from_column</span><span class="kw">:</span><span class="at"> valid_from</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">to_column</span><span class="kw">:</span><span class="at"> valid_to</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>No projection rule depends on XTDB <code>_valid_from</code>, MariaDB system-version columns, or backend-specific conflict handling. The relational operation row is both the mergeable record and the SQL-queryable audit record; there is no opaque CRDT document requiring a second relational projection.</p>
+</section>
+<section id="existing-personal-ledgers" class="level2">
+<h2 class="anchored" data-anchor-id="existing-personal-ledgers">Existing personal ledgers</h2>
+<p>Existing <code>OverrideLedger</code> operations remain valid and require no migration. Their layer identity can be derived from <code>owner_user_id</code>. Their current ordered set/close projection remains appropriate when an application serializes writes and allows one active value per field.</p>
+<p>Personal and shared layers may use the same physical operation table and typed value representation. Shared projection additionally interprets explicit supersede and remove references.</p>
+</section>
+<section id="projection-and-audit" class="level2">
+<h2 class="anchored" data-anchor-id="projection-and-audit">Projection and audit</h2>
+<p>Raw operations are never updated or deleted by compaction. A materialized projection may contain field frontiers and the last consumed storage cursor. It is a disposable cache and must be reproducible by replaying the raw log.</p>
+<p>Archival is valid only when the immutable archive remains available to the rebuild path. The initial implementation retains the raw log; it has no replica tombstones or distributed garbage collection.</p>
+</section>
+<section id="worked-cases" class="level2">
+<h2 class="anchored" data-anchor-id="worked-cases">Worked cases</h2>
+<ul>
+<li>Operations A and B set one field without referencing each other. Both remain in the frontier regardless of insertion order.</li>
+<li>Operation B sets a field with <code>supersedes_operation_ids: [A]</code>. B replaces A without mutating A’s audit record.</li>
+<li>Operations B and C both supersede A but do not reference each other. B and C remain as a visible conflict.</li>
+<li>Remove R contains <code>removes_operation_ids: [A]</code> while concurrent B is unseen. A closes and B survives.</li>
+<li>Retrying A with identical content returns <code>duplicate</code>; retrying A with changed content raises an idempotency conflict.</li>
+<li>Deleting a materialized projection and replaying the operation rows produces identical state on every backend.</li>
+</ul>
+</section>
+<section id="future-crdt-engines" class="level2">
+<h2 class="anchored" data-anchor-id="future-crdt-engines">Future CRDT engines</h2>
+<p>Adopt Automerge, Yrs, or another maintained engine when clients must create changes offline and synchronize without an authoritative service, or when rich collaborative text/list structures become requirements.</p>
+<p>The operation format preserves that migration path. Each immutable operation can become an entry in a CRDT document keyed by <code>operation_id</code>; supersede and remove references retain the business conflict semantics. A CRDT engine would then own change exchange, state vectors, snapshots, and cross-language sync, while the relational operation projection would continue to serve audit and valid-time queries.</p>
+<p>Until that trigger exists, the implementation deliberately excludes replica IDs, logical clocks, version vectors, binary document state, synchronization, undo, presence, and tombstone garbage collection.</p>
+</section>
+<section id="deferred-work" class="level2">
+<h2 class="anchored" data-anchor-id="deferred-work">Deferred work</h2>
+<ul>
+<li>Implement the operation fields, pure projection, and append idempotency.</li>
+<li>Add backend contract tests for MariaDB, XTDB, and in-memory stores.</li>
+<li>Add optional materialized projection support only when replay cost requires it.</li>
+</ul>
+
+
+</section>
 
 </main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">
@@ -854,7 +1077,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>   
     <div class="nav-footer-center">
       &nbsp;
-    <div class="toc-actions"><ul><li><a href="https://github.com/jr200-labs/polars-hist-db/blob/main/examples/scratch.ipynb" class="toc-action"><i class="bi bi-github"></i>View source</a></li><li><a href="https://github.com/jr200-labs/polars-hist-db/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></div>
+    <div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/jr200-labs/polars-hist-db/blob/main/replicated-overrides.qmd" class="toc-action"><i class="bi bi-github"></i>View source</a></li><li><a href="https://github.com/jr200-labs/polars-hist-db/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></div>
     <div class="nav-footer-right">
       &nbsp;
     </div>
