@@ -831,6 +831,7 @@ def _execute_xtdb_transaction(connection: Any, statements: Iterable[str]) -> Non
         raise ValueError("XTDB transactions require a live DBAPI connection")
     if getattr(connection, "in_transaction", lambda: False)():
         connection.commit()
+    driver_connection.commit()
 
     driver_connection.execute("BEGIN READ WRITE")
     try:
