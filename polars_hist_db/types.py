@@ -14,6 +14,7 @@ from sqlalchemy import (
     Table,
 )
 import sqlalchemy
+from sqlalchemy.dialects import mysql
 from sqlalchemy.types import TypeEngine
 from sqlalchemy.sql.sqltypes import NullType
 
@@ -124,7 +125,7 @@ class PolarsType:
         type_name, params, param_dict = _TypeConversionUtils._parse_parameterised_type(
             t
         )
-        if type_name in ["VARCHAR", "TEXT"]:
+        if type_name == "VARCHAR" or type_name.endswith("TEXT"):
             return pl.Utf8()
 
         if type_name in ["NUMERIC", "DECIMAL", "DEC", "FIXED"]:
@@ -273,9 +274,15 @@ class SQLAlchemyType:
         type_name, params, param_dict = _TypeConversionUtils._parse_parameterised_type(
             t
         )
-        if type_name in ["VARCHAR", "TEXT"]:
+        if type_name == "VARCHAR":
             length = int(param_dict.get("length") or param_dict.get("a") or params[0])
             return sqlalchemy.types.VARCHAR(length=length)
+        if type_name == "TEXT":
+            return sqlalchemy.types.TEXT()
+        if type_name == "MEDIUMTEXT":
+            return mysql.MEDIUMTEXT()
+        if type_name == "LONGTEXT":
+            return mysql.LONGTEXT()
 
         if type_name in ["NUMERIC", "DECIMAL", "DEC", "FIXED"]:
             precision = int(

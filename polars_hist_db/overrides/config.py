@@ -2,7 +2,53 @@ from __future__ import annotations
 
 from polars_hist_db.config import TableColumnConfig, TableConfig, ValidTimeConfig
 
-from .types import OverrideLedgerConfig
+from .types import CrdtDocumentStoreConfig, OverrideLedgerConfig
+
+
+def build_crdt_document_table_config(config: CrdtDocumentStoreConfig) -> TableConfig:
+    table = config.documents_table
+    return TableConfig(
+        name=table,
+        schema=config.schema,
+        primary_keys=("document_id",),
+        columns=[
+            TableColumnConfig(table, "document_id", "VARCHAR(128)", nullable=False),
+            TableColumnConfig(table, "revision", "BIGINT", nullable=False),
+            TableColumnConfig(table, "state_vector_base64", "MEDIUMTEXT"),
+            TableColumnConfig(table, "snapshot_update_base64", "MEDIUMTEXT"),
+            TableColumnConfig(table, "snapshot_through_revision", "BIGINT"),
+            TableColumnConfig(table, "updated_at", "DATETIME(6)", nullable=False),
+        ],
+    )
+
+
+def build_crdt_update_table_config(config: CrdtDocumentStoreConfig) -> TableConfig:
+    table = config.updates_table
+    return TableConfig(
+        name=table,
+        schema=config.schema,
+        primary_keys=("document_id", "revision"),
+        columns=[
+            TableColumnConfig(
+                table,
+                "document_id",
+                "VARCHAR(128)",
+                nullable=False,
+                unique_constraint=["document_update_hash"],
+            ),
+            TableColumnConfig(table, "revision", "BIGINT", nullable=False),
+            TableColumnConfig(
+                table,
+                "update_hash",
+                "VARCHAR(64)",
+                nullable=False,
+                unique_constraint=["document_update_hash"],
+            ),
+            TableColumnConfig(table, "update_base64", "MEDIUMTEXT", nullable=False),
+            TableColumnConfig(table, "accepted_at", "DATETIME(6)", nullable=False),
+            TableColumnConfig(table, "metadata_json", "JSON"),
+        ],
+    )
 
 
 def build_override_table_config(config: OverrideLedgerConfig) -> TableConfig:

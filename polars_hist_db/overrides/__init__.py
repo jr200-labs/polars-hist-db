@@ -1,4 +1,9 @@
-from .config import build_override_table_config, build_override_valid_time_config
+from .config import (
+    build_crdt_document_table_config,
+    build_crdt_update_table_config,
+    build_override_table_config,
+    build_override_valid_time_config,
+)
 from .crdt import CrdtAppendResult, CrdtDocument, InMemoryCrdtDocumentStore
 from .ledger import InMemoryOverrideLedgerStore, OverrideLedger
 from .replicated import (
@@ -12,6 +17,7 @@ from .replicated import (
     validate_replicated_override_operation,
 )
 from .types import (
+    CrdtDocumentStoreConfig,
     OverrideLedgerConfig,
     OverrideOperation,
     OverrideOperationType,
@@ -29,6 +35,9 @@ __all__ = [
     "OverrideTypedValue",
     "CrdtAppendResult",
     "CrdtDocument",
+    "CrdtDocumentStoreConfig",
+    "build_crdt_document_table_config",
+    "build_crdt_update_table_config",
     "OverrideFrontier",
     "ReplicatedOverrideAppendResult",
     "ReplicatedOverrideOperation",

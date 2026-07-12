@@ -45,3 +45,10 @@ class OverrideLedgerConfig:
     table: str = "data_override_operations"
     valid_from_column: str = "valid_from"
     valid_to_column: str = "valid_to"
+
+
+@dataclass(frozen=True)
+class CrdtDocumentStoreConfig:
+    schema: str = "overrides"
+    documents_table: str = "crdt_documents"
+    updates_table: str = "crdt_updates"

@@ -156,16 +156,17 @@ The pure override projector is shared by every backend.
 Every backend exposes equivalent logical tables:
 
 ```text
-crdt_documents(document_id, revision, snapshot_bytes, state_vector,
+crdt_documents(document_id, revision, snapshot_update_base64, state_vector_base64,
                snapshot_through_revision, updated_at)
-crdt_updates(document_id, revision, update_hash, update_bytes,
+crdt_updates(document_id, revision, update_hash, update_base64,
              accepted_at, metadata_json)
 ```
 
 `(document_id, revision)` and `(document_id, update_hash)` are unique. Update
-bytes and snapshots are opaque binary values. MariaDB uses binary large-object
-columns; XTDB stores the same bytes through its supported binary value type.
-In-memory storage follows the same revision and deduplication rules.
+bytes, snapshots, and state vectors are opaque binary values at the API boundary
+and base64-encoded `MEDIUMTEXT` in relational storage. This gives MariaDB and
+XTDB the same logical schema without backend-specific blob types. In-memory
+storage follows the same revision and deduplication rules.
 
 Snapshots contain a full merged Yjs update and state vector through a known
 revision. Updates covered by a verified snapshot may be archived, but the
