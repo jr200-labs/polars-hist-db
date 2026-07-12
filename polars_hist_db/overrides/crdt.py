@@ -62,6 +62,14 @@ class AtomicInsert:
     row: Mapping[str, object]
 
 
+@dataclass(frozen=True)
+class AtomicUpdate:
+    table_config: TableConfig
+    key_values: Mapping[str, object]
+    expected_values: Mapping[str, object]
+    values: Mapping[str, object]
+
+
 class CrdtRevisionConflict(ValueError):
     pass
 
@@ -194,6 +202,7 @@ class InMemoryCrdtDocumentStore:
         *,
         guards: Sequence[RowGuard] = (),
         inserts: Sequence[AtomicInsert] = (),
+        updates: Sequence[AtomicUpdate] = (),
     ) -> CrdtCommitResult:
         prior = self._source_results.get(prepared.document_id, {}).get(
             prepared.source_update_hash
@@ -213,6 +222,7 @@ class InMemoryCrdtDocumentStore:
             )
 
         self._validate_guards(guards)
+        self._validate_updates(updates)
         insert_keys = [
             self._row_key(insert.table_config, insert.row) for insert in inserts
         ]
@@ -238,6 +248,7 @@ class InMemoryCrdtDocumentStore:
         )
         for insert, key in zip(inserts, insert_keys, strict=True):
             self._rows[key] = dict(insert.row)
+        self._apply_updates(updates)
 
         result = CrdtCommitResult(
             self.load_document(prepared.document_id),
@@ -249,6 +260,21 @@ class InMemoryCrdtDocumentStore:
             prepared.source_update_hash
         ] = result
         return result
+
+    def _validate_updates(self, updates: Sequence[AtomicUpdate]) -> None:
+        for update in updates:
+            key = self._row_key(update.table_config, update.key_values)
+            row = self._rows.get(key)
+            if row is None or any(
+                row.get(name) != value for name, value in update.expected_values.items()
+            ):
+                raise CrdtPreconditionFailed("CRDT atomic update no longer matches")
+
+    def _apply_updates(self, updates: Sequence[AtomicUpdate]) -> None:
+        for update in updates:
+            key = self._row_key(update.table_config, update.key_values)
+            row = self._rows[key]
+            row.update(update.values)
 
     def load_document(self, document_id: str) -> CrdtDocument | None:
         document = self._documents.get(document_id)

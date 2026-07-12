@@ -18,6 +18,7 @@ from .config import (
 )
 from .crdt import (
     AtomicInsert,
+    AtomicUpdate,
     CrdtCommitResult,
     CrdtDocument,
     CrdtPreconditionFailed,
@@ -87,6 +88,7 @@ class MariaDbCrdtDocumentStore:
         *,
         guards: Sequence[RowGuard] = (),
         inserts: Sequence[AtomicInsert] = (),
+        updates: Sequence[AtomicUpdate] = (),
     ) -> CrdtCommitResult:
         if (
             sha256(prepared.accepted_update).hexdigest()
@@ -108,7 +110,9 @@ class MariaDbCrdtDocumentStore:
 
         try:
             with self.connection.begin_nested():
-                return self._commit(prepared, guards=guards, inserts=inserts)
+                return self._commit(
+                    prepared, guards=guards, inserts=inserts, updates=updates
+                )
         except IntegrityError as exc:
             duplicate = self._duplicate_result(prepared)
             if duplicate is not None:
@@ -126,8 +130,10 @@ class MariaDbCrdtDocumentStore:
         *,
         guards: Sequence[RowGuard],
         inserts: Sequence[AtomicInsert],
+        updates: Sequence[AtomicUpdate],
     ) -> CrdtCommitResult:
         self._check_guards(guards)
+        self._apply_updates(updates)
         current = self.load_document(prepared.document_id)
         revision = 0 if current is None else current.revision
         if revision != prepared.base_revision:
@@ -180,6 +186,24 @@ class MariaDbCrdtDocumentStore:
             prepared.accepted_update,
             accepted=True,
         )
+
+    def _apply_updates(self, updates: Sequence[AtomicUpdate]) -> None:
+        for update in updates:
+            table = _table(self.connection, update.table_config)
+            predicates = [
+                table.c[name] == value
+                for name, value in {
+                    **update.key_values,
+                    **update.expected_values,
+                }.items()
+            ]
+            if (
+                self.connection.execute(
+                    table.update().where(and_(*predicates)).values(update.values)
+                ).rowcount
+                != 1
+            ):
+                raise CrdtPreconditionFailed("CRDT atomic update no longer matches")
 
     def _duplicate_result(
         self, prepared: PreparedCrdtCommit

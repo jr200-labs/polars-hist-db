@@ -7,6 +7,7 @@ from .config import (
 )
 from .crdt import (
     AtomicInsert,
+    AtomicUpdate,
     CrdtAppendResult,
     CrdtCommitResult,
     CrdtDocument,
@@ -44,6 +45,7 @@ __all__ = [
     "MariaDbCrdtDocumentStore",
     "XtdbCrdtDocumentStore",
     "AtomicInsert",
+    "AtomicUpdate",
     "InMemoryReplicatedOverrideLedger",
     "OverrideLedger",
     "OverrideLedgerConfig",

@@ -27,6 +27,7 @@ from .config import (
 )
 from .crdt import (
     AtomicInsert,
+    AtomicUpdate,
     CrdtCommitResult,
     CrdtDocument,
     CrdtPreconditionFailed,
@@ -85,6 +86,7 @@ class XtdbCrdtDocumentStore:
         *,
         guards: Sequence[RowGuard] = (),
         inserts: Sequence[AtomicInsert] = (),
+        updates: Sequence[AtomicUpdate] = (),
     ) -> CrdtCommitResult:
         if (
             sha256(prepared.accepted_update).hexdigest()
@@ -108,6 +110,7 @@ class XtdbCrdtDocumentStore:
         statements = [
             self._source_assertion(prepared),
             *(self._guard_assertion(guard) for guard in guards),
+            *(self._update_assertion(update) for update in updates),
             self._revision_assertion(prepared),
             _insert_statement(
                 self.documents,
@@ -134,6 +137,7 @@ class XtdbCrdtDocumentStore:
                 for operation in prepared.operations
             ),
             *(_insert_statement(insert.table_config, insert.row) for insert in inserts),
+            *(_update_statement(update) for update in updates),
         ]
         try:
             _execute_xtdb_transaction(self.connection, statements)
@@ -146,7 +150,9 @@ class XtdbCrdtDocumentStore:
                 raise CrdtRevisionConflict(
                     "CRDT document revision changed during commit"
                 ) from None
-            if any(not self._guard_matches(guard) for guard in guards):
+            if any(not self._guard_matches(guard) for guard in guards) or any(
+                not self._update_matches(update) for update in updates
+            ):
                 raise CrdtPreconditionFailed(
                     "CRDT commit guard no longer matches"
                 ) from None
@@ -207,6 +213,22 @@ class XtdbCrdtDocumentStore:
             self._rows(
                 f"SELECT 1 FROM {_table_name(guard.table_config)} "
                 f"WHERE {_where(guard.table_config, {**guard.key_values, **guard.expected_values})}"
+            )
+        )
+
+    def _update_assertion(self, update: AtomicUpdate) -> str:
+        return (
+            "ASSERT EXISTS (SELECT 1 FROM "
+            f"{_table_name(update.table_config)} WHERE "
+            f"{_where(update.table_config, {**update.key_values, **update.expected_values})}), "
+            "'CRDT atomic update failed'"
+        )
+
+    def _update_matches(self, update: AtomicUpdate) -> bool:
+        return bool(
+            self._rows(
+                f"SELECT 1 FROM {_table_name(update.table_config)} WHERE "
+                f"{_where(update.table_config, {**update.key_values, **update.expected_values})}"
             )
         )
 
@@ -308,6 +330,18 @@ def _insert_statement(
         _literal(value, types[name]) for name, value in values.items()
     )
     return f"INSERT INTO {_table_name(config)} ({column_sql}) VALUES ({value_sql})"
+
+
+def _update_statement(update: AtomicUpdate) -> str:
+    columns = {column.name: column for column in update.table_config.columns}
+    assignments = ", ".join(
+        f"{_xtdb_column_identifier(name)} = {_literal(value, columns[name].data_type)}"
+        for name, value in update.values.items()
+    )
+    return (
+        f"UPDATE {_table_name(update.table_config)} SET {assignments} WHERE "
+        f"{_where(update.table_config, {**update.key_values, **update.expected_values})}"
+    )
 
 
 def _document_id(config: TableConfig, row: Mapping[str, object]) -> object:

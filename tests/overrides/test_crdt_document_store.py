@@ -8,6 +8,7 @@ from typing import Any
 from polars_hist_db.config import TableColumnConfig, TableConfig
 from polars_hist_db.overrides import (
     AtomicInsert,
+    AtomicUpdate,
     CrdtPreconditionFailed,
     CrdtRevisionConflict,
     InMemoryCrdtDocumentStore,
@@ -157,9 +158,13 @@ def test_prepared_commit_checks_revision_guards_and_atomic_inserts():
         prepared,
         guards=[RowGuard(table, {"id": "layer-1"}, {"version": 2})],
         inserts=[AtomicInsert(table, {"id": "outbox-1"})],
+        updates=[
+            AtomicUpdate(table, {"id": "layer-1"}, {"version": 2}, {"version": 3})
+        ],
     )
 
     assert result.accepted is True
+    assert store._rows[store._row_key(table, {"id": "layer-1"})]["version"] == 3
     stale = prepare_crdt_update(
         "document-1",
         None,
@@ -180,5 +185,15 @@ def test_prepared_commit_checks_revision_guards_and_atomic_inserts():
     with pytest.raises(CrdtPreconditionFailed):
         store.commit(
             rejected,
-            guards=[RowGuard(table, {"id": "layer-1"}, {"version": 3})],
+            guards=[RowGuard(table, {"id": "layer-1"}, {"version": 2})],
         )
+
+    with pytest.raises(ValueError, match="atomic insert"):
+        store.commit(
+            rejected,
+            updates=[
+                AtomicUpdate(table, {"id": "layer-1"}, {"version": 3}, {"version": 4})
+            ],
+            inserts=[AtomicInsert(table, {"id": "outbox-1"})],
+        )
+    assert store._rows[store._row_key(table, {"id": "layer-1"})]["version"] == 3
