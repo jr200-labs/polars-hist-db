@@ -12,6 +12,7 @@ from polars_hist_db.backends.xtdb import (
     XtdbAdbcDataframeOps,
     XtdbDataframeOps,
     XtdbTableConfigOps,
+    _xtdb_cast_type,
     _xtdb_declared_columns,
 )
 from polars_hist_db.config import (
@@ -22,6 +23,10 @@ from polars_hist_db.config import (
 )
 
 _NON_TEMPORAL_VALID_FROM = _XTDB_NON_TEMPORAL_VALID_FROM
+
+
+def test_xtdb_casts_mediumtext_as_text():
+    assert _xtdb_cast_type("MEDIUMTEXT") == "TEXT"
 
 
 def test_xtdb_create_engine_includes_configured_credentials(monkeypatch):

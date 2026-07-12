@@ -1,0 +1,50 @@
+from sqlalchemy import MetaData, Table
+from sqlalchemy.schema import CreateTable
+from sqlalchemy.dialects import mysql
+
+from polars_hist_db.overrides import (
+    CrdtDocumentStoreConfig,
+    build_crdt_document_table_config,
+    build_crdt_update_table_config,
+)
+
+
+def test_crdt_document_tables_use_portable_base64_payload_columns():
+    config = CrdtDocumentStoreConfig()
+    documents = build_crdt_document_table_config(config)
+    updates = build_crdt_update_table_config(config)
+
+    assert documents.name == "crdt_documents"
+    assert documents.primary_keys == ("document_id",)
+    assert {column.name for column in documents.columns} == {
+        "document_id",
+        "revision",
+        "state_vector_base64",
+        "snapshot_update_base64",
+        "snapshot_through_revision",
+        "updated_at",
+    }
+    assert {
+        column.name for column in documents.columns if column.data_type == "MEDIUMTEXT"
+    } == {"state_vector_base64", "snapshot_update_base64"}
+    assert updates.primary_keys == ("document_id", "revision")
+    assert (
+        next(
+            column for column in updates.columns if column.name == "update_base64"
+        ).data_type
+        == "MEDIUMTEXT"
+    )
+
+
+def test_crdt_document_tables_compile_mediumtext_for_mariadb():
+    config = CrdtDocumentStoreConfig()
+    table_config = build_crdt_document_table_config(config)
+    table = Table(
+        table_config.name,
+        MetaData(schema=table_config.schema),
+        *table_config.build_sqlalchemy_columns(is_delta_table=False),
+    )
+
+    ddl = str(CreateTable(table).compile(dialect=mysql.dialect()))
+
+    assert "MEDIUMTEXT" in ddl

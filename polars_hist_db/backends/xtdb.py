@@ -388,7 +388,7 @@ def _xtdb_id_policy(table_config: TableConfig) -> str:
 
 def _xtdb_cast_type(data_type: str) -> str:
     normalized = data_type.upper()
-    if normalized.startswith(("VARCHAR", "CHAR", "TEXT")):
+    if normalized.startswith(("VARCHAR", "CHAR")) or "TEXT" in normalized:
         return "TEXT"
     if normalized in {"DOUBLE", "DOUBLE PRECISION"}:
         return "DOUBLE PRECISION"
