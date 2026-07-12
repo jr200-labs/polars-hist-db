@@ -74,17 +74,19 @@ On reconnect they exchange state vectors and only missing Yjs updates. The
 library stores opaque update bytes and can reconstruct or merge a document with
 `pycrdt`; it does not define HTTP, WebSocket, NATS, or peer-to-peer transport.
 
-The accepting service must serialize validation per document:
+The accepting service uses optimistic compare-and-swap on the document
+revision. It does not require a cross-backend lock abstraction:
 
-1. lock the document revision;
-2. apply the candidate update to the latest accepted state in a temporary
-   document;
-3. validate newly added operation entries and reject mutation/deletion of
-   existing entries;
-4. authorize the current principal and document state;
-5. finalize server-owned operation fields;
-6. atomically persist the resulting update and relational operation projection;
-7. release the revision and broadcast the accepted update.
+1. load the latest accepted document and revision;
+2. apply the source update to that state in a temporary document;
+3. reject mutation/deletion of existing operations and validate new operations;
+4. authorize the current principal against the resulting document state;
+5. replace provisional operations with server-finalized entries;
+6. derive one accepted update relative to the state loaded in step 1;
+7. atomically compare-and-swap the revision, append that update, and insert its
+   relational operation projection;
+8. on a revision conflict, repeat from step 1 or return a retriable conflict;
+9. broadcast only after the commit succeeds.
 
 Rejected updates are never broadcast or persisted. The client keeps them in a
 quarantined local branch so work can be copied or retargeted, but it must reset
@@ -131,42 +133,153 @@ The reusable validator enforces:
 Applications additionally validate the authenticated actor, permissions,
 allowed fields, document lifecycle, and domain value types.
 
+## Acceptance and repository boundaries
+
+The implementation has three boundaries rather than one backend-shaped store:
+
+1. A pure acceptance function applies and validates Yjs updates with `pycrdt`.
+   It produces a `PreparedCrdtCommit` containing the base revision, source and
+   accepted update hashes, accepted update bytes, resulting state vector, and
+   finalized operation rows.
+2. The application authorizes the prepared change and supplies any row guards
+   and deterministic insert-only side effects required in the same transaction.
+   Authentication and field policy do not enter the persistence adapter.
+3. A repository atomically commits the prepared change using compare-and-swap.
+
+The source update is the untrusted client input. The accepted update is a
+server-origin update containing both the source change and causal replacement
+of provisional operation entries with finalized values. It is generated
+relative to the previously accepted state, so applying it once brings any
+replica at that state to the accepted state. Replaying the source update later
+cannot replace its causal server descendant.
+
+Client-supplied `actor_id`, `recorded_at`, or `payload_hash` values are rejected.
+The server supplies one actor and acceptance timestamp for the request and
+computes each operation payload hash after finalization. A draft-only update is
+valid and produces no relational operation rows.
+
+The repository contract is intentionally small:
+
+```python
+load_document(document_id) -> CrdtDocument | None
+commit(prepared_commit, guards=(), inserts=()) -> CrdtCommitResult
+write_snapshot(document_id, expected_revision) -> CrdtSnapshot
+```
+
+The optional atomic extensions are deliberately constrained:
+
+```python
+RowGuard(table_config, key_values, expected_values)
+AtomicInsert(table_config, row)
+```
+
+A guard requires one current row matching its key and expected values. Typical
+uses are an active layer revision or the source row/version used during
+validation. An atomic insert adds a row with a deterministic primary key;
+typical use is a transactional outbox event. There are no arbitrary SQL
+callbacks, cross-database participants, or generic update/delete side effects.
+
+`commit` has five portable outcomes:
+
+- accepted: revision advances exactly once and all rows are committed;
+- duplicate: the same source update was already accepted and revision does not
+  advance;
+- revision conflict: another commit won the compare-and-swap and the caller
+  must re-prepare against the latest document;
+- precondition failed: an application guard no longer matches and the caller
+  must reauthorize or revalidate;
+- invalid/corrupt: validation, immutable-operation, hash, or reconstruction
+  invariants failed and nothing is written.
+
+Exact source bytes use `source_update_hash` as a fast retry key. A differently
+encoded Yjs update that adds no structs and leaves the state vector unchanged is
+also a no-op, but need not add a persistent hash alias.
+An exact retry returns the original accepted result without re-running write
+guards or insert side effects. The application still authorizes document access
+before returning that result.
+
+The result includes the accepted update and new revision, so a service can
+respond and broadcast without an immediate database read. An adapter may also
+return an opaque consistency token. XTDB callers crossing connections use its
+await token; MariaDB normally needs no token.
+
+The application-level retry loop is the same for every backend:
+
+```python
+while True:
+    current = repository.load_document(document_id)
+    prepared = prepare_update(current, source_update, actor_id, recorded_at)
+    guards, inserts = authorize_and_build_side_effects(prepared)
+    result = repository.commit(prepared, guards=guards, inserts=inserts)
+    if not result.revision_conflict:
+        return result
+```
+
+Authorization to access the document happens before returning either accepted
+or duplicate content and is repeated after each re-prepare. Repeated revision
+conflicts may be returned to the caller rather than retried without bound.
+Malformed updates, client-supplied authoritative fields, and application-defined
+size or operation-count limits are rejected before persistence. Rejected source
+bytes are not retained by this library.
+
 ## Library API
 
 CRDT support is an optional `crdt` extra so ingestion-only users do not install
 Yrs bindings.
 
 ```python
-load_document(document_id) -> CrdtDocument
-append_update(document_id, update, expected_revision) -> AppendUpdateResult
-diff(document_id, state_vector) -> bytes
-write_snapshot(document_id) -> CrdtSnapshot
+prepare_update(current_document, source_update, actor_id, recorded_at)
+    -> PreparedCrdtCommit
+load_document(document_id) -> CrdtDocument | None
+commit(prepared_commit, guards=(), inserts=()) -> CrdtCommitResult
+diff(document, state_vector) -> bytes
+write_snapshot(document_id, expected_revision) -> CrdtSnapshot
 
 validate_override_changes(before, after) -> list[OverrideOperation]
 project_operations(operations, valid_at) -> dict[str, OverrideFrontier]
 ```
 
-`append_update` deduplicates exact update bytes, advances a monotonic storage
-revision, and supports an application transaction that also writes relational
-projections. `diff` returns the Yjs update missing from a supplied state vector.
-The pure override projector is shared by every backend.
+`prepare_update` is backend-independent and performs all CRDT and immutable
+operation checks. `commit` deduplicates the source update, advances a monotonic
+storage revision, evaluates row guards, and writes relational projections and
+insert-only side effects in the same transaction.
+`diff` returns the Yjs update missing from a supplied state vector. The pure
+override projector is shared by every backend.
 
 ## Storage
 
 Every backend exposes equivalent logical tables:
 
 ```text
-crdt_documents(document_id, revision, snapshot_update_base64, state_vector_base64,
-               snapshot_through_revision, updated_at)
-crdt_updates(document_id, revision, update_hash, update_base64,
-             accepted_at, metadata_json)
+crdt_documents(document_id, revision, head_state_vector_base64,
+               snapshot_update_base64, snapshot_update_hash,
+               snapshot_state_vector_base64, snapshot_through_revision,
+               updated_at)
+crdt_updates(document_id, revision, source_update_hash, accepted_update_hash,
+             update_base64, accepted_at, metadata_json)
 ```
 
-`(document_id, revision)` and `(document_id, update_hash)` are unique. Update
-bytes, snapshots, and state vectors are opaque binary values at the API boundary
-and base64-encoded `MEDIUMTEXT` in relational storage. This gives MariaDB and
-XTDB the same logical schema without backend-specific blob types. In-memory
-storage follows the same revision and deduplication rules.
+`(document_id, revision)` and `(document_id, source_update_hash)` are unique.
+`source_update_hash` is the SHA-256 idempotency key for the untrusted incoming
+bytes. `accepted_update_hash` is the SHA-256 checksum of `update_base64` after
+server finalization. These hashes must be separate because finalization changes
+the Yjs update bytes. Update bytes, snapshots, and state vectors are opaque
+binary values at the API boundary and base64-encoded `MEDIUMTEXT` in relational
+storage. This gives MariaDB and XTDB the same logical schema without
+backend-specific blob types. In-memory storage follows the same revision and
+deduplication rules.
+
+The merged table contract's single `update_hash` and ambiguous
+`state_vector_base64` are therefore transitional. Before a persistent adapter
+is released, the update hash must split into the two hashes above and the state
+vector must split into head and snapshot vectors. There is no data migration
+requirement until such an adapter has written rows.
+
+`crdt_updates` is the append-only synchronization log. `crdt_documents` is its
+rebuildable head/snapshot record, not an independent source of truth. Each
+accepted commit updates the head revision and head state vector. Snapshot fields
+may lag the head revision and explicitly declare the revision they cover.
+`snapshot_update_hash` checks the stored snapshot bytes before they are parsed.
 
 Snapshots contain a full merged Yjs update and state vector through a known
 revision. Updates covered by a verified snapshot may be archived, but the
@@ -185,11 +298,127 @@ override_ledgers:
       to_column: valid_to
 ```
 
+Replicated projection rows add nullable `crdt_document_id` and
+`crdt_document_revision` provenance columns. They remain null for existing
+personal-ledger rows. The provenance makes per-document comparison and repair
+possible without inferring document membership from application-owned layer
+names.
+
+The portable repository receives the existing two config objects:
+
+```python
+document_store = CrdtDocumentStoreConfig(
+    schema="overrides",
+    documents_table="crdt_documents",
+    updates_table="crdt_updates",
+)
+projection = OverrideLedgerConfig(
+    schema="overrides",
+    table="data_override_operations",
+    valid_from_column="valid_from",
+    valid_to_column="valid_to",
+)
+repository = backend.crdt_documents(connection, document_store, projection)
+```
+
+Backend selection remains part of the existing database configuration. No CRDT
+config contains `mariadb` or `xtdb`. The document, update, and projection tables
+must be reachable through one backend connection and one atomic transaction.
+Cross-database projection is outside this contract; it would require a durable
+outbox and an explicitly eventually-consistent projection.
+
 A CRDT update may contain several valid-time operations, so the update's
 acceptance time must never be used as their business valid time. CRDT storage
 is the synchronization source of truth; normalized operation rows are the SQL
 query/audit projection and must be reproducible from accepted snapshots and
 updates.
+
+## Atomic commit by backend
+
+Both adapters implement the same compare-and-swap behavior, but use native
+transaction primitives. The library does not introduce a database-neutral SQL
+dialect or transaction wrapper; the repository outcomes are portable, while
+the statements that guarantee them are backend-specific.
+
+For MariaDB, one transaction:
+
+1. checks `(document_id, source_update_hash)` for an exact retry;
+2. locks and verifies each application guard row;
+3. inserts the initial document head or conditionally updates it with
+   `WHERE revision = base_revision`;
+4. inserts the immutable update row, finalized operation rows, and deterministic
+   side-effect rows;
+5. commits only if every guard, insert, and revision comparison succeeds.
+
+The document primary key, update primary key, source-hash unique constraint,
+and operation primary key enforce races. A failed conditional update or unique
+constraint rolls back the transaction; the adapter then distinguishes an exact
+retry from a genuine revision or operation-ID conflict.
+
+[XTDB DML transactions](https://docs.xtdb.com/reference/main/sql/txs.html) are
+serialized and atomic but not interactive, and XTDB has no uniqueness
+constraints beyond `_id`. Preparation therefore happens against a read
+snapshot, followed by one DML transaction containing:
+
+1. `ASSERT` that the source hash has not already been accepted;
+2. `ASSERT` every application row guard;
+3. `ASSERT` that the current document revision equals `base_revision`, or that
+   no head exists for revision zero;
+4. the document-head write, immutable update insert, operation inserts, and
+   deterministic side-effect inserts.
+
+The update `_id` is derived from `(document_id, revision)` and each operation
+uses `operation_id` as `_id`. Source-hash uniqueness is enforced by the
+transaction assertion. Because XTDB DML transactions are serialized and
+atomic, concurrent assertions cannot both commit. If an assertion fails, the
+adapter rereads the source hash, application guards, and document revision. A
+source match becomes duplicate, a changed guard becomes precondition failed,
+and a changed revision becomes revision conflict. Any remaining assertion
+failure is invalid/corrupt rather than guessed. The pgwire path waits for
+transaction indexing and exposes the await token when later reads use another
+connection.
+
+XTDB operation inserts explicitly map business `valid_from` and `valid_to` to
+`_valid_from` and `_valid_to`; acceptance/system time must never replace those
+values. MariaDB stores the same business timestamps in the configured columns.
+
+## Recovery and repair
+
+A process crash before commit leaves no rows; a crash after commit leaves the
+update, head revision, and operation projection together. Broadcasting is
+post-commit and may be repeated because clients merge accepted updates
+idempotently.
+
+If a connection fails while the commit outcome is unknown, the caller retries
+the same source bytes. A source-hash lookup resolves the ambiguity as either the
+existing accepted result or a new compare-and-swap attempt.
+
+On load, the adapter rebuilds from the latest snapshot plus later updates and
+verifies the resulting state vector and accepted-update hashes. Missing or
+invalid bytes are reported as corruption rather than skipped. The operation
+projection can be rebuilt by extracting finalized entries from the reconstructed
+`operations` map and comparing payload hashes. Repair replaces derived head and
+projection state; it never rewrites the accepted update log.
+
+Snapshot creation is a separate compare-and-swap operation. It reconstructs and
+verifies a document through revision N, then updates snapshot fields only if the
+head is still at N. Losing that race is harmless and the snapshot can be retried.
+Update archival remains deferred until a verified snapshot, restore test, and
+retention policy exist.
+
+## Sync cases
+
+| Case | Required result |
+| --- | --- |
+| First update | Create revision 1, append one accepted update |
+| Exact source retry | Return existing accepted result; no new rows |
+| Concurrent offline drafts | Re-prepare loser against latest state; both edits converge |
+| Concurrent published values | Persist both operation IDs; projector reports a conflict |
+| Mutation/deletion of published operation | Reject before commit |
+| Duplicate operation ID with different payload | Reject and write nothing |
+| Draft-only collaborative text | Persist CRDT update; write no operation rows |
+| Projection insert failure | Roll back update and head revision |
+| Broadcast failure after commit | Retry broadcast; do not recommit |
 
 ## Existing personal ledgers
 
@@ -204,10 +433,18 @@ conventions apply, with layer identity derived from the owner.
   loaded by Yjs.
 - Offline updates from two replicas converge after reconnect in either order.
 - Duplicate updates do not advance logical content or create duplicate rows.
+- Source-update retries deduplicate independently of accepted-update checksums.
+- Two commits prepared at one revision produce one acceptance and one retriable
+  revision conflict, never a partial write.
 - Mutation or deletion of a published operation is rejected.
 - Undo affects local draft/text changes but cannot erase published operations.
 - Awareness data is not persisted.
 - Snapshots plus later updates reproduce the same document and override rows.
+- Projection failure rolls back the document head and update append.
+- Missing or corrupt accepted updates fail reconstruction instead of being
+  silently skipped.
+- Head and snapshot state vectors are independently verified at their declared
+  revisions.
 - MariaDB, XTDB, and in-memory adapters expose equivalent revision, binary,
   snapshot, and valid-time behavior.
 
@@ -219,3 +456,5 @@ conventions apply, with layer identity derived from the owner.
   server to inspect accepted documents.
 - A rich-text editor binding. Y.Text is the portable data model; applications
   select an editor appropriate to their UI.
+- Document deletion, legal erasure, and retention policy. Applications own
+  document lifecycle; update archival is not enabled by the initial adapter.
