@@ -21,12 +21,29 @@ from polars_hist_db.config import (
     TableConfig,
     ValidTimeConfig,
 )
+from polars_hist_db.overrides import CrdtDocumentStoreConfig, OverrideLedgerConfig
 
 _NON_TEMPORAL_VALID_FROM = _XTDB_NON_TEMPORAL_VALID_FROM
 
 
 def test_xtdb_casts_mediumtext_as_text():
     assert _xtdb_cast_type("MEDIUMTEXT") == "TEXT"
+
+
+def test_xtdb_backend_builds_crdt_document_store(monkeypatch):
+    class Store:
+        def __init__(self, connection, document_store, projection):
+            self.connection = connection
+            self.document_store = document_store
+            self.projection = projection
+
+    monkeypatch.setattr("polars_hist_db.overrides.xtdb.XtdbCrdtDocumentStore", Store)
+
+    store = XtdbBackend().crdt_documents(
+        object(), CrdtDocumentStoreConfig(), OverrideLedgerConfig()
+    )
+
+    assert isinstance(store, Store)
 
 
 def test_xtdb_create_engine_includes_configured_credentials(monkeypatch):

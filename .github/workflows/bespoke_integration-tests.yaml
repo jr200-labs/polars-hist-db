@@ -79,7 +79,7 @@ jobs:
           docker logs nats | tail -20
 
       - name: Sync deps
-        run: uv sync --group dev
+        run: uv sync --group dev --extra xtdb
 
       - name: Run integration tests
         run: uv run pytest -m integration -v

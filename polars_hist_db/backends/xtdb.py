@@ -7,7 +7,7 @@ import logging
 import math
 import re
 from urllib.parse import quote
-from typing import Any, Iterable, Literal, Mapping, Optional, cast
+from typing import TYPE_CHECKING, Any, Iterable, Literal, Mapping, Optional, cast
 
 import polars as pl
 import pyarrow as pa
@@ -27,6 +27,10 @@ from ..pipeline_projection import project_staged_pipeline_item_dataframe
 from ..types import PolarsType
 from .config import DbEngineConfig
 from .temporal import system_time_hint_clause
+
+if TYPE_CHECKING:
+    from ..overrides import CrdtDocumentStoreConfig, OverrideLedgerConfig
+    from ..overrides.xtdb import XtdbCrdtDocumentStore
 
 LOGGER = logging.getLogger(__name__)
 
@@ -817,6 +821,25 @@ def _execute_xtdb_dml(
             return _execute_xtdb_dml(connection, sql, rows, system_time=None)
         raise
     return row_count
+
+
+def _execute_xtdb_transaction(connection: Any, statements: Iterable[str]) -> None:
+    """Submit one serialized XTDB DML transaction."""
+
+    driver_connection = _driver_connection(connection)
+    if driver_connection is None:
+        raise ValueError("XTDB transactions require a live DBAPI connection")
+    if getattr(connection, "in_transaction", lambda: False)():
+        connection.commit()
+
+    driver_connection.execute("BEGIN READ WRITE")
+    try:
+        for statement in statements:
+            driver_connection.execute(statement)
+        driver_connection.commit()
+    except Exception:
+        driver_connection.rollback()
+        raise
 
 
 def _xtdb_sql_literal(value: Any, cast_type: str) -> str:
@@ -2170,6 +2193,16 @@ class XtdbBackend:
 
     def table_configs(self, connection: Any) -> XtdbTableConfigOps:
         return XtdbTableConfigOps(connection)
+
+    def crdt_documents(
+        self,
+        connection: Any,
+        document_store: "CrdtDocumentStoreConfig",
+        projection: "OverrideLedgerConfig",
+    ) -> "XtdbCrdtDocumentStore":
+        from ..overrides.xtdb import XtdbCrdtDocumentStore
+
+        return XtdbCrdtDocumentStore(connection, document_store, projection)
 
     def staging(
         self,

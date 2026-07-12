@@ -19,6 +19,7 @@ from .crdt import (
 )
 from .ledger import InMemoryOverrideLedgerStore, OverrideLedger
 from .sql import MariaDbCrdtDocumentStore
+from .xtdb import XtdbCrdtDocumentStore
 from .replicated import (
     InMemoryReplicatedOverrideLedger,
     OverrideFrontier,
@@ -41,6 +42,7 @@ __all__ = [
     "InMemoryOverrideLedgerStore",
     "InMemoryCrdtDocumentStore",
     "MariaDbCrdtDocumentStore",
+    "XtdbCrdtDocumentStore",
     "AtomicInsert",
     "InMemoryReplicatedOverrideLedger",
     "OverrideLedger",
