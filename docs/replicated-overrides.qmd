@@ -6,8 +6,9 @@ title: "Yjs-compatible replicated documents and overrides"
 
 `polars-hist-db` provides backend-independent persistence for Yjs-compatible
 document updates and snapshots, plus a reusable immutable operation model for
-valid-time overrides. Applications own authentication, authorization,
-transport, document membership, field declarations, and business conflict
+valid-time overrides. An optional access registry persists document lifecycle
+and opaque group-to-role grants. Applications own authentication,
+authorization policy, transport, field declarations, and business conflict
 policy.
 
 The implementation uses the maintained Yjs/Yrs ecosystem instead of
@@ -162,7 +163,7 @@ The repository contract is intentionally small:
 
 ```python
 load_document(document_id) -> CrdtDocument | None
-commit(prepared_commit, guards=(), inserts=()) -> CrdtCommitResult
+commit(prepared_commit, guards=(), inserts=(), updates=()) -> CrdtCommitResult
 write_snapshot(document_id, expected_revision) -> CrdtSnapshot
 ```
 
@@ -171,13 +172,15 @@ The optional atomic extensions are deliberately constrained:
 ```python
 RowGuard(table_config, key_values, expected_values)
 AtomicInsert(table_config, row)
+AtomicUpdate(table_config, key_values, expected_values, values)
 ```
 
 A guard requires one current row matching its key and expected values. Typical
 uses are an active layer revision or the source row/version used during
 validation. An atomic insert adds a row with a deterministic primary key;
-typical use is a transactional outbox event. There are no arbitrary SQL
-callbacks, cross-database participants, or generic update/delete side effects.
+typical use is a transactional outbox event. An atomic update is a constrained
+compare-and-swap used for a server-authoritative lifecycle revision in the same
+commit. There are no arbitrary SQL callbacks or cross-database participants.
 
 `commit` has five portable outcomes:
 
@@ -209,8 +212,10 @@ The application-level retry loop is the same for every backend:
 while True:
     current = repository.load_document(document_id)
     prepared = prepare_update(current, source_update, actor_id, recorded_at)
-    guards, inserts = authorize_and_build_side_effects(prepared)
-    result = repository.commit(prepared, guards=guards, inserts=inserts)
+    guards, inserts, updates = authorize_and_build_side_effects(prepared)
+    result = repository.commit(
+        prepared, guards=guards, inserts=inserts, updates=updates
+    )
     if not result.revision_conflict:
         return result
 ```
@@ -222,6 +227,184 @@ Malformed updates, client-supplied authoritative fields, and application-defined
 size or operation-count limits are rejected before persistence. Rejected source
 bytes are not retained by this library.
 
+## Document access registry
+
+### Purpose and boundary
+
+Collaborative applications need durable document lifecycle and membership state
+to authorize a CRDT update. Keeping that state only in application code would
+duplicate MariaDB and XTDB compare-and-swap behavior and make the CRDT commit
+guard impossible to construct portably.
+
+The optional access registry therefore stores only:
+
+- immutable document identity, name, and description;
+- active or archived status and a monotonic access revision;
+- server-derived creation and archival audit fields;
+- audit-preserving group grants with an opaque application-defined role string;
+- grant and revocation audit fields.
+
+It does not verify tokens, interpret group names, rank roles, decide
+capabilities, or expose HTTP/WebSocket/NATS APIs. Those remain application
+policy. It is not a general IAM framework.
+
+### API
+
+```python
+config = DocumentAccessStoreConfig(
+    schema="overrides",
+    documents_table="document_access",
+    grants_table="document_access_grants",
+    commands_table="document_access_commands",
+)
+store = backend.document_access(connection, config)
+
+store.create(document_id, name, description, actor_id, recorded_at,
+             initial_grants=(), idempotency_key=command_id)
+store.get(document_id)
+store.list_for_groups(groups, include_archived=False)
+store.list_all(include_archived=False)
+store.grants(document_id, include_revoked=False)
+store.grant(document_id, grant_id, group, role, actor_id, recorded_at,
+            expected_revision, idempotency_key=command_id)
+store.revoke(document_id, group, actor_id, recorded_at, expected_revision,
+             idempotency_key=command_id)
+store.archive(document_id, actor_id, recorded_at, expected_revision,
+              idempotency_key=command_id)
+store.guard(document_id, expected_revision) -> RowGuard
+```
+
+`create`, `grant`, `revoke`, and `archive` return `AccessMutationResult` with
+the authoritative document, active grants, and one of `accepted` or
+`duplicate`. Exact command retries return the original result. Reusing an
+idempotency key with different content raises `IdempotencyConflict`. Unknown
+documents, archived documents, stale revisions, and missing active grants raise
+distinct typed errors. Applications map those errors to non-disclosing
+transport responses.
+
+The application supplies actor identity only after token verification and uses
+its authoritative clock for `recorded_at`; no mutation accepts actor or audit
+fields inside an opaque payload. The application also validates names, allowed
+role values, caller permissions, and group naming policy. The store validates
+required identifiers, timezone-aware audit timestamps, status transitions,
+uniqueness, and expected revisions.
+
+`list_all` is intentionally authorization-neutral. It exists for applications
+whose verified global administrators or auditors are not represented by a
+document grant. Calling it before application authorization is a security bug.
+
+### Use cases
+
+- Create a collaborative document and its initial group grants atomically.
+- List documents reachable through the caller's current identity groups.
+- Add, revoke, or later re-add a group without losing grant provenance.
+- Archive a document irreversibly while preserving readable history.
+- Guard a CRDT acceptance transaction against a racing revocation or archive.
+- Retry a lifecycle command after an unknown network outcome without applying
+  it twice.
+
+### Tables
+
+`document_access` contains:
+
+| Column | Rule |
+| --- | --- |
+| `document_id` | immutable primary key |
+| `name`, `normalized_name` | immutable display name and unique case-folded key |
+| `description` | optional immutable text |
+| `status` | `active` or `archived` |
+| `revision` | starts at 1; advances for every grant/lifecycle mutation |
+| `created_by`, `created_at` | server-derived |
+| `archived_by`, `archived_at` | both null until archive |
+
+`document_access_grants` is audit-preserving. Its primary key is `grant_id`.
+`active_group_key` is a normalized `(document_id, group_name)` key while active
+and null after revocation; a unique constraint/assertion prevents two active
+grants for one group while allowing later re-grant. Revocation closes the
+current row through backend temporal versioning and never hard-deletes it. The
+table contains role, grant/revoke actors and timestamps, and the document
+revision at which each change became authoritative.
+
+`document_access_commands` records `idempotency_key`, payload hash, result
+revision, command kind, recorded time, and the serialized backend-neutral
+`AccessMutationResult`. It contains no token or raw request payload. Storing the
+result allows an exact retry to return the original response even after later
+access mutations.
+
+All three tables share the CRDT document/projection connection. Cross-database
+membership and CRDT writes are unsupported.
+
+### Concurrency and CRDT integration
+
+Every mutation checks `status = active` and `revision = expected_revision`,
+applies its grant/lifecycle row, advances the document revision once, and
+records the command result in one transaction. A concurrent grant, revocation,
+or archive permits exactly one winner. The loser reloads and reauthorizes; it
+never retries using stale permissions.
+
+Before accepting a CRDT update, an application reads the document and active
+grants, authorizes the caller, and passes `store.guard(document_id, revision)`
+to the existing prepared CRDT commit. The same access row is checked inside the
+CRDT transaction. An archive or revocation racing the update therefore either
+commits first and rejects the update, or commits after the accepted update at a
+later access revision.
+
+An access mutation does not edit CRDT bytes, projected override operations, or
+public outbox data. Document deletion and unarchive are deliberately absent.
+
+### Backend semantics
+
+MariaDB locks the access row, checks the expected revision, writes the grant or
+archive mutation, and updates the revision in one transaction. Unique indexes
+enforce document names, command IDs, and active grants.
+
+XTDB submits one asserted DML transaction: assertions check command
+idempotency, active status, and expected revision; inserts create the new
+document/grant/command versions. Composite `_id` values use the existing
+table-config primary-key policy. The returned transaction token is awaited
+before a caller reads through another connection.
+
+The in-memory implementation is the executable reference model. Backend
+contract tests run the same lifecycle scenarios against all three stores:
+
+- exact command retry and conflicting idempotency-key reuse;
+- case-insensitive document-name uniqueness;
+- concurrent expected-revision mutation with one winner;
+- grant, revoke, re-grant, and provenance retention;
+- archive racing grant and CRDT acceptance;
+- inaccessible document lookup left to application non-disclosure policy;
+- MariaDB/XTDB parity for rows, revisions, and failure outcomes.
+
+### Configuration
+
+The equivalent YAML shape is:
+
+```yaml
+document_access:
+  schema: overrides
+  documents_table: document_access
+  grants_table: document_access_grants
+  commands_table: document_access_commands
+```
+
+There is no backend selector in this block. The existing database backend owns
+adapter selection. Applications may use different table names, but the three
+tables must share one connection with the CRDT document and projection tables.
+
+### Implementation sequence
+
+1. Add config, immutable models, typed outcomes/errors, table configs, and the
+   in-memory reference store.
+2. Add MariaDB storage using row locks, unique constraints, and one transaction
+   per mutation.
+3. Add XTDB storage using one asserted DML transaction and consistency tokens.
+4. Run one shared contract suite against in-memory, MariaDB, and XTDB stores.
+5. Expose `backend.document_access(...)` and use its `RowGuard` in prepared CRDT
+   commits.
+
+No transport, token verifier, role hierarchy, or application-specific layer
+model belongs in these steps.
+
 ## Library API
 
 CRDT support is an optional `crdt` extra so ingestion-only users do not install
@@ -231,7 +414,7 @@ Yrs bindings.
 prepare_update(current_document, source_update, actor_id, recorded_at)
     -> PreparedCrdtCommit
 load_document(document_id) -> CrdtDocument | None
-commit(prepared_commit, guards=(), inserts=()) -> CrdtCommitResult
+commit(prepared_commit, guards=(), inserts=(), updates=()) -> CrdtCommitResult
 diff(document, state_vector) -> bytes
 write_snapshot(document_id, expected_revision) -> CrdtSnapshot
 
@@ -461,5 +644,6 @@ conventions apply, with layer identity derived from the owner.
   server to inspect accepted documents.
 - A rich-text editor binding. Y.Text is the portable data model; applications
   select an editor appropriate to their UI.
-- Document deletion, legal erasure, and retention policy. Applications own
-  document lifecycle; update archival is not enabled by the initial adapter.
+- Document deletion, unarchive, legal erasure, and retention policy. The access
+  registry supports active-to-archived only; CRDT update archival remains
+  disabled.
