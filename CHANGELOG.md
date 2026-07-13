@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.39](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.38...v0.12.39) (2026-07-13)
+
+
+### Features
+
+* add backend-neutral document access store ([#183](https://github.com/jr200-labs/polars-hist-db/issues/183)) ([9dbc5d0](https://github.com/jr200-labs/polars-hist-db/commit/9dbc5d03e6ef93574e6f192f0e8838bf4d1e5976))
+
 ## [0.12.38](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.37...v0.12.38) (2026-07-12)
 
 
