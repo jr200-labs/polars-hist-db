@@ -5,7 +5,110 @@ from sqlalchemy.schema import CreateColumn
 
 from polars_hist_db.config import TableColumnConfig, TableConfig, ValidTimeConfig
 
-from .types import CrdtDocumentStoreConfig, OverrideLedgerConfig
+from .types import (
+    CrdtDocumentStoreConfig,
+    DocumentAccessStoreConfig,
+    OverrideLedgerConfig,
+)
+
+
+def build_document_access_table_configs(
+    config: DocumentAccessStoreConfig,
+) -> tuple[TableConfig, TableConfig, TableConfig]:
+    documents = TableConfig(
+        name=config.documents_table,
+        schema=config.schema,
+        primary_keys=("document_id",),
+        columns=[
+            TableColumnConfig(
+                config.documents_table, "document_id", "VARCHAR(128)", nullable=False
+            ),
+            TableColumnConfig(
+                config.documents_table, "name", "VARCHAR(255)", nullable=False
+            ),
+            TableColumnConfig(
+                config.documents_table,
+                "normalized_name",
+                "VARCHAR(255)",
+                nullable=False,
+                unique_constraint=["document_access_normalized_name"],
+            ),
+            TableColumnConfig(config.documents_table, "description", "MEDIUMTEXT"),
+            TableColumnConfig(
+                config.documents_table, "status", "VARCHAR(16)", nullable=False
+            ),
+            TableColumnConfig(
+                config.documents_table, "revision", "BIGINT", nullable=False
+            ),
+            TableColumnConfig(
+                config.documents_table, "created_by", "VARCHAR(128)", nullable=False
+            ),
+            TableColumnConfig(
+                config.documents_table, "created_at", "DATETIME(6)", nullable=False
+            ),
+            TableColumnConfig(config.documents_table, "archived_by", "VARCHAR(128)"),
+            TableColumnConfig(config.documents_table, "archived_at", "DATETIME(6)"),
+        ],
+    )
+    grants = TableConfig(
+        name=config.grants_table,
+        schema=config.schema,
+        primary_keys=("grant_id",),
+        columns=[
+            TableColumnConfig(
+                config.grants_table, "grant_id", "VARCHAR(128)", nullable=False
+            ),
+            TableColumnConfig(
+                config.grants_table, "document_id", "VARCHAR(128)", nullable=False
+            ),
+            TableColumnConfig(
+                config.grants_table, "group_name", "VARCHAR(255)", nullable=False
+            ),
+            TableColumnConfig(
+                config.grants_table,
+                "active_group_key",
+                "VARCHAR(512)",
+                unique_constraint=["document_access_active_group"],
+            ),
+            TableColumnConfig(
+                config.grants_table, "role", "VARCHAR(128)", nullable=False
+            ),
+            TableColumnConfig(
+                config.grants_table, "granted_by", "VARCHAR(128)", nullable=False
+            ),
+            TableColumnConfig(
+                config.grants_table, "granted_at", "DATETIME(6)", nullable=False
+            ),
+            TableColumnConfig(
+                config.grants_table, "document_revision", "BIGINT", nullable=False
+            ),
+            TableColumnConfig(config.grants_table, "revoked_by", "VARCHAR(128)"),
+            TableColumnConfig(config.grants_table, "revoked_at", "DATETIME(6)"),
+        ],
+    )
+    commands = TableConfig(
+        name=config.commands_table,
+        schema=config.schema,
+        primary_keys=("idempotency_key",),
+        columns=[
+            TableColumnConfig(
+                config.commands_table, "idempotency_key", "VARCHAR(128)", nullable=False
+            ),
+            TableColumnConfig(
+                config.commands_table, "payload_hash", "VARCHAR(64)", nullable=False
+            ),
+            TableColumnConfig(
+                config.commands_table, "command_kind", "VARCHAR(32)", nullable=False
+            ),
+            TableColumnConfig(
+                config.commands_table, "result_json", "JSON", nullable=False
+            ),
+            TableColumnConfig(
+                config.commands_table, "recorded_at", "DATETIME(6)", nullable=False
+            ),
+        ],
+    )
+    return documents, grants, commands
 
 
 def build_crdt_document_table_config(config: CrdtDocumentStoreConfig) -> TableConfig:
