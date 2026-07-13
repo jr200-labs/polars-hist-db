@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.40](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.39...v0.12.40) (2026-07-13)
+
+
+### Bug Fixes
+
+* expose guard on in-memory document access store ([#185](https://github.com/jr200-labs/polars-hist-db/issues/185)) ([d929499](https://github.com/jr200-labs/polars-hist-db/commit/d92949922577f0e9af375978439e8ba70ad4913d))
+
 ## [0.12.39](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.38...v0.12.39) (2026-07-13)
 
 
