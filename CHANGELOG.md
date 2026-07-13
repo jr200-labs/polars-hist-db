@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.41](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.40...v0.12.41) (2026-07-13)
+
+
+### Features
+
+* add persistent CRDT state-vector diffs ([#187](https://github.com/jr200-labs/polars-hist-db/issues/187)) ([4d6a9a7](https://github.com/jr200-labs/polars-hist-db/commit/4d6a9a72d066e12a9452e597fb3a326526f2c1a3))
+
 ## [0.12.40](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.39...v0.12.40) (2026-07-13)
 
 
