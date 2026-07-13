@@ -81,6 +81,8 @@ def test_mariadb_crdt_store_persists_prepared_commit_and_projection():
 
             accepted = store.commit(prepared)
             duplicate = store.commit(prepared)
+            caught_up = Doc()
+            caught_up.apply_update(store.diff("document-1", b"\x00"))
             conflicting = prepare_crdt_update(
                 "document-2",
                 None,
@@ -101,6 +103,9 @@ def test_mariadb_crdt_store_persists_prepared_commit_and_projection():
 
             assert accepted.accepted is True
             assert accepted.revision == 1
+            assert (
+                caught_up.get_state() == store.load_document("document-1").state_vector
+            )
             assert duplicate.accepted is False
             assert duplicate.duplicate is True
             assert duplicate.revision == 1

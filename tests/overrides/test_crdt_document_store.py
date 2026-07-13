@@ -13,6 +13,8 @@ from polars_hist_db.overrides import (
     CrdtRevisionConflict,
     InMemoryCrdtDocumentStore,
     RowGuard,
+    CrdtDocument,
+    MariaDbCrdtDocumentStore,
     prepare_crdt_update,
 )
 
@@ -57,6 +59,24 @@ def test_document_store_merges_offline_updates_and_rebuilds_from_snapshot():
         caught_up.get("drafts", type=Map).to_py()
         == rebuilt.get("drafts", type=Map).to_py()
     )
+
+
+def test_mariadb_store_diff_uses_current_document(monkeypatch):
+    source = Doc()
+    source["drafts"] = Map({"title": "Current"})
+    store = object.__new__(MariaDbCrdtDocumentStore)
+    monkeypatch.setattr(
+        store,
+        "load_document",
+        lambda _: CrdtDocument(
+            "document-1", 1, source.get_state(), source.get_update()
+        ),
+    )
+
+    caught_up = Doc()
+    caught_up.apply_update(store.diff("document-1", b"\x00"))
+
+    assert caught_up.get("drafts", type=Map).to_py() == {"title": "Current"}
 
 
 def test_document_store_deduplicates_exact_updates_and_checks_revisions():
