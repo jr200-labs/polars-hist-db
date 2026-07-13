@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+from dataclasses import replace
 from datetime import date, datetime, timezone
 from hashlib import sha256
 from typing import Any, Mapping, Sequence
@@ -20,9 +21,24 @@ from polars_hist_db.backends.xtdb import (
 )
 from polars_hist_db.config import TableConfig
 
+from .access import (
+    AccessDocument,
+    AccessGrant,
+    AccessGrantInput,
+    AccessMutationResult,
+    DocumentAccessError,
+    DocumentArchived,
+    DocumentNotFound,
+    DocumentRevisionConflict,
+    IdempotencyConflict,
+    _normalized,
+    _payload,
+    _require_time,
+)
 from .config import (
     build_crdt_document_table_config,
     build_crdt_update_table_config,
+    build_document_access_table_configs,
     build_override_table_config,
 )
 from .crdt import (
@@ -36,7 +52,11 @@ from .crdt import (
     RowGuard,
     _doc,
 )
-from .types import CrdtDocumentStoreConfig, OverrideLedgerConfig
+from .types import (
+    CrdtDocumentStoreConfig,
+    DocumentAccessStoreConfig,
+    OverrideLedgerConfig,
+)
 
 
 class XtdbCrdtDocumentStore:
@@ -302,6 +322,560 @@ class XtdbCrdtDocumentStore:
                 raise
             _rollback_xtdb_connection(self.connection)
             return []
+
+
+class XtdbDocumentAccessStore:
+    """XTDB implementation of the backend-neutral document access contract."""
+
+    def __init__(self, connection: Any, config: DocumentAccessStoreConfig) -> None:
+        self.connection = connection
+        self.documents, self.grants_table, self.commands = (
+            build_document_access_table_configs(config)
+        )
+
+    def get(self, document_id: str) -> AccessDocument | None:
+        rows = self._rows(
+            f"SELECT {_access_document_columns()} FROM {_table_name(self.documents)} "
+            f"WHERE _id = {_literal(document_id, 'VARCHAR(128)')}"
+        )
+        return _access_document_from_row(rows[0]) if rows else None
+
+    def grants(
+        self, document_id: str, *, include_revoked: bool = False
+    ) -> tuple[AccessGrant, ...]:
+        predicate = f"document_id = {_literal(document_id, 'VARCHAR(128)')}"
+        if not include_revoked:
+            predicate += " AND revoked_at IS NULL"
+        return tuple(
+            _access_grant_from_row(row)
+            for row in self._rows(
+                f"SELECT {_access_grant_columns()} FROM {_table_name(self.grants_table)} "
+                f"WHERE {predicate} ORDER BY granted_at, grant_id"
+            )
+        )
+
+    def list_for_groups(
+        self, groups: Sequence[str], *, include_archived: bool = False
+    ) -> list[AccessDocument]:
+        if not groups:
+            return []
+        group_sql = ", ".join(_literal(group, "VARCHAR(255)") for group in groups)
+        status = "" if include_archived else " AND d.status = 'active'"
+        rows = self._rows(
+            f"SELECT DISTINCT {_access_document_columns('d')} "
+            f"FROM {_table_name(self.documents)} d "
+            f"JOIN {_table_name(self.grants_table)} g ON d.document_id = g.document_id "
+            f"WHERE g.group_name IN ({group_sql}) AND g.revoked_at IS NULL{status}"
+        )
+        return [_access_document_from_row(row) for row in rows]
+
+    def list_all(self, *, include_archived: bool = False) -> list[AccessDocument]:
+        predicate = "" if include_archived else " WHERE status = 'active'"
+        return [
+            _access_document_from_row(row)
+            for row in self._rows(
+                f"SELECT {_access_document_columns()} FROM {_table_name(self.documents)}"
+                f"{predicate} ORDER BY created_at, document_id"
+            )
+        ]
+
+    def guard(self, document_id: str, expected_revision: int) -> RowGuard:
+        return RowGuard(
+            self.documents,
+            {"document_id": document_id},
+            {"status": "active", "revision": expected_revision},
+        )
+
+    def create(
+        self,
+        document_id: str,
+        name: str,
+        description: str | None,
+        actor_id: str,
+        recorded_at: datetime,
+        *,
+        initial_grants: Sequence[AccessGrantInput] = (),
+        idempotency_key: str,
+    ) -> AccessMutationResult:
+        grants = tuple(initial_grants)
+        payload = _payload("create", document_id, name, description, actor_id, grants)
+        duplicate = self._duplicate(idempotency_key, payload)
+        if duplicate:
+            return duplicate
+        _require_time(recorded_at)
+        normalized_name = _normalized(name)
+        if len({grant.grant_id for grant in grants}) != len(grants) or len(
+            {grant.group_name.casefold() for grant in grants}
+        ) != len(grants):
+            raise DocumentAccessError("initial grants must be unique")
+        document = AccessDocument(
+            document_id,
+            name,
+            normalized_name,
+            description,
+            "active",
+            1,
+            actor_id,
+            recorded_at,
+        )
+        result = AccessMutationResult(
+            document,
+            tuple(
+                _new_grant(document, grant, actor_id, recorded_at) for grant in grants
+            ),
+            accepted=True,
+        )
+        statements = [
+            self._command_assertion(idempotency_key),
+            f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.documents)} WHERE _id = {_literal(document_id, 'VARCHAR(128)')}), 'document already exists'",
+            f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.documents)} WHERE normalized_name = {_literal(normalized_name, 'VARCHAR(255)')}), 'document name already exists'",
+            *(
+                f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.grants_table)} WHERE _id = {_literal(grant.grant_id, 'VARCHAR(128)')}), 'grant already exists'"
+                for grant in grants
+            ),
+            _insert_statement(self.documents, _document_row(document)),
+            *(
+                _insert_statement(self.grants_table, _grant_row(grant))
+                for grant in result.grants
+            ),
+            self._command_insert(
+                idempotency_key, payload, "create", result, recorded_at
+            ),
+        ]
+        duplicate = self._run(statements, idempotency_key, payload, document_id, None)
+        return result if duplicate is None else duplicate
+
+    def grant(
+        self,
+        document_id: str,
+        grant: AccessGrantInput,
+        actor_id: str,
+        recorded_at: datetime,
+        expected_revision: int,
+        *,
+        idempotency_key: str,
+    ) -> AccessMutationResult:
+        payload = _payload("grant", document_id, grant, actor_id, expected_revision)
+        duplicate = self._duplicate(idempotency_key, payload)
+        if duplicate:
+            return duplicate
+        _require_time(recorded_at)
+        document = self._active(document_id, expected_revision)
+        updated = _updated_document(document)
+        new_grant = _new_grant(updated, grant, actor_id, recorded_at)
+        result = AccessMutationResult(
+            updated, (*self.grants(document_id), new_grant), accepted=True
+        )
+        statements = [
+            self._command_assertion(idempotency_key),
+            self._active_assertion(document_id, expected_revision),
+            f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.grants_table)} WHERE _id = {_literal(grant.grant_id, 'VARCHAR(128)')}), 'grant already exists'",
+            f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.grants_table)} WHERE active_group_key = {_literal(_active_group_key(document_id, grant.group_name), 'VARCHAR(512)')}), 'group already has an active grant'",
+            _access_update(self.documents, document_id, {"revision": updated.revision}),
+            _insert_statement(self.grants_table, _grant_row(new_grant)),
+            self._command_insert(
+                idempotency_key, payload, "grant", result, recorded_at
+            ),
+        ]
+        duplicate = self._run(
+            statements, idempotency_key, payload, document_id, expected_revision
+        )
+        return result if duplicate is None else duplicate
+
+    def revoke(
+        self,
+        document_id: str,
+        group_name: str,
+        actor_id: str,
+        recorded_at: datetime,
+        expected_revision: int,
+        *,
+        idempotency_key: str,
+    ) -> AccessMutationResult:
+        payload = _payload(
+            "revoke", document_id, group_name, actor_id, expected_revision
+        )
+        duplicate = self._duplicate(idempotency_key, payload)
+        if duplicate:
+            return duplicate
+        _require_time(recorded_at)
+        document = self._active(document_id, expected_revision)
+        active_grant = self._active_grant(document_id, group_name)
+        if active_grant is None:
+            raise DocumentAccessError("active group grant not found")
+        updated = _updated_document(document)
+        revoked = AccessGrant(
+            grant_id=active_grant.grant_id,
+            document_id=active_grant.document_id,
+            group_name=active_grant.group_name,
+            role=active_grant.role,
+            granted_by=active_grant.granted_by,
+            granted_at=active_grant.granted_at,
+            document_revision=updated.revision,
+            revoked_by=actor_id,
+            revoked_at=recorded_at,
+        )
+        grants = tuple(
+            revoked if item.grant_id == revoked.grant_id else item
+            for item in self.grants(document_id, include_revoked=True)
+        )
+        result = AccessMutationResult(updated, grants, accepted=True)
+        statements = [
+            self._command_assertion(idempotency_key),
+            self._active_assertion(document_id, expected_revision),
+            f"ASSERT EXISTS (SELECT 1 FROM {_table_name(self.grants_table)} WHERE _id = {_literal(active_grant.grant_id, 'VARCHAR(128)')} AND revoked_at IS NULL), 'active group grant not found'",
+            _access_update(self.documents, document_id, {"revision": updated.revision}),
+            _access_update(
+                self.grants_table,
+                active_grant.grant_id,
+                {
+                    "active_group_key": None,
+                    "revoked_by": actor_id,
+                    "revoked_at": recorded_at,
+                    "document_revision": updated.revision,
+                },
+            ),
+            self._command_insert(
+                idempotency_key, payload, "revoke", result, recorded_at
+            ),
+        ]
+        duplicate = self._run(
+            statements, idempotency_key, payload, document_id, expected_revision
+        )
+        return result if duplicate is None else duplicate
+
+    def archive(
+        self,
+        document_id: str,
+        actor_id: str,
+        recorded_at: datetime,
+        expected_revision: int,
+        *,
+        idempotency_key: str,
+    ) -> AccessMutationResult:
+        payload = _payload("archive", document_id, actor_id, expected_revision)
+        duplicate = self._duplicate(idempotency_key, payload)
+        if duplicate:
+            return duplicate
+        _require_time(recorded_at)
+        document = self._active(document_id, expected_revision)
+        updated = _updated_document(
+            document,
+            status="archived",
+            archived_by=actor_id,
+            archived_at=recorded_at,
+        )
+        result = AccessMutationResult(updated, self.grants(document_id), accepted=True)
+        statements = [
+            self._command_assertion(idempotency_key),
+            self._active_assertion(document_id, expected_revision),
+            _access_update(
+                self.documents,
+                document_id,
+                {
+                    "revision": updated.revision,
+                    "status": "archived",
+                    "archived_by": actor_id,
+                    "archived_at": recorded_at,
+                },
+            ),
+            self._command_insert(
+                idempotency_key, payload, "archive", result, recorded_at
+            ),
+        ]
+        duplicate = self._run(
+            statements, idempotency_key, payload, document_id, expected_revision
+        )
+        return result if duplicate is None else duplicate
+
+    def _active(self, document_id: str, expected_revision: int) -> AccessDocument:
+        document = self.get(document_id)
+        if document is None:
+            raise DocumentNotFound("document not found")
+        if document.status != "active":
+            raise DocumentArchived("document archived")
+        if document.revision != expected_revision:
+            raise DocumentRevisionConflict("document revision changed")
+        return document
+
+    def _active_grant(self, document_id: str, group_name: str) -> AccessGrant | None:
+        rows = self._rows(
+            f"SELECT {_access_grant_columns()} FROM {_table_name(self.grants_table)} "
+            f"WHERE active_group_key = {_literal(_active_group_key(document_id, group_name), 'VARCHAR(512)')}"
+        )
+        return _access_grant_from_row(rows[0]) if rows else None
+
+    def _duplicate(self, key: str, payload: str) -> AccessMutationResult | None:
+        rows = self._rows(
+            f"SELECT payload_hash, result_json FROM {_table_name(self.commands)} "
+            f"WHERE _id = {_literal(key, 'VARCHAR(128)')}"
+        )
+        if not rows:
+            return None
+        if rows[0]["payload_hash"] != payload:
+            raise IdempotencyConflict(
+                "idempotency key was reused with different content"
+            )
+        return _access_result_from_json(rows[0]["result_json"], duplicate=True)
+
+    def _command_assertion(self, key: str) -> str:
+        return f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.commands)} WHERE _id = {_literal(key, 'VARCHAR(128)')}), 'idempotency key already exists'"
+
+    def _active_assertion(self, document_id: str, revision: int) -> str:
+        return (
+            f"ASSERT EXISTS (SELECT 1 FROM {_table_name(self.documents)} WHERE "
+            f"_id = {_literal(document_id, 'VARCHAR(128)')} AND status = 'active' "
+            f"AND revision = {revision}::BIGINT), 'document revision changed'"
+        )
+
+    def _command_insert(
+        self,
+        key: str,
+        payload: str,
+        kind: str,
+        result: AccessMutationResult,
+        recorded_at: datetime,
+    ) -> str:
+        return _insert_statement(
+            self.commands,
+            {
+                "idempotency_key": key,
+                "payload_hash": payload,
+                "command_kind": kind,
+                "result_json": _access_result_json(result),
+                "recorded_at": recorded_at,
+            },
+        )
+
+    def _run(
+        self,
+        statements: Sequence[str],
+        key: str,
+        payload: str,
+        document_id: str,
+        revision: int | None,
+    ) -> AccessMutationResult | None:
+        self._ensure_tables()
+        try:
+            _execute_xtdb_transaction(self.connection, statements)
+        except Exception:
+            duplicate = self._duplicate(key, payload)
+            if duplicate:
+                return duplicate
+            if revision is not None:
+                self._active(document_id, revision)
+            raise DocumentAccessError("access command conflicts") from None
+        return None
+
+    def _ensure_tables(self) -> None:
+        for config in (self.documents, self.grants_table, self.commands):
+            if self._rows(
+                "SELECT table_name FROM information_schema.tables WHERE "
+                f"table_schema = {_literal(config.schema, 'TEXT')} AND "
+                f"table_name = {_literal(config.name, 'TEXT')}"
+            ):
+                continue
+            bootstrap_row = {
+                column.name: _bootstrap_value(column.data_type)
+                for column in config.columns
+            }
+            bootstrap_id = _document_id(config, bootstrap_row)
+            _execute_xtdb_transaction(
+                self.connection,
+                [
+                    _insert_statement(config, bootstrap_row),
+                    f"ERASE FROM {_table_name(config)} WHERE _id = {_literal(bootstrap_id, 'TEXT')}",
+                ],
+            )
+
+    def _rows(self, sql: str) -> list[Mapping[str, object]]:
+        try:
+            return [dict(row) for row in self.connection.execute(text(sql)).mappings()]
+        except Exception as exc:
+            if not _is_xtdb_table_not_found_error(exc):
+                raise
+            _rollback_xtdb_connection(self.connection)
+            return []
+
+
+def _access_document_columns(prefix: str | None = None) -> str:
+    names = (
+        "document_id",
+        "name",
+        "normalized_name",
+        "description",
+        "status",
+        "revision",
+        "created_by",
+        "created_at",
+        "archived_by",
+        "archived_at",
+    )
+    return ", ".join(f"{prefix}.{name}" if prefix else name for name in names)
+
+
+def _access_grant_columns() -> str:
+    return ", ".join(
+        (
+            "grant_id",
+            "document_id",
+            "group_name",
+            "role",
+            "granted_by",
+            "granted_at",
+            "document_revision",
+            "revoked_by",
+            "revoked_at",
+        )
+    )
+
+
+def _access_document_from_row(row: Mapping[str, object]) -> AccessDocument:
+    return AccessDocument(
+        document_id=str(row["document_id"]),
+        name=str(row["name"]),
+        normalized_name=str(row["normalized_name"]),
+        description=None if row["description"] is None else str(row["description"]),
+        status=str(row["status"]),
+        revision=int(str(row["revision"])),
+        created_by=str(row["created_by"]),
+        created_at=_datetime(row["created_at"]),
+        archived_by=None if row["archived_by"] is None else str(row["archived_by"]),
+        archived_at=None
+        if row["archived_at"] is None
+        else _datetime(row["archived_at"]),
+    )
+
+
+def _access_grant_from_row(row: Mapping[str, object]) -> AccessGrant:
+    return AccessGrant(
+        grant_id=str(row["grant_id"]),
+        document_id=str(row["document_id"]),
+        group_name=str(row["group_name"]),
+        role=str(row["role"]),
+        granted_by=str(row["granted_by"]),
+        granted_at=_datetime(row["granted_at"]),
+        document_revision=int(str(row["document_revision"])),
+        revoked_by=None if row["revoked_by"] is None else str(row["revoked_by"]),
+        revoked_at=None if row["revoked_at"] is None else _datetime(row["revoked_at"]),
+    )
+
+
+def _datetime(value: object) -> datetime:
+    return value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+
+
+def _document_row(document: AccessDocument) -> dict[str, object]:
+    return {
+        "document_id": document.document_id,
+        "name": document.name,
+        "normalized_name": document.normalized_name,
+        "description": document.description,
+        "status": document.status,
+        "revision": document.revision,
+        "created_by": document.created_by,
+        "created_at": document.created_at,
+        "archived_by": document.archived_by,
+        "archived_at": document.archived_at,
+    }
+
+
+def _grant_row(grant: AccessGrant) -> dict[str, object]:
+    return {
+        "grant_id": grant.grant_id,
+        "document_id": grant.document_id,
+        "group_name": grant.group_name,
+        "active_group_key": None
+        if grant.revoked_at is not None
+        else _active_group_key(grant.document_id, grant.group_name),
+        "role": grant.role,
+        "granted_by": grant.granted_by,
+        "granted_at": grant.granted_at,
+        "document_revision": grant.document_revision,
+        "revoked_by": grant.revoked_by,
+        "revoked_at": grant.revoked_at,
+    }
+
+
+def _new_grant(
+    document: AccessDocument,
+    grant: AccessGrantInput,
+    actor_id: str,
+    recorded_at: datetime,
+) -> AccessGrant:
+    return AccessGrant(
+        grant.grant_id,
+        document.document_id,
+        grant.group_name,
+        grant.role,
+        actor_id,
+        recorded_at,
+        document.revision,
+    )
+
+
+def _updated_document(
+    document: AccessDocument,
+    *,
+    status: str | None = None,
+    archived_by: str | None = None,
+    archived_at: datetime | None = None,
+) -> AccessDocument:
+    return replace(
+        document,
+        revision=document.revision + 1,
+        status=document.status if status is None else status,
+        archived_by=document.archived_by if archived_by is None else archived_by,
+        archived_at=document.archived_at if archived_at is None else archived_at,
+    )
+
+
+def _active_group_key(document_id: str, group_name: str) -> str:
+    return f"{document_id}:{group_name.casefold()}"
+
+
+def _access_update(
+    config: TableConfig, document_id: str, values: Mapping[str, object]
+) -> str:
+    columns = {column.name: column.data_type for column in config.columns}
+    assignments = ", ".join(
+        f"{_xtdb_column_identifier(name)} = {_literal(value, columns[name])}"
+        for name, value in values.items()
+    )
+    return (
+        f"UPDATE {_table_name(config)} SET {assignments} WHERE "
+        f"_id = {_literal(document_id, 'VARCHAR(128)')}"
+    )
+
+
+def _access_result_json(result: AccessMutationResult) -> dict[str, object]:
+    return {
+        "document": {
+            name: _json_value(value)
+            for name, value in _document_row(result.document).items()
+        },
+        "grants": [
+            {
+                name: _json_value(value)
+                for name, value in _grant_row(grant).items()
+                if name != "active_group_key"
+            }
+            for grant in result.grants
+        ],
+    }
+
+
+def _json_value(value: object) -> object:
+    return value.isoformat() if isinstance(value, datetime) else value
+
+
+def _access_result_from_json(value: object, *, duplicate: bool) -> AccessMutationResult:
+    parsed = json.loads(value) if isinstance(value, str) else value
+    if not isinstance(parsed, Mapping):
+        raise ValueError("stored access command result is invalid")
+    document = _access_document_from_row(parsed["document"])
+    grants = tuple(_access_grant_from_row(grant) for grant in parsed["grants"])
+    return AccessMutationResult(document, grants, accepted=False, duplicate=duplicate)
 
 
 def _insert_statement(

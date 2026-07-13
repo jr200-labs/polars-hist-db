@@ -52,3 +52,11 @@ class CrdtDocumentStoreConfig:
     schema: str = "overrides"
     documents_table: str = "crdt_documents"
     updates_table: str = "crdt_updates"
+
+
+@dataclass(frozen=True)
+class DocumentAccessStoreConfig:
+    schema: str = "overrides"
+    documents_table: str = "document_access"
+    grants_table: str = "document_access_grants"
+    commands_table: str = "document_access_commands"

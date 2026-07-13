@@ -1,6 +1,7 @@
 from .config import (
     build_crdt_document_table_config,
     build_crdt_update_table_config,
+    build_document_access_table_configs,
     build_override_table_config,
     build_override_valid_time_config,
     migrate_override_owner_nullable,
@@ -19,8 +20,20 @@ from .crdt import (
     prepare_crdt_update,
 )
 from .ledger import InMemoryOverrideLedgerStore, OverrideLedger
-from .sql import MariaDbCrdtDocumentStore
-from .xtdb import XtdbCrdtDocumentStore
+from .access import (
+    AccessDocument,
+    AccessGrant,
+    AccessGrantInput,
+    AccessMutationResult,
+    DocumentAccessError,
+    DocumentArchived,
+    DocumentNotFound,
+    DocumentRevisionConflict,
+    IdempotencyConflict,
+    InMemoryDocumentAccessStore,
+)
+from .sql import MariaDbCrdtDocumentStore, MariaDbDocumentAccessStore
+from .xtdb import XtdbCrdtDocumentStore, XtdbDocumentAccessStore
 from .replicated import (
     InMemoryReplicatedOverrideLedger,
     OverrideFrontier,
@@ -33,6 +46,7 @@ from .replicated import (
 )
 from .types import (
     CrdtDocumentStoreConfig,
+    DocumentAccessStoreConfig,
     OverrideLedgerConfig,
     OverrideOperation,
     OverrideOperationType,
@@ -41,9 +55,12 @@ from .types import (
 
 __all__ = [
     "InMemoryOverrideLedgerStore",
+    "InMemoryDocumentAccessStore",
     "InMemoryCrdtDocumentStore",
     "MariaDbCrdtDocumentStore",
+    "MariaDbDocumentAccessStore",
     "XtdbCrdtDocumentStore",
+    "XtdbDocumentAccessStore",
     "AtomicInsert",
     "AtomicUpdate",
     "InMemoryReplicatedOverrideLedger",
@@ -52,14 +69,25 @@ __all__ = [
     "OverrideOperation",
     "OverrideOperationType",
     "OverrideTypedValue",
+    "AccessDocument",
+    "AccessGrant",
+    "AccessGrantInput",
+    "AccessMutationResult",
+    "DocumentAccessError",
+    "DocumentArchived",
+    "DocumentNotFound",
+    "DocumentRevisionConflict",
+    "IdempotencyConflict",
     "CrdtAppendResult",
     "CrdtCommitResult",
     "CrdtDocument",
     "CrdtPreconditionFailed",
     "CrdtRevisionConflict",
     "CrdtDocumentStoreConfig",
+    "DocumentAccessStoreConfig",
     "build_crdt_document_table_config",
     "build_crdt_update_table_config",
+    "build_document_access_table_configs",
     "OverrideFrontier",
     "PreparedCrdtCommit",
     "ReplicatedOverrideAppendResult",

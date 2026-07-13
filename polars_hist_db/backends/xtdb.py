@@ -29,7 +29,12 @@ from .config import DbEngineConfig
 from .temporal import system_time_hint_clause
 
 if TYPE_CHECKING:
-    from ..overrides import CrdtDocumentStoreConfig, OverrideLedgerConfig
+    from ..overrides import (
+        CrdtDocumentStoreConfig,
+        DocumentAccessStoreConfig,
+        OverrideLedgerConfig,
+    )
+    from ..overrides.xtdb import XtdbDocumentAccessStore
     from ..overrides.xtdb import XtdbCrdtDocumentStore
 
 LOGGER = logging.getLogger(__name__)
@@ -2214,6 +2219,13 @@ class XtdbBackend:
         from ..overrides.xtdb import XtdbCrdtDocumentStore
 
         return XtdbCrdtDocumentStore(connection, document_store, projection)
+
+    def document_access(
+        self, connection: Any, config: "DocumentAccessStoreConfig"
+    ) -> "XtdbDocumentAccessStore":
+        from ..overrides.xtdb import XtdbDocumentAccessStore
+
+        return XtdbDocumentAccessStore(connection, config)
 
     def staging(
         self,
