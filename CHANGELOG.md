@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.42](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.41...v0.12.42) (2026-07-13)
+
+
+### Features
+
+* **overrides:** add operations, composition, and purge contracts ([#189](https://github.com/jr200-labs/polars-hist-db/issues/189)) ([1d6f0e1](https://github.com/jr200-labs/polars-hist-db/commit/1d6f0e1364bbd6586816a718e0f4f833ff44f796))
+
 ## [0.12.41](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.40...v0.12.41) (2026-07-13)
 
 
