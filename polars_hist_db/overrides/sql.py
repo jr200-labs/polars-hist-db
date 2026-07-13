@@ -626,7 +626,9 @@ class MariaDbDocumentAccessStore:
         document: AccessDocument,
     ) -> AccessMutationResult:
         result = AccessMutationResult(
-            document, self.grants(document.document_id), accepted=True
+            document,
+            self.grants(document.document_id, include_revoked=True),
+            accepted=True,
         )
         self.connection.execute(
             self.commands.insert().values(

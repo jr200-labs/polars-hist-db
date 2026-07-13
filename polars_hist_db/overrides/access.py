@@ -289,7 +289,9 @@ class InMemoryDocumentAccessStore:
         self, idempotency_key: str, payload: str, document: AccessDocument
     ) -> AccessMutationResult:
         result = AccessMutationResult(
-            document, self.grants(document.document_id), accepted=True
+            document,
+            self.grants(document.document_id, include_revoked=True),
+            accepted=True,
         )
         self._commands[idempotency_key] = (payload, result)
         return result

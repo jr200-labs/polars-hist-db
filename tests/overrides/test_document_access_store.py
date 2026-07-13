@@ -40,6 +40,7 @@ def test_lifecycle_is_versioned_and_preserves_grant_history():
 
     assert created.document.revision == 1
     assert revoked.document.revision == 2
+    assert revoked.grants[0].active is False
     assert granted.document.revision == 3
     assert archived.document.status == "archived"
     assert archived.document.revision == 4
