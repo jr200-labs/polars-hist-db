@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Protocol
 from uuid import uuid4
 
@@ -222,6 +222,18 @@ class OverrideLedger:
             reason=reason,
             comment=comment,
             metadata_json=metadata_json,
+            recorded_at=datetime.now(timezone.utc),
+            actor_display_name=(
+                str(metadata_json["actor_display_name"])
+                if metadata_json.get("actor_display_name")
+                else None
+            ),
+            document_id=(
+                str(metadata_json["document_id"])
+                if metadata_json.get("document_id")
+                else None
+            ),
+            generation=int(str(metadata_json.get("generation", 1))),
         )
 
     @staticmethod

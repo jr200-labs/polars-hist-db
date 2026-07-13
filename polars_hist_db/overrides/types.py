@@ -37,6 +37,10 @@ class OverrideOperation:
     reason: str | None = None
     comment: str | None = None
     metadata_json: dict[str, Any] = field(default_factory=dict)
+    recorded_at: datetime | None = None
+    actor_display_name: str | None = None
+    document_id: str | None = None
+    generation: int = 1
 
 
 @dataclass(frozen=True)
@@ -60,3 +64,15 @@ class DocumentAccessStoreConfig:
     documents_table: str = "document_access"
     grants_table: str = "document_access_grants"
     commands_table: str = "document_access_commands"
+
+
+@dataclass(frozen=True)
+class LayerCompositionStoreConfig:
+    schema: str = "overrides"
+    revisions_table: str = "layer_composition_revisions"
+
+
+@dataclass(frozen=True)
+class OverridePurgeStoreConfig:
+    schema: str = "overrides"
+    metadata_table: str = "override_purge_metadata"

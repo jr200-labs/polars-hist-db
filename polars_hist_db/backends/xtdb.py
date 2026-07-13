@@ -32,9 +32,11 @@ if TYPE_CHECKING:
     from ..overrides import (
         CrdtDocumentStoreConfig,
         DocumentAccessStoreConfig,
+        LayerCompositionStoreConfig,
         OverrideLedgerConfig,
     )
     from ..overrides.xtdb import XtdbDocumentAccessStore
+    from ..overrides.xtdb import XtdbLayerCompositionStore
     from ..overrides.xtdb import XtdbCrdtDocumentStore
 
 LOGGER = logging.getLogger(__name__)
@@ -2226,6 +2228,13 @@ class XtdbBackend:
         from ..overrides.xtdb import XtdbDocumentAccessStore
 
         return XtdbDocumentAccessStore(connection, config)
+
+    def layer_compositions(
+        self, connection: Any, config: "LayerCompositionStoreConfig"
+    ) -> "XtdbLayerCompositionStore":
+        from ..overrides.xtdb import XtdbLayerCompositionStore
+
+        return XtdbLayerCompositionStore(connection, config)
 
     def staging(
         self,

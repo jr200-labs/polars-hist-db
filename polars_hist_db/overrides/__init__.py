@@ -2,6 +2,8 @@ from .config import (
     build_crdt_document_table_config,
     build_crdt_update_table_config,
     build_document_access_table_configs,
+    build_layer_composition_table_config,
+    build_override_purge_table_config,
     build_override_table_config,
     build_override_valid_time_config,
     migrate_override_owner_nullable,
@@ -18,6 +20,8 @@ from .crdt import (
     PreparedCrdtCommit,
     RowGuard,
     prepare_crdt_update,
+    operation_source_update,
+    prepare_crdt_generation,
 )
 from .ledger import InMemoryOverrideLedgerStore, OverrideLedger
 from .access import (
@@ -32,8 +36,17 @@ from .access import (
     IdempotencyConflict,
     InMemoryDocumentAccessStore,
 )
-from .sql import MariaDbCrdtDocumentStore, MariaDbDocumentAccessStore
-from .xtdb import XtdbCrdtDocumentStore, XtdbDocumentAccessStore
+from .sql import (
+    MariaDbCrdtDocumentStore,
+    MariaDbDocumentAccessStore,
+    MariaDbLayerCompositionStore,
+)
+from .xtdb import (
+    XtdbCrdtDocumentStore,
+    XtdbDocumentAccessStore,
+    XtdbLayerCompositionStore,
+)
+from .composition import InMemoryLayerCompositionStore, LayerCompositionStore
 from .replicated import (
     InMemoryReplicatedOverrideLedger,
     OverrideFrontier,
@@ -47,10 +60,25 @@ from .replicated import (
 from .types import (
     CrdtDocumentStoreConfig,
     DocumentAccessStoreConfig,
+    LayerCompositionStoreConfig,
     OverrideLedgerConfig,
     OverrideOperation,
     OverrideOperationType,
     OverrideTypedValue,
+    OverridePurgeStoreConfig,
+)
+from .operations import (
+    CompositionRevision,
+    CorrectionPreview,
+    CorrectionProposal,
+    EffectiveFieldProjection,
+    InMemoryOverrideOperationsStore,
+    OperationPage,
+    OperationQuery,
+    OverrideLayer,
+    OverrideOperationsStore,
+    PurgePreview,
+    PurgeResult,
 )
 
 __all__ = [
@@ -61,6 +89,10 @@ __all__ = [
     "MariaDbDocumentAccessStore",
     "XtdbCrdtDocumentStore",
     "XtdbDocumentAccessStore",
+    "MariaDbLayerCompositionStore",
+    "XtdbLayerCompositionStore",
+    "InMemoryLayerCompositionStore",
+    "LayerCompositionStore",
     "AtomicInsert",
     "AtomicUpdate",
     "InMemoryReplicatedOverrideLedger",
@@ -85,9 +117,13 @@ __all__ = [
     "CrdtRevisionConflict",
     "CrdtDocumentStoreConfig",
     "DocumentAccessStoreConfig",
+    "LayerCompositionStoreConfig",
+    "OverridePurgeStoreConfig",
     "build_crdt_document_table_config",
     "build_crdt_update_table_config",
     "build_document_access_table_configs",
+    "build_layer_composition_table_config",
+    "build_override_purge_table_config",
     "OverrideFrontier",
     "PreparedCrdtCommit",
     "ReplicatedOverrideAppendResult",
@@ -99,6 +135,19 @@ __all__ = [
     "operation_payload_hash",
     "project_replicated_override_operations",
     "prepare_crdt_update",
+    "operation_source_update",
+    "prepare_crdt_generation",
     "RowGuard",
     "validate_replicated_override_operation",
+    "CompositionRevision",
+    "CorrectionPreview",
+    "CorrectionProposal",
+    "EffectiveFieldProjection",
+    "InMemoryOverrideOperationsStore",
+    "OperationPage",
+    "OperationQuery",
+    "OverrideLayer",
+    "OverrideOperationsStore",
+    "PurgePreview",
+    "PurgeResult",
 ]

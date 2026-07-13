@@ -16,9 +16,11 @@ if TYPE_CHECKING:
     from ..overrides import (
         CrdtDocumentStoreConfig,
         DocumentAccessStoreConfig,
+        LayerCompositionStoreConfig,
         OverrideLedgerConfig,
     )
     from ..overrides.sql import MariaDbDocumentAccessStore
+    from ..overrides.sql import MariaDbLayerCompositionStore
     from ..overrides.sql import MariaDbCrdtDocumentStore
 
 
@@ -63,6 +65,13 @@ class MariaDbBackend:
         from ..overrides.sql import MariaDbDocumentAccessStore
 
         return MariaDbDocumentAccessStore(connection, config)
+
+    def layer_compositions(
+        self, connection: Any, config: "LayerCompositionStoreConfig"
+    ) -> "MariaDbLayerCompositionStore":
+        from ..overrides.sql import MariaDbLayerCompositionStore
+
+        return MariaDbLayerCompositionStore(connection, config)
 
     def tables(self, table_schema: str, table_name: str, connection: Any) -> TableOps:
         return TableOps(table_schema, table_name, connection)

@@ -8,8 +8,54 @@ from polars_hist_db.config import TableColumnConfig, TableConfig, ValidTimeConfi
 from .types import (
     CrdtDocumentStoreConfig,
     DocumentAccessStoreConfig,
+    LayerCompositionStoreConfig,
     OverrideLedgerConfig,
+    OverridePurgeStoreConfig,
 )
+
+
+def build_layer_composition_table_config(
+    config: LayerCompositionStoreConfig,
+) -> TableConfig:
+    table = config.revisions_table
+    return TableConfig(
+        name=table,
+        schema=config.schema,
+        primary_keys=("revision_id",),
+        columns=[
+            TableColumnConfig(table, "revision_id", "VARCHAR(128)", nullable=False),
+            TableColumnConfig(table, "layer_id", "VARCHAR(128)", nullable=False),
+            TableColumnConfig(table, "child_layer_ids_json", "JSON", nullable=False),
+            TableColumnConfig(table, "valid_from", "DATETIME(6)", nullable=False),
+            TableColumnConfig(table, "valid_to", "DATETIME(6)"),
+            TableColumnConfig(table, "recorded_at", "DATETIME(6)", nullable=False),
+            TableColumnConfig(table, "actor_id", "VARCHAR(128)", nullable=False),
+            TableColumnConfig(table, "supersedes_revision_id", "VARCHAR(128)"),
+        ],
+    )
+
+
+def build_override_purge_table_config(config: OverridePurgeStoreConfig) -> TableConfig:
+    table = config.metadata_table
+    return TableConfig(
+        name=table,
+        schema=config.schema,
+        primary_keys=("request_id",),
+        columns=[
+            TableColumnConfig(table, "request_id", "VARCHAR(128)", nullable=False),
+            TableColumnConfig(table, "document_id", "VARCHAR(128)", nullable=False),
+            TableColumnConfig(table, "layer_id", "VARCHAR(128)", nullable=False),
+            TableColumnConfig(table, "actor_id", "VARCHAR(128)", nullable=False),
+            TableColumnConfig(table, "reason", "VARCHAR(2048)", nullable=False),
+            TableColumnConfig(table, "old_generation", "BIGINT", nullable=False),
+            TableColumnConfig(table, "generation", "BIGINT", nullable=False),
+            TableColumnConfig(table, "erased_count", "BIGINT", nullable=False),
+            TableColumnConfig(table, "rebuilt_count", "BIGINT", nullable=False),
+            TableColumnConfig(table, "tombstone_count", "BIGINT", nullable=False),
+            TableColumnConfig(table, "status", "VARCHAR(32)", nullable=False),
+            TableColumnConfig(table, "completed_at", "DATETIME(6)", nullable=False),
+        ],
+    )
 
 
 def build_document_access_table_configs(
@@ -45,6 +91,14 @@ def build_document_access_table_configs(
             ),
             TableColumnConfig(
                 config.documents_table, "created_at", "DATETIME(6)", nullable=False
+            ),
+            TableColumnConfig(config.documents_table, "owning_group", "VARCHAR(255)"),
+            TableColumnConfig(
+                config.documents_table,
+                "generation",
+                "BIGINT",
+                default_value="1",
+                nullable=False,
             ),
             TableColumnConfig(config.documents_table, "archived_by", "VARCHAR(128)"),
             TableColumnConfig(config.documents_table, "archived_at", "DATETIME(6)"),
@@ -126,6 +180,9 @@ def build_crdt_document_table_config(config: CrdtDocumentStoreConfig) -> TableCo
                 unique_constraint=["document_source_update_hash"],
             ),
             TableColumnConfig(table, "revision", "BIGINT", nullable=False),
+            TableColumnConfig(
+                table, "generation", "BIGINT", default_value="1", nullable=False
+            ),
             TableColumnConfig(table, "head_state_vector_base64", "MEDIUMTEXT"),
             TableColumnConfig(table, "snapshot_update_base64", "MEDIUMTEXT"),
             TableColumnConfig(table, "snapshot_update_hash", "VARCHAR(64)"),
@@ -151,6 +208,9 @@ def build_crdt_update_table_config(config: CrdtDocumentStoreConfig) -> TableConf
                 unique_constraint=["document_source_update_hash"],
             ),
             TableColumnConfig(table, "revision", "BIGINT", nullable=False),
+            TableColumnConfig(
+                table, "generation", "BIGINT", default_value="1", nullable=False
+            ),
             TableColumnConfig(
                 table,
                 "source_update_hash",
@@ -208,12 +268,16 @@ def build_override_table_config(config: OverrideLedgerConfig) -> TableConfig:
             TableColumnConfig(table, "format_version", "INT"),
             TableColumnConfig(table, "layer_id", "VARCHAR(128)"),
             TableColumnConfig(table, "actor_id", "VARCHAR(128)"),
+            TableColumnConfig(table, "actor_display_name", "VARCHAR(255)"),
             TableColumnConfig(table, "supersedes_operation_ids_json", "JSON"),
             TableColumnConfig(table, "removes_operation_ids_json", "JSON"),
             TableColumnConfig(table, "recorded_at", "DATETIME(6)"),
             TableColumnConfig(table, "payload_hash", "VARCHAR(64)"),
             TableColumnConfig(table, "crdt_document_id", "VARCHAR(128)"),
             TableColumnConfig(table, "crdt_document_revision", "BIGINT"),
+            TableColumnConfig(
+                table, "generation", "BIGINT", default_value="1", nullable=False
+            ),
         ],
     )
 
