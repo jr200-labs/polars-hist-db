@@ -89,3 +89,23 @@ def test_xtdb_store_bootstraps_every_configured_column(monkeypatch):
     assert "document_id" in statements[0][0]
     assert "head_state_vector_base64" in statements[0][0]
     assert statements[0][1].startswith("ERASE FROM overrides.crdt_documents")
+
+
+def test_xtdb_store_diff_uses_current_document(monkeypatch):
+    source = Doc()
+    source["drafts"] = Map({"title": "Current"})
+    store = XtdbCrdtDocumentStore(
+        object(), CrdtDocumentStoreConfig(), OverrideLedgerConfig()
+    )
+    monkeypatch.setattr(
+        store,
+        "load_document",
+        lambda _: CrdtDocument(
+            "document-1", 1, source.get_state(), source.get_update()
+        ),
+    )
+
+    caught_up = Doc()
+    caught_up.apply_update(store.diff("document-1", b"\x00"))
+
+    assert caught_up.get("drafts", type=Map).to_py() == {"title": "Current"}

@@ -100,6 +100,14 @@ class XtdbCrdtDocumentStore:
             update=document.get_update(),
         )
 
+    def diff(self, document_id: str, state_vector: bytes) -> bytes:
+        document = self.load_document(document_id)
+        if document is None:
+            raise KeyError(f"unknown CRDT document: {document_id}")
+        current = _doc()
+        current.apply_update(document.update)
+        return current.get_update(state_vector)
+
     def commit(
         self,
         prepared: PreparedCrdtCommit,
