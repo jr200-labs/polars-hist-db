@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Any, Sequence
@@ -31,7 +31,9 @@ from .config import (
     build_crdt_update_table_config,
     build_document_access_table_configs,
     build_override_table_config,
+    build_layer_composition_table_config,
 )
+from .operations import CompositionRevision
 from .crdt import (
     AtomicInsert,
     AtomicUpdate,
@@ -47,7 +49,65 @@ from .types import (
     CrdtDocumentStoreConfig,
     DocumentAccessStoreConfig,
     OverrideLedgerConfig,
+    LayerCompositionStoreConfig,
 )
+
+
+class MariaDbLayerCompositionStore:
+    def __init__(
+        self, connection: Connection, config: LayerCompositionStoreConfig
+    ) -> None:
+        self.connection = connection
+        self.table = _table(connection, build_layer_composition_table_config(config))
+
+    def append(self, revision: CompositionRevision, actor_id: str) -> None:
+        self.connection.execute(
+            self.table.insert().values(
+                revision_id=revision.revision_id,
+                layer_id=revision.layer_id,
+                child_layer_ids_json=_json(list(revision.child_layer_ids)),
+                valid_from=revision.valid_from,
+                valid_to=revision.valid_to,
+                recorded_at=revision.recorded_at,
+                actor_id=actor_id,
+                supersedes_revision_id=revision.supersedes_revision_id,
+            )
+        )
+
+    def revisions(self, layer_id: str | None = None) -> tuple[CompositionRevision, ...]:
+        query = select(self.table)
+        if layer_id is not None:
+            query = query.where(self.table.c.layer_id == layer_id)
+        rows = self.connection.execute(
+            query.order_by(self.table.c.recorded_at, self.table.c.revision_id)
+        ).mappings()
+        return tuple(_composition_revision(row) for row in rows)
+
+
+def _composition_revision(row: Any) -> CompositionRevision:
+    children = row["child_layer_ids_json"]
+    if isinstance(children, str):
+        children = json.loads(children)
+    return CompositionRevision(
+        str(row["revision_id"]),
+        str(row["layer_id"]),
+        tuple(str(item) for item in children),
+        _aware_datetime(row["valid_from"]),
+        None if row.get("valid_to") is None else _aware_datetime(row["valid_to"]),
+        _aware_datetime(row["recorded_at"]),
+        row.get("supersedes_revision_id"),
+    )
+
+
+def _aware_datetime(value: object) -> datetime:
+    parsed = (
+        value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+    )
+    return (
+        parsed.replace(tzinfo=timezone.utc)
+        if parsed.tzinfo is None
+        else parsed.astimezone(timezone.utc)
+    )
 
 
 class MariaDbCrdtDocumentStore:
@@ -109,6 +169,19 @@ class MariaDbCrdtDocumentStore:
         current = _doc()
         current.apply_update(document.update)
         return current.get_update(state_vector)
+
+    def erase_document(self, document_id: str) -> None:
+        self.connection.execute(
+            self.projection.delete().where(
+                self.projection.c.crdt_document_id == document_id
+            )
+        )
+        self.connection.execute(
+            self.updates.delete().where(self.updates.c.document_id == document_id)
+        )
+        self.connection.execute(
+            self.documents.delete().where(self.documents.c.document_id == document_id)
+        )
 
     def commit(
         self,
@@ -174,6 +247,7 @@ class MariaDbCrdtDocumentStore:
                 self.documents.insert().values(
                     document_id=prepared.document_id,
                     revision=next_revision,
+                    generation=_generation(prepared),
                     head_state_vector_base64=_encode(prepared.state_vector),
                     updated_at=datetime.now(timezone.utc),
                 )
@@ -197,6 +271,7 @@ class MariaDbCrdtDocumentStore:
             self.updates.insert().values(
                 document_id=prepared.document_id,
                 revision=next_revision,
+                generation=_generation(prepared),
                 source_update_hash=prepared.source_update_hash,
                 accepted_update_hash=prepared.accepted_update_hash,
                 update_base64=_encode(prepared.accepted_update),
@@ -302,6 +377,9 @@ class MariaDbCrdtDocumentStore:
                     format_version=operation.format_version,
                     layer_id=operation.layer_id,
                     actor_id=operation.actor_id,
+                    actor_display_name=(operation.metadata_json or {}).get(
+                        "actor_display_name"
+                    ),
                     supersedes_operation_ids_json=_json(
                         list(operation.supersedes_operation_ids)
                     ),
@@ -312,8 +390,13 @@ class MariaDbCrdtDocumentStore:
                     payload_hash=operation.payload_hash,
                     crdt_document_id=prepared.document_id,
                     crdt_document_revision=revision,
+                    generation=_generation(prepared),
                 )
             )
+
+
+def _generation(prepared: PreparedCrdtCommit) -> int:
+    return prepared.generation
 
 
 class MariaDbDocumentAccessStore:
@@ -390,6 +473,23 @@ class MariaDbDocumentAccessStore:
             {"status": "active", "revision": expected_revision},
         )
 
+    def begin_purge(self, document_id: str, expected_generation: int) -> AccessDocument:
+        document = self.get(document_id)
+        if document is None:
+            raise DocumentNotFound("document not found")
+        if document.generation != expected_generation or document.status not in {
+            "active",
+            "purging",
+        }:
+            raise DocumentRevisionConflict("document generation changed")
+        self.connection.execute(
+            self.documents.update()
+            .where(self.documents.c.document_id == document_id)
+            .where(self.documents.c.generation == expected_generation)
+            .values(status="purging")
+        )
+        return replace(document, status="purging")
+
     def create(
         self,
         document_id: str,
@@ -400,9 +500,16 @@ class MariaDbDocumentAccessStore:
         *,
         initial_grants: Sequence[AccessGrantInput] = (),
         idempotency_key: str,
+        owning_group: str | None = None,
     ) -> AccessMutationResult:
         payload = _payload(
-            "create", document_id, name, description, actor_id, initial_grants
+            "create",
+            document_id,
+            name,
+            description,
+            actor_id,
+            initial_grants,
+            owning_group,
         )
         duplicate = self._duplicate(idempotency_key, payload)
         if duplicate:
@@ -417,6 +524,7 @@ class MariaDbDocumentAccessStore:
             1,
             actor_id,
             recorded_at,
+            owning_group=owning_group,
         )
         try:
             with self.connection.begin_nested():

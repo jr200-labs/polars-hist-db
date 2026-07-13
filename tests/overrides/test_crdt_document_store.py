@@ -130,6 +130,7 @@ def test_prepared_commit_finalizes_operations_and_rejects_later_mutation():
         source_update,
         actor_id="user-1",
         recorded_at=accepted_at,
+        authoritative_metadata={"actor_display_name": "Verified User"},
     )
     store = InMemoryCrdtDocumentStore()
     committed = store.commit(prepared)
@@ -138,6 +139,9 @@ def test_prepared_commit_finalizes_operations_and_rejects_later_mutation():
     assert committed.revision == 1
     assert prepared.source_update_hash != prepared.accepted_update_hash
     assert store.projected_operations("document-1")[0].actor_id == "user-1"
+    assert store.projected_operations("document-1")[0].metadata_json == {
+        "actor_display_name": "Verified User"
+    }
     assert store.projected_operations("document-1")[0].payload_hash is not None
 
     document: Any = Doc()

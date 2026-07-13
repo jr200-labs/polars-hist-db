@@ -51,12 +51,14 @@ def test_build_override_table_config_contains_required_columns():
         "format_version",
         "layer_id",
         "actor_id",
+        "actor_display_name",
         "supersedes_operation_ids_json",
         "removes_operation_ids_json",
         "recorded_at",
         "payload_hash",
         "crdt_document_id",
         "crdt_document_revision",
+        "generation",
     }
     assert (
         next(

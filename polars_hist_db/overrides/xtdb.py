@@ -39,8 +39,10 @@ from .config import (
     build_crdt_document_table_config,
     build_crdt_update_table_config,
     build_document_access_table_configs,
+    build_layer_composition_table_config,
     build_override_table_config,
 )
+from .operations import CompositionRevision
 from .crdt import (
     AtomicInsert,
     AtomicUpdate,
@@ -55,8 +57,76 @@ from .crdt import (
 from .types import (
     CrdtDocumentStoreConfig,
     DocumentAccessStoreConfig,
+    LayerCompositionStoreConfig,
     OverrideLedgerConfig,
 )
+
+
+class XtdbLayerCompositionStore:
+    def __init__(self, connection: Any, config: LayerCompositionStoreConfig) -> None:
+        self.connection = connection
+        self.table = build_layer_composition_table_config(config)
+
+    def append(self, revision: CompositionRevision, actor_id: str) -> None:
+        _execute_xtdb_transaction(
+            self.connection,
+            [
+                _insert_statement(
+                    self.table,
+                    {
+                        "revision_id": revision.revision_id,
+                        "layer_id": revision.layer_id,
+                        "child_layer_ids_json": list(revision.child_layer_ids),
+                        "valid_from": revision.valid_from,
+                        "valid_to": revision.valid_to,
+                        "recorded_at": revision.recorded_at,
+                        "actor_id": actor_id,
+                        "supersedes_revision_id": revision.supersedes_revision_id,
+                    },
+                )
+            ],
+        )
+
+    def revisions(self, layer_id: str | None = None) -> tuple[CompositionRevision, ...]:
+        predicate = (
+            ""
+            if layer_id is None
+            else f" WHERE layer_id = {_literal(layer_id, 'VARCHAR(128)')}"
+        )
+        try:
+            rows = self.connection.execute(
+                text(
+                    "SELECT revision_id, layer_id, child_layer_ids_json, "
+                    f"valid_from, valid_to, recorded_at, supersedes_revision_id "
+                    f"FROM {_table_name(self.table)}"
+                    f"{predicate} ORDER BY recorded_at, revision_id"
+                )
+            ).mappings()
+            return tuple(_composition_revision(row) for row in rows)
+        except Exception as exc:
+            if not _is_xtdb_table_not_found_error(exc):
+                raise
+            _rollback_xtdb_connection(self.connection)
+            return ()
+
+
+def _composition_revision(row: Mapping[str, object]) -> CompositionRevision:
+    children = row["child_layer_ids_json"]
+    if isinstance(children, str):
+        children = json.loads(children)
+    if not isinstance(children, list):
+        raise ValueError("stored composition children are invalid")
+    return CompositionRevision(
+        str(row["revision_id"]),
+        str(row["layer_id"]),
+        tuple(str(item) for item in children),
+        _datetime(row["valid_from"]),
+        None if row.get("valid_to") is None else _datetime(row["valid_to"]),
+        _datetime(row["recorded_at"]),
+        None
+        if row.get("supersedes_revision_id") is None
+        else str(row["supersedes_revision_id"]),
+    )
 
 
 class XtdbCrdtDocumentStore:
@@ -108,6 +178,17 @@ class XtdbCrdtDocumentStore:
         current.apply_update(document.update)
         return current.get_update(state_vector)
 
+    def erase_document(self, document_id: str) -> None:
+        value = _literal(document_id, "VARCHAR(128)")
+        _execute_xtdb_transaction(
+            self.connection,
+            [
+                f"ERASE FROM {_table_name(self.projection)} WHERE crdt_document_id = {value}",
+                f"ERASE FROM {_table_name(self.updates)} WHERE document_id = {value}",
+                f"ERASE FROM {_table_name(self.documents)} WHERE _id = {value}",
+            ],
+        )
+
     def commit(
         self,
         prepared: PreparedCrdtCommit,
@@ -145,6 +226,7 @@ class XtdbCrdtDocumentStore:
                 {
                     "document_id": prepared.document_id,
                     "revision": prepared.base_revision + 1,
+                    "generation": _generation(prepared),
                     "head_state_vector_base64": _encode(prepared.state_vector),
                     "updated_at": _accepted_at(prepared),
                 },
@@ -154,6 +236,7 @@ class XtdbCrdtDocumentStore:
                 {
                     "document_id": prepared.document_id,
                     "revision": prepared.base_revision + 1,
+                    "generation": _generation(prepared),
                     "source_update_hash": prepared.source_update_hash,
                     "accepted_update_hash": prepared.accepted_update_hash,
                     "update_base64": _encode(prepared.accepted_update),
@@ -286,12 +369,16 @@ class XtdbCrdtDocumentStore:
             "format_version": operation.format_version,
             "layer_id": operation.layer_id,
             "actor_id": operation.actor_id,
+            "actor_display_name": (operation.metadata_json or {}).get(
+                "actor_display_name"
+            ),
             "supersedes_operation_ids_json": list(operation.supersedes_operation_ids),
             "removes_operation_ids_json": list(operation.removes_operation_ids),
             "recorded_at": operation.recorded_at,
             "payload_hash": operation.payload_hash,
             "crdt_document_id": prepared.document_id,
             "crdt_document_revision": prepared.base_revision + 1,
+            "generation": _generation(prepared),
         }
         return _insert_statement(
             self.projection,
@@ -394,6 +481,24 @@ class XtdbDocumentAccessStore:
             {"status": "active", "revision": expected_revision},
         )
 
+    def begin_purge(self, document_id: str, expected_generation: int) -> AccessDocument:
+        document = self.get(document_id)
+        if document is None:
+            raise DocumentNotFound("document not found")
+        if document.generation != expected_generation or document.status not in {
+            "active",
+            "purging",
+        }:
+            raise DocumentRevisionConflict("document generation changed")
+        _execute_xtdb_transaction(
+            self.connection,
+            [
+                f"ASSERT EXISTS (SELECT 1 FROM {_table_name(self.documents)} WHERE _id = {_literal(document_id, 'VARCHAR(128)')} AND generation = {expected_generation}::BIGINT), 'document generation changed'",
+                _access_update(self.documents, document_id, {"status": "purging"}),
+            ],
+        )
+        return replace(document, status="purging")
+
     def create(
         self,
         document_id: str,
@@ -404,9 +509,12 @@ class XtdbDocumentAccessStore:
         *,
         initial_grants: Sequence[AccessGrantInput] = (),
         idempotency_key: str,
+        owning_group: str | None = None,
     ) -> AccessMutationResult:
         grants = tuple(initial_grants)
-        payload = _payload("create", document_id, name, description, actor_id, grants)
+        payload = _payload(
+            "create", document_id, name, description, actor_id, grants, owning_group
+        )
         duplicate = self._duplicate(idempotency_key, payload)
         if duplicate:
             return duplicate
@@ -425,6 +533,7 @@ class XtdbDocumentAccessStore:
             1,
             actor_id,
             recorded_at,
+            owning_group=owning_group,
         )
         result = AccessMutationResult(
             document,
@@ -718,6 +827,8 @@ def _access_document_columns(prefix: str | None = None) -> str:
         "created_at",
         "archived_by",
         "archived_at",
+        "owning_group",
+        "generation",
     )
     return ", ".join(f"{prefix}.{name}" if prefix else name for name in names)
 
@@ -752,6 +863,10 @@ def _access_document_from_row(row: Mapping[str, object]) -> AccessDocument:
         archived_at=None
         if row["archived_at"] is None
         else _datetime(row["archived_at"]),
+        owning_group=(
+            None if row.get("owning_group") is None else str(row["owning_group"])
+        ),
+        generation=int(str(row.get("generation", 1))),
     )
 
 
@@ -785,6 +900,8 @@ def _document_row(document: AccessDocument) -> dict[str, object]:
         "created_at": document.created_at,
         "archived_by": document.archived_by,
         "archived_at": document.archived_at,
+        "owning_group": document.owning_group,
+        "generation": document.generation,
     }
 
 
@@ -968,6 +1085,10 @@ def _accepted_at(prepared: PreparedCrdtCommit) -> datetime:
     if prepared.operations:
         return prepared.operations[0].recorded_at
     return datetime.now(timezone.utc)
+
+
+def _generation(prepared: PreparedCrdtCommit) -> int:
+    return prepared.generation
 
 
 def _bootstrap_value(data_type: str) -> object:

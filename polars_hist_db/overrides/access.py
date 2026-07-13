@@ -43,6 +43,8 @@ class AccessDocument:
     created_at: datetime
     archived_by: str | None = None
     archived_at: datetime | None = None
+    owning_group: str | None = None
+    generation: int = 1
 
 
 @dataclass(frozen=True)
@@ -93,9 +95,12 @@ class InMemoryDocumentAccessStore:
         *,
         initial_grants: Iterable[AccessGrantInput] = (),
         idempotency_key: str,
+        owning_group: str | None = None,
     ) -> AccessMutationResult:
         grants = tuple(initial_grants)
-        payload = _payload("create", document_id, name, description, actor_id, grants)
+        payload = _payload(
+            "create", document_id, name, description, actor_id, grants, owning_group
+        )
         duplicate = self._duplicate(idempotency_key, payload)
         if duplicate is not None:
             return duplicate
@@ -116,6 +121,7 @@ class InMemoryDocumentAccessStore:
             1,
             actor_id,
             recorded_at,
+            owning_group=owning_group,
         )
         self._documents[document_id] = document
         for grant in grants:
@@ -131,6 +137,19 @@ class InMemoryDocumentAccessStore:
             {"document_id": document_id},
             {"status": "active", "revision": expected_revision},
         )
+
+    def begin_purge(self, document_id: str, expected_generation: int) -> AccessDocument:
+        document = self._documents.get(document_id)
+        if document is None:
+            raise DocumentNotFound("document not found")
+        if document.generation != expected_generation or document.status not in {
+            "active",
+            "purging",
+        }:
+            raise DocumentRevisionConflict("document generation changed")
+        updated = replace(document, status="purging")
+        self._documents[document_id] = updated
+        return updated
 
     def list_for_groups(
         self, groups: Iterable[str], *, include_archived: bool = False

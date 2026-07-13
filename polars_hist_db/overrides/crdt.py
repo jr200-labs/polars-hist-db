@@ -34,6 +34,7 @@ class PreparedCrdtCommit:
     state_vector: bytes
     operations: tuple[ReplicatedOverrideOperation, ...]
     is_noop: bool = False
+    generation: int = 1
 
 
 @dataclass(frozen=True)
@@ -85,6 +86,7 @@ def prepare_crdt_update(
     *,
     actor_id: str,
     recorded_at: datetime,
+    authoritative_metadata: Mapping[str, object] | None = None,
 ) -> PreparedCrdtCommit:
     document = _doc()
     base_revision = 0
@@ -137,6 +139,14 @@ def prepare_crdt_update(
     known_operations = list(before.values())
     for operation_id in sorted(after.keys() - before.keys()):
         operation = after[operation_id]
+        if authoritative_metadata:
+            operation = replace(
+                operation,
+                metadata_json={
+                    **(operation.metadata_json or {}),
+                    **authoritative_metadata,
+                },
+            )
         validate_replicated_override_operation(operation, known_operations)
         finalized = finalize_replicated_override_operation(operation)
         new_operations.append(finalized)
@@ -154,6 +164,47 @@ def prepare_crdt_update(
         accepted_update_hash=_hash(accepted_update),
         state_vector=document.get_state(),
         operations=tuple(new_operations),
+    )
+
+
+def operation_source_update(operation: ReplicatedOverrideOperation) -> bytes:
+    """Encode one provisional operation for the normal authoritative commit path."""
+    document = _doc()
+    operations = _operations_map(document, create=True)
+    assert operations is not None
+    operations[operation.operation_id] = {
+        key: value
+        for key, value in _operation_to_yjs(operation).items()
+        if key not in {"actor_id", "recorded_at", "payload_hash"}
+    }
+    return document.get_update()
+
+
+def prepare_crdt_generation(
+    document_id: str,
+    operations: Sequence[ReplicatedOverrideOperation],
+    *,
+    generation: int,
+) -> PreparedCrdtCommit:
+    """Build a sanitized replacement generation after the prior one is erased."""
+    document = _doc()
+    operations_map = _operations_map(document, create=True)
+    assert operations_map is not None
+    finalized = tuple(
+        finalize_replicated_override_operation(item) for item in operations
+    )
+    for operation in finalized:
+        operations_map[operation.operation_id] = _operation_to_yjs(operation)
+    update = document.get_update()
+    return PreparedCrdtCommit(
+        document_id=document_id,
+        base_revision=0,
+        source_update_hash=_hash(update),
+        accepted_update=update,
+        accepted_update_hash=_hash(update),
+        state_vector=document.get_state(),
+        operations=finalized,
+        generation=generation,
     )
 
 
