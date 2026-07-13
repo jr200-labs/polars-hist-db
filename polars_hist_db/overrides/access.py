@@ -6,6 +6,10 @@ from hashlib import sha256
 import json
 from typing import Iterable
 
+from .config import build_document_access_table_configs
+from .crdt import RowGuard
+from .types import DocumentAccessStoreConfig
+
 
 class DocumentAccessError(ValueError):
     pass
@@ -120,6 +124,13 @@ class InMemoryDocumentAccessStore:
 
     def get(self, document_id: str) -> AccessDocument | None:
         return self._documents.get(document_id)
+
+    def guard(self, document_id: str, expected_revision: int) -> RowGuard:
+        return RowGuard(
+            build_document_access_table_configs(DocumentAccessStoreConfig())[0],
+            {"document_id": document_id},
+            {"status": "active", "revision": expected_revision},
+        )
 
     def list_for_groups(
         self, groups: Iterable[str], *, include_archived: bool = False

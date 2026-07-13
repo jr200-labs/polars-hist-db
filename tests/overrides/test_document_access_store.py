@@ -72,3 +72,10 @@ def test_idempotency_and_revision_conflicts_are_explicit():
         store.create("doc-2", "Other", None, "admin", TIME, idempotency_key="create-1")
     with pytest.raises(DocumentRevisionConflict):
         store.archive("doc-1", "admin", TIME, 2, idempotency_key="archive-1")
+
+
+def test_guard_matches_the_portable_active_revision_contract():
+    guard = InMemoryDocumentAccessStore().guard("doc-1", 4)
+
+    assert guard.key_values == {"document_id": "doc-1"}
+    assert guard.expected_values == {"status": "active", "revision": 4}
