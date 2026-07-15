@@ -672,7 +672,7 @@ def test_xtdb_staging_cleanup_erases_only_batch_run():
     ) in [call.args for call in driver_connection.execute.call_args_list]
 
 
-def test_xtdb_staging_cleanup_uses_cached_document_ids():
+def test_xtdb_staging_cleanup_clears_serialized_stage_table():
     driver_connection = Mock()
     connection = Mock()
     connection.connection.driver_connection = driver_connection
@@ -702,10 +702,7 @@ def test_xtdb_staging_cleanup_uses_cached_document_ids():
         for call in driver_connection.execute.call_args_list
         if call.args[0].startswith("ERASE")
     )
-    assert "WHERE _id IN (" in sql
-    assert 'xtdb-pk-v1:[["stage_run_id","stage-1"],["stage_row_index",0]]' in sql
-    assert 'xtdb-pk-v1:[["stage_run_id","stage-1"],["stage_row_index",1]]' in sql
-    assert "WHERE stage_run_id" not in sql
+    assert sql == "ERASE FROM fakedata.__record_stream_stage WHERE TRUE"
 
 
 def test_xtdb_staging_deduces_foreign_keys_and_inserts_missing_parent(
