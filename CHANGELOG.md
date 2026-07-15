@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.45](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.44...v0.12.45) (2026-07-15)
+
+
+### Performance Improvements
+
+* **xtdb:** clear serialized staging table directly ([#198](https://github.com/jr200-labs/polars-hist-db/issues/198)) ([d9a51fd](https://github.com/jr200-labs/polars-hist-db/commit/d9a51fdeb8d8f402b733ebb09ac51fdb16da7a63))
+
 ## [0.12.44](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.43...v0.12.44) (2026-07-15)
 
 
