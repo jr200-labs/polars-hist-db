@@ -2,15 +2,17 @@ import builtins
 from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import polars as pl
+import pyarrow as pa
 import pytest
 
 from polars_hist_db.backends.xtdb import (
     XtdbDataframeOps,
     XtdbTableConfigOps,
     _execute_xtdb_dml,
+    _execute_xtdb_arrow_copy,
 )
 from polars_hist_db.config import TableColumnConfig, TableConfig
 from polars_hist_db.core import TimeHint
@@ -344,7 +346,7 @@ def test_xtdb_dataframe_ops_uses_system_time_transaction_for_update_time():
 
 
 def test_xtdb_dataframe_ops_splits_pgwire_insert_by_max_rows():
-    driver_connection = Mock()
+    driver_connection = MagicMock()
     cursor = driver_connection.cursor.return_value
     connection = Mock()
     connection.connection.driver_connection = driver_connection
@@ -360,17 +362,37 @@ def test_xtdb_dataframe_ops_splits_pgwire_insert_by_max_rows():
     )
 
     assert result == 5
-    insert_sql = [call.args[0] for call in cursor.executemany.call_args_list]
-    assert insert_sql == [
-        "INSERT INTO test.records (_id, destination) VALUES (%s::BIGINT, %s::TEXT)",
-        "INSERT INTO test.records (_id, destination) VALUES (%s::BIGINT, %s::TEXT)",
-        "INSERT INTO test.records (_id, destination) VALUES (%s::BIGINT, %s::TEXT)",
+    assert cursor.copy.call_count == 2
+    assert cursor.executemany.call_args.args[1] == [(5, "E")]
+
+
+def test_xtdb_arrow_copy_writes_one_arrow_stream_transaction():
+    driver_connection = MagicMock()
+    connection = Mock()
+    connection.connection.driver_connection = driver_connection
+    connection.in_transaction.return_value = False
+
+    _execute_xtdb_arrow_copy(
+        connection,
+        "test.records",
+        pl.DataFrame({"_id": [1, 2, 3], "destination": ["A", "B", "C"]}),
+    )
+
+    assert [call.args[0] for call in driver_connection.execute.call_args_list] == [
+        "BEGIN READ WRITE",
+        "COMMIT",
     ]
-    assert [call.args[1] for call in cursor.executemany.call_args_list] == [
-        [(1, "A"), (2, "B")],
-        [(3, "C"), (4, "D")],
-        [(5, "E")],
+    driver_connection.cursor.return_value.copy.assert_called_once_with(
+        "COPY test.records FROM STDIN WITH (FORMAT 'arrow-stream')"
+    )
+    payload = driver_connection.cursor.return_value.copy.return_value.__enter__.return_value.write.call_args.args[
+        0
     ]
+    table = pa.ipc.open_stream(payload).read_all()
+    assert table.to_pydict() == {
+        "_id": [1, 2, 3],
+        "destination": ["A", "B", "C"],
+    }
 
 
 def test_xtdb_dml_advances_reused_system_time_on_same_connection():

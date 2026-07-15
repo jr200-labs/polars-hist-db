@@ -28,7 +28,7 @@ repos:
     hooks:
       - id: mypy
         name: mypy (uv run)
-        entry: uv run --group dev mypy --config-file=pyproject.toml
+        entry: uv run --group dev mypy .
         language: system
         types: [python]
         require_serial: true

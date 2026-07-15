@@ -836,6 +836,60 @@ def _execute_xtdb_dml(
     return row_count
 
 
+def _execute_xtdb_arrow_copy(
+    connection: Any,
+    table_sql: str,
+    df: pl.DataFrame,
+    *,
+    system_time: Optional[datetime] = None,
+) -> None:
+    driver_connection = _driver_connection(connection)
+    if driver_connection is None:
+        raise ValueError("XTDB Arrow COPY requires a live DBAPI connection")
+
+    _rollback_xtdb_connection(connection)
+    autocommit = getattr(driver_connection, "autocommit", None)
+    if autocommit is not None:
+        driver_connection.autocommit = True
+
+    begin_sql = "BEGIN READ WRITE"
+    if system_time is not None:
+        system_time = _next_xtdb_system_time(connection, system_time)
+        begin_sql = (
+            "BEGIN READ WRITE WITH "
+            f"(SYSTEM_TIME = {_xtdb_timestamp_literal(system_time)})"
+        )
+
+    arrow_table = _normalize_xtdb_ingest_arrow(df.to_arrow())
+    sink = pa.BufferOutputStream()
+    with pa.ipc.new_stream(sink, arrow_table.schema) as writer:
+        writer.write_table(arrow_table)
+
+    driver_connection.execute(begin_sql)
+    try:
+        cursor = driver_connection.cursor()
+        try:
+            with cursor.copy(
+                f"COPY {table_sql} FROM STDIN WITH (FORMAT 'arrow-stream')"
+            ) as copy:
+                copy.write(sink.getvalue().to_pybytes())
+        finally:
+            close = getattr(cursor, "close", None)
+            if callable(close):
+                close()
+        driver_connection.execute("COMMIT")
+    except Exception as exc:
+        driver_connection.execute("ROLLBACK")
+        driver_connection.rollback()
+        if system_time is not None and _is_xtdb_invalid_system_time_error(exc):
+            _execute_xtdb_arrow_copy(connection, table_sql, df, system_time=None)
+            return
+        raise
+    finally:
+        if autocommit is not None:
+            driver_connection.autocommit = autocommit
+
+
 def _execute_xtdb_transaction(connection: Any, statements: Iterable[str]) -> None:
     """Submit one serialized XTDB DML transaction."""
 
@@ -1472,6 +1526,22 @@ class XtdbDataframeOps:
         if driver_connection is not None:
             inserted_count = 0
             for chunk in _iter_xtdb_insert_chunks(df, self.max_rows_per_insert):
+                table_sql = _qualified_table_name(table_schema, table_name)
+                if chunk.height > 1:
+                    physical_columns = {
+                        column: _xtdb_physical_column_name(column)
+                        for column in chunk.columns
+                        if column != _xtdb_physical_column_name(column)
+                    }
+                    _execute_xtdb_arrow_copy(
+                        self.connection,
+                        table_sql,
+                        chunk.rename(physical_columns),
+                        system_time=update_time,
+                    )
+                    inserted_count += chunk.height
+                    continue
+
                 columns = [_xtdb_column_identifier(column) for column in chunk.columns]
                 column_sql = ", ".join(columns)
                 casts = _xtdb_insert_casts(chunk, table_config)
@@ -1483,7 +1553,6 @@ class XtdbDataframeOps:
                     for row in chunk.rows()
                 ]
                 values_sql = "(" + ", ".join(f"%s::{cast}" for cast in casts) + ")"
-                table_sql = _qualified_table_name(table_schema, table_name)
                 insert_sql = (
                     f"INSERT INTO {table_sql} ({column_sql}) VALUES {values_sql}"
                 )
@@ -1789,6 +1858,7 @@ class XtdbStagingOps:
         except Exception as exc:
             if not _is_xtdb_adbc_ingest_unavailable(exc):
                 raise
+            self.adbc_connection = None
 
         return self._dataframes().table_insert(
             df,

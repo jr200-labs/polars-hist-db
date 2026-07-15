@@ -228,6 +228,7 @@ def test_xtdb_staging_insert_partition_falls_back_when_adbc_ingest_unavailable(
     assert inserted["table_schema"] == "fakedata"
     assert inserted["table_name"] == "__record_stream_stage"
     assert inserted["table_config"].name == "__record_stream_stage"
+    assert staging.adbc_connection is None
 
 
 def test_xtdb_staging_projects_from_insert_cache_after_partition_insert(monkeypatch):
