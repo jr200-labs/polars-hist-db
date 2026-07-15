@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.44](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.43...v0.12.44) (2026-07-15)
+
+
+### Performance Improvements
+
+* **xtdb:** bulk ingest pgwire writes with arrow copy ([#196](https://github.com/jr200-labs/polars-hist-db/issues/196)) ([7fc00e1](https://github.com/jr200-labs/polars-hist-db/commit/7fc00e1a5b032be768ee664c7a8476c6d277c742))
+
 ## [0.12.43](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.42...v0.12.43) (2026-07-15)
 
 
