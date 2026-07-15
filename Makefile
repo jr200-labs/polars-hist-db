@@ -21,6 +21,9 @@ check:
 	uv run ruff format
 	uv run mypy .
 
+benchmark-xtdb-delta:
+	uv run python benchmarks/xtdb_delta.py
+
 run-tests:
 	NATS_PORT=$(NATS_PORT) MARIADB_PORT=$(MARIADB_PORT) uv run python -m pytest tests/
 
