@@ -2226,16 +2226,11 @@ class XtdbStagingOps:
         if stage_df is not None:
             if stage_df.is_empty():
                 return
-            stage_config = self.stage_table_config(delta_table_config)
-            ids = _prepare_xtdb_insert_dataframe(stage_df, stage_config).get_column(
-                "_id"
-            )
-            ids_sql = ", ".join(
-                _xtdb_sql_literal(value, "TEXT") for value in ids.to_list()
-            )
+            # ponytail: ingest runs are serialized per dataset; restore a
+            # run-scoped erase if concurrent runs are introduced.
             _execute_xtdb_dml(
                 self.connection,
-                f"ERASE FROM {table_name} WHERE _id IN ({ids_sql})",
+                f"ERASE FROM {table_name} WHERE TRUE",
             )
             return
 
