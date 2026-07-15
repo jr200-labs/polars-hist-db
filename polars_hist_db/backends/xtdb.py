@@ -1917,10 +1917,6 @@ class XtdbStagingOps:
             primary_keys=[_XTDB_STAGE_RUN_ID_COLUMN, _XTDB_STAGE_ROW_INDEX_COLUMN],
         )
 
-    def ensure_table(self, delta_table_config: TableConfig) -> TableConfig:
-        stage_config = self.stage_table_config(delta_table_config)
-        return XtdbTableConfigOps(self.connection).create(stage_config)
-
     def insert_partition(
         self,
         df: pl.DataFrame,
@@ -1945,15 +1941,8 @@ class XtdbStagingOps:
 
         stage_config = self.stage_table_config(delta_table_config)
         df = _normalize_xtdb_timestamp_columns(df, stage_config)
-        inserted_count = self._bulk_table_insert(
-            df,
-            stage_config.schema,
-            stage_config.name,
-            table_config=stage_config,
-        )
-        if inserted_count > 0:
-            self._stage_run_cache[stage_run_id] = df
-        return inserted_count
+        self._stage_run_cache[stage_run_id] = df
+        return df.height
 
     def prepare_pipeline_item_dataframe(
         self,
@@ -1964,15 +1953,10 @@ class XtdbStagingOps:
         *,
         valid_time: Optional[ValidTimeConfig],
     ) -> pl.DataFrame:
-        table_name = _qualified_table_name(
-            dataset.delta_table_schema, _xtdb_stage_table_name(dataset.name)
-        )
-        stage_run_literal = _xtdb_sql_literal(stage_run_id, "TEXT")
         stage_df = self._stage_run_cache.get(stage_run_id)
         if stage_df is None:
-            stage_df = self._dataframes().from_raw_sql(
-                f"SELECT * FROM {table_name} "
-                f"WHERE {_XTDB_STAGE_RUN_ID_COLUMN} = {stage_run_literal}"
+            raise ValueError(
+                f"XTDB staged partition is unavailable for run {stage_run_id!r}"
             )
         stage_df = self._deduce_foreign_keys(
             stage_df,
@@ -2218,28 +2202,8 @@ class XtdbStagingOps:
             [column for column in fk_sources if column in stage_df.columns]
         ).join(resolver, on=value_sources, how="left")
 
-    def cleanup_run(self, stage_run_id: str, delta_table_config: TableConfig) -> None:
-        stage_df = self._stage_run_cache.pop(stage_run_id, None)
-        table_name = _qualified_table_name(
-            delta_table_config.schema, _xtdb_stage_table_name(delta_table_config.name)
-        )
-        if stage_df is not None:
-            if stage_df.is_empty():
-                return
-            # ponytail: ingest runs are serialized per dataset; restore a
-            # run-scoped erase if concurrent runs are introduced.
-            _execute_xtdb_dml(
-                self.connection,
-                f"ERASE FROM {table_name} WHERE TRUE",
-            )
-            return
-
-        stage_run_literal = _xtdb_sql_literal(stage_run_id, "TEXT")
-        _execute_xtdb_dml(
-            self.connection,
-            f"ERASE FROM {table_name} "
-            f"WHERE {_XTDB_STAGE_RUN_ID_COLUMN} = {stage_run_literal}",
-        )
+    def cleanup_run(self, stage_run_id: str) -> None:
+        self._stage_run_cache.pop(stage_run_id, None)
 
 
 @dataclass(frozen=True)

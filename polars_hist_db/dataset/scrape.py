@@ -150,7 +150,6 @@ async def try_run_pipeline_as_transaction(
                             if staging is None:
                                 raise ValueError("XTDB ingest requires staging ops")
                             stage_run_id = f"{dataset.name}:{uuid4()}"
-                            staging.ensure_table(delta_table_config)
                             staging.insert_partition(
                                 partition_df,
                                 delta_table_config,
@@ -188,7 +187,7 @@ async def try_run_pipeline_as_transaction(
                                 and stage_run_id is not None
                                 and staging is not None
                             ):
-                                staging.cleanup_run(stage_run_id, delta_table_config)
+                                staging.cleanup_run(stage_run_id)
 
                     if delta_table_config is not None:
                         backend.finalize_ingest_run(connection, delta_table_config)
