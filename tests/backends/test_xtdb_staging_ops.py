@@ -13,27 +13,14 @@ from polars_hist_db.config import (
 )
 
 
-def test_xtdb_staging_insert_partition_uses_retained_stage_table(monkeypatch):
-    created_configs = []
-    inserted = {}
+def _staging_with(stage_df, *, adbc_connection=None):
+    staging = XtdbStagingOps(object(), adbc_connection=adbc_connection)
+    staging._stage_run_cache["stage-1"] = stage_df
+    return staging
 
-    monkeypatch.setattr(
-        "polars_hist_db.backends.xtdb.XtdbTableConfigOps.create",
-        lambda self, table_config: created_configs.append(table_config) or table_config,
-    )
 
-    def table_insert(self, df, table_schema, table_name, table_config=None):
-        inserted["df"] = df
-        inserted["table_schema"] = table_schema
-        inserted["table_name"] = table_name
-        inserted["table_config"] = table_config
-        return df.height
-
-    monkeypatch.setattr(
-        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_insert",
-        table_insert,
-    )
-
+def test_xtdb_staging_partition_stays_in_memory_without_database_io():
+    connection = Mock()
     delta_table_config = TableConfig(
         schema="fakedata",
         name="record_stream",
@@ -43,9 +30,8 @@ def test_xtdb_staging_insert_partition_uses_retained_stage_table(monkeypatch):
         ],
     )
     partition_time = datetime(2030, 1, 1, 12, 0, tzinfo=timezone.utc)
-    staging = XtdbStagingOps(object())
+    staging = XtdbStagingOps(connection)
 
-    staging.ensure_table(delta_table_config)
     inserted_count = staging.insert_partition(
         pl.DataFrame(
             {
@@ -61,59 +47,40 @@ def test_xtdb_staging_insert_partition_uses_retained_stage_table(monkeypatch):
     )
 
     assert inserted_count == 1
-    stage_config = created_configs[0]
-    assert stage_config.schema == "fakedata"
-    assert stage_config.name == "__record_stream_stage"
-    assert list(stage_config.primary_keys) == ["stage_run_id", "stage_row_index"]
-    assert inserted["table_schema"] == "fakedata"
-    assert inserted["table_name"] == "__record_stream_stage"
-    assert inserted["table_config"].name == "__record_stream_stage"
-    assert inserted["df"].to_dict(as_series=False) == {
+    assert staging._stage_run_cache["stage-1"].to_dict(as_series=False) == {
         "stage_row_index": [0],
         "record_id": [1],
         "destination_name": ["Alpha"],
         "stage_run_id": ["stage-1"],
         "stage_partition_time": [partition_time.replace(tzinfo=None)],
     }
+    connection.assert_not_called()
 
 
-def test_xtdb_staging_insert_partition_preserves_insert_row_limit(monkeypatch):
-    observed = {}
-
-    def table_insert(self, df, table_schema, table_name, table_config=None):
-        observed["max_rows_per_insert"] = self.max_rows_per_insert
-        return df.height
-
-    monkeypatch.setattr(
-        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_insert",
-        table_insert,
-    )
-
-    delta_table_config = TableConfig(
+def test_xtdb_staging_903_rows_avoids_database_io():
+    config = TableConfig(
         schema="fakedata",
         name="record_stream",
-        columns=[
-            TableColumnConfig("record_stream", "record_id", "INT"),
-            TableColumnConfig("record_stream", "destination_name", "VARCHAR(64)"),
-        ],
+        columns=[TableColumnConfig("record_stream", "record_id", "INT")],
     )
-    staging = XtdbStagingOps(object(), max_rows_per_insert=2500)
+    staging = XtdbStagingOps(object())
+    staging._bulk_table_insert = Mock(
+        side_effect=AssertionError("staging must not write to XTDB")
+    )
 
-    staging.insert_partition(
-        pl.DataFrame(
-            {
-                "record_id": [1, 2],
-                "destination_name": ["Alpha", "Beta"],
-            }
-        ),
-        delta_table_config,
+    inserted = staging.insert_partition(
+        pl.DataFrame({"record_id": range(903)}),
+        config,
         "stage-1",
-        datetime(2030, 1, 1, 12, 0, tzinfo=timezone.utc),
+        datetime(2030, 1, 1, tzinfo=timezone.utc),
         uniqueness_col_set=["record_id"],
         prefill_nulls_with_default=True,
     )
+    staging.cleanup_run("stage-1")
 
-    assert observed["max_rows_per_insert"] == 2500
+    assert inserted == 903
+    assert not staging._stage_run_cache
+    staging._bulk_table_insert.assert_not_called()
 
 
 def test_xtdb_backend_staging_preserves_insert_row_limit():
@@ -122,119 +89,8 @@ def test_xtdb_backend_staging_preserves_insert_row_limit():
     assert staging.max_rows_per_insert == 2500
 
 
-def test_xtdb_staging_insert_partition_uses_adbc_bulk_connection(monkeypatch):
-    adbc_connection = object()
-    pgwire_insert = Mock(side_effect=AssertionError("should use ADBC bulk ingest"))
-    inserted = {}
-
-    def adbc_table_insert(self, df, table_schema, table_name, table_config=None):
-        inserted["connection"] = self.connection
-        inserted["df"] = df
-        inserted["table_schema"] = table_schema
-        inserted["table_name"] = table_name
-        inserted["table_config"] = table_config
-        return df.height
-
-    monkeypatch.setattr(
-        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_insert",
-        pgwire_insert,
-    )
-    monkeypatch.setattr(
-        "polars_hist_db.backends.xtdb.XtdbAdbcDataframeOps.table_insert",
-        adbc_table_insert,
-    )
-    delta_table_config = TableConfig(
-        schema="fakedata",
-        name="record_stream",
-        columns=[
-            TableColumnConfig("record_stream", "record_id", "INT"),
-            TableColumnConfig("record_stream", "destination_name", "VARCHAR(64)"),
-        ],
-    )
-    staging = XtdbBackend(max_rows_per_insert=2500).staging(
-        object(),
-        adbc_connection=adbc_connection,
-    )
-
-    inserted_count = staging.insert_partition(
-        pl.DataFrame({"record_id": [1], "destination_name": ["Alpha"]}),
-        delta_table_config,
-        "stage-1",
-        datetime(2030, 1, 1, 12, 0, tzinfo=timezone.utc),
-        uniqueness_col_set=["record_id"],
-        prefill_nulls_with_default=True,
-    )
-
-    assert inserted_count == 1
-    assert inserted["connection"] is adbc_connection
-    assert inserted["table_schema"] == "fakedata"
-    assert inserted["table_name"] == "__record_stream_stage"
-    assert inserted["table_config"].name == "__record_stream_stage"
-    pgwire_insert.assert_not_called()
-
-
-def test_xtdb_staging_insert_partition_falls_back_when_adbc_ingest_unavailable(
-    monkeypatch,
-):
-    adbc_connection = object()
-    inserted = {}
-
-    def adbc_table_insert(self, df, table_schema, table_name, table_config=None):
-        raise NotImplementedError("NOT_IMPLEMENTED: ExecuteIngest")
-
-    def pgwire_table_insert(self, df, table_schema, table_name, table_config=None):
-        inserted["connection"] = self.connection
-        inserted["max_rows_per_insert"] = self.max_rows_per_insert
-        inserted["df"] = df
-        inserted["table_schema"] = table_schema
-        inserted["table_name"] = table_name
-        inserted["table_config"] = table_config
-        return df.height
-
-    monkeypatch.setattr(
-        "polars_hist_db.backends.xtdb.XtdbAdbcDataframeOps.table_insert",
-        adbc_table_insert,
-    )
-    monkeypatch.setattr(
-        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_insert",
-        pgwire_table_insert,
-    )
-    pgwire_connection = object()
-    delta_table_config = TableConfig(
-        schema="fakedata",
-        name="record_stream",
-        columns=[
-            TableColumnConfig("record_stream", "record_id", "INT"),
-            TableColumnConfig("record_stream", "destination_name", "VARCHAR(64)"),
-        ],
-    )
-    staging = XtdbBackend(max_rows_per_insert=2500).staging(
-        pgwire_connection,
-        adbc_connection=adbc_connection,
-    )
-
-    inserted_count = staging.insert_partition(
-        pl.DataFrame({"record_id": [1], "destination_name": ["Alpha"]}),
-        delta_table_config,
-        "stage-1",
-        datetime(2030, 1, 1, 12, 0, tzinfo=timezone.utc),
-        uniqueness_col_set=["record_id"],
-        prefill_nulls_with_default=True,
-    )
-
-    assert inserted_count == 1
-    assert inserted["connection"] is pgwire_connection
-    assert inserted["max_rows_per_insert"] == 2500
-    assert inserted["table_schema"] == "fakedata"
-    assert inserted["table_name"] == "__record_stream_stage"
-    assert inserted["table_config"].name == "__record_stream_stage"
-    assert staging.adbc_connection is None
-
-
 def test_xtdb_staging_projects_from_insert_cache_after_partition_insert(monkeypatch):
-    def table_insert(self, df, table_schema, table_name, table_config=None):
-        return df.height
-
+    table_insert = Mock(side_effect=AssertionError("staging must not write to XTDB"))
     from_raw_sql = Mock(
         return_value=pl.DataFrame(
             schema={
@@ -309,6 +165,7 @@ def test_xtdb_staging_projects_from_insert_cache_after_partition_insert(monkeypa
         "record_id": [1],
         "destination": ["Alpha"],
     }
+    table_insert.assert_not_called()
     from_raw_sql.assert_not_called()
 
 
@@ -384,6 +241,13 @@ def test_xtdb_staging_projects_empty_insert_from_cache(monkeypatch):
     from_raw_sql.assert_not_called()
 
 
+def test_xtdb_staging_rejects_unknown_run():
+    with pytest.raises(ValueError, match="staged partition is unavailable"):
+        XtdbStagingOps(object()).prepare_pipeline_item_dataframe(
+            "missing", Mock(), 0, Mock(), valid_time=None
+        )
+
+
 def test_xtdb_staging_projects_pipeline_item_with_valid_time_mapping(monkeypatch):
     stage_df = pl.DataFrame(
         {
@@ -426,7 +290,9 @@ def test_xtdb_staging_projects_pipeline_item_with_valid_time_mapping(monkeypatch
         ],
     )
 
-    result = XtdbStagingOps(object()).prepare_pipeline_item_dataframe(
+    staging = XtdbStagingOps(object())
+    staging._stage_run_cache["stage-1"] = stage_df
+    result = staging.prepare_pipeline_item_dataframe(
         "stage-1",
         dataset,
         0,
@@ -439,10 +305,7 @@ def test_xtdb_staging_projects_pipeline_item_with_valid_time_mapping(monkeypatch
         "destination": ["Alpha"],
         "msg_timestamp": [datetime(2030, 1, 1, tzinfo=timezone.utc)],
     }
-    from_raw_sql.assert_called_once_with(
-        "SELECT * FROM fakedata.__record_stream_stage "
-        "WHERE stage_run_id = 'stage-1'::TEXT"
-    )
+    from_raw_sql.assert_not_called()
 
 
 def test_xtdb_staging_projects_missing_nullable_pipeline_columns(monkeypatch):
@@ -486,7 +349,9 @@ def test_xtdb_staging_projects_missing_nullable_pipeline_columns(monkeypatch):
         ],
     )
 
-    result = XtdbStagingOps(object()).prepare_pipeline_item_dataframe(
+    staging = XtdbStagingOps(object())
+    staging._stage_run_cache["stage-1"] = stage_df
+    result = staging.prepare_pipeline_item_dataframe(
         "stage-1",
         dataset,
         0,
@@ -502,15 +367,8 @@ def test_xtdb_staging_projects_missing_nullable_pipeline_columns(monkeypatch):
     assert result.schema["source_note"] == pl.String
 
 
-def test_xtdb_staging_insert_cache_matches_stage_table_schema_for_missing_columns(
-    monkeypatch,
-):
-    inserted = {}
-
-    def table_insert(self, df, table_schema, table_name, table_config=None):
-        inserted["df"] = df
-        return df.height
-
+def test_xtdb_staging_cache_materializes_missing_columns(monkeypatch):
+    table_insert = Mock(side_effect=AssertionError("staging must not write to XTDB"))
     from_raw_sql = Mock(
         return_value=pl.DataFrame(
             schema={
@@ -591,7 +449,7 @@ def test_xtdb_staging_insert_cache_matches_stage_table_schema_for_missing_column
         "source_note": [None],
     }
     assert result.schema["source_note"] == pl.String
-    assert inserted["df"].to_dict(as_series=False) == {
+    assert staging._stage_run_cache["stage-1"].to_dict(as_series=False) == {
         "stage_row_index": [0],
         "record_id": [1],
         "destination_name": ["Alpha"],
@@ -599,7 +457,8 @@ def test_xtdb_staging_insert_cache_matches_stage_table_schema_for_missing_column
         "stage_run_id": ["stage-1"],
         "stage_partition_time": [datetime(2030, 1, 1)],
     }
-    assert inserted["df"].schema["source_note"] == pl.String
+    assert staging._stage_run_cache["stage-1"].schema["source_note"] == pl.String
+    table_insert.assert_not_called()
     from_raw_sql.assert_not_called()
 
 
@@ -641,8 +500,10 @@ def test_xtdb_staging_rejects_missing_required_pipeline_columns(monkeypatch):
         ],
     )
 
+    staging = XtdbStagingOps(object())
+    staging._stage_run_cache["stage-1"] = stage_df
     with pytest.raises(ValueError, match="column mismatch"):
-        XtdbStagingOps(object()).prepare_pipeline_item_dataframe(
+        staging.prepare_pipeline_item_dataframe(
             "stage-1",
             dataset,
             0,
@@ -651,37 +512,8 @@ def test_xtdb_staging_rejects_missing_required_pipeline_columns(monkeypatch):
         )
 
 
-def test_xtdb_staging_cleanup_erases_only_batch_run():
-    driver_connection = Mock()
+def test_xtdb_staging_cleanup_only_discards_memory_cache():
     connection = Mock()
-    connection.connection.driver_connection = driver_connection
-    connection.in_transaction.return_value = False
-    delta_table_config = TableConfig(
-        schema="fakedata",
-        name="record_stream",
-        columns=[
-            TableColumnConfig("record_stream", "record_id", "INT"),
-        ],
-    )
-
-    XtdbStagingOps(connection).cleanup_run("stage-1", delta_table_config)
-
-    assert (
-        "ERASE FROM fakedata.__record_stream_stage "
-        "WHERE stage_run_id = 'stage-1'::TEXT",
-    ) in [call.args for call in driver_connection.execute.call_args_list]
-
-
-def test_xtdb_staging_cleanup_clears_serialized_stage_table():
-    driver_connection = Mock()
-    connection = Mock()
-    connection.connection.driver_connection = driver_connection
-    connection.in_transaction.return_value = False
-    delta_table_config = TableConfig(
-        schema="fakedata",
-        name="record_stream",
-        columns=[TableColumnConfig("record_stream", "record_id", "INT")],
-    )
     staging = XtdbStagingOps(connection)
     staging._stage_run_cache["stage-1"] = pl.DataFrame(
         {
@@ -695,14 +527,10 @@ def test_xtdb_staging_cleanup_clears_serialized_stage_table():
         }
     )
 
-    staging.cleanup_run("stage-1", delta_table_config)
+    staging.cleanup_run("stage-1")
 
-    sql = next(
-        call.args[0]
-        for call in driver_connection.execute.call_args_list
-        if call.args[0].startswith("ERASE")
-    )
-    assert sql == "ERASE FROM fakedata.__record_stream_stage WHERE TRUE"
+    assert "stage-1" not in staging._stage_run_cache
+    connection.assert_not_called()
 
 
 def test_xtdb_staging_deduces_foreign_keys_and_inserts_missing_parent(
@@ -780,7 +608,7 @@ def test_xtdb_staging_deduces_foreign_keys_and_inserts_missing_parent(
         ],
     )
 
-    result = XtdbStagingOps(object()).prepare_pipeline_item_dataframe(
+    result = _staging_with(stage_df).prepare_pipeline_item_dataframe(
         "stage-1",
         dataset,
         0,
@@ -882,9 +710,8 @@ def test_xtdb_staging_inserts_missing_parent_with_adbc_bulk_connection(monkeypat
         ],
     )
 
-    result = XtdbStagingOps(
-        object(),
-        adbc_connection=adbc_connection,
+    result = _staging_with(
+        stage_df, adbc_connection=adbc_connection
     ).prepare_pipeline_item_dataframe(
         "stage-1",
         dataset,
@@ -987,7 +814,7 @@ def test_xtdb_staging_deduces_explicit_numeric_foreign_keys(monkeypatch):
         ],
     )
 
-    result = XtdbStagingOps(object()).prepare_pipeline_item_dataframe(
+    result = _staging_with(stage_df).prepare_pipeline_item_dataframe(
         "stage-1",
         dataset,
         0,
@@ -1097,7 +924,7 @@ def test_xtdb_staging_generates_numeric_foreign_key_when_source_key_is_missing(
         ],
     )
 
-    result = XtdbStagingOps(object()).prepare_pipeline_item_dataframe(
+    result = _staging_with(stage_df).prepare_pipeline_item_dataframe(
         "stage-1",
         dataset,
         0,
@@ -1213,6 +1040,7 @@ def test_xtdb_staging_reuses_deduced_foreign_key_for_later_primary_item(
         ],
     )
     staging = XtdbStagingOps(object())
+    staging._stage_run_cache["stage-1"] = stage_df
 
     location_df = staging.prepare_pipeline_item_dataframe(
         "stage-1",
@@ -1339,6 +1167,7 @@ def test_xtdb_staging_does_not_insert_same_generated_parent_twice(
         ],
     )
     staging = XtdbStagingOps(object())
+    staging._stage_run_cache["stage-1"] = stage_df
 
     origin_df = staging.prepare_pipeline_item_dataframe(
         "stage-1",
@@ -1424,7 +1253,7 @@ def test_xtdb_staging_deduces_existing_foreign_key_without_insert(monkeypatch):
         ],
     )
 
-    result = XtdbStagingOps(object()).prepare_pipeline_item_dataframe(
+    result = _staging_with(stage_df).prepare_pipeline_item_dataframe(
         "stage-1",
         dataset,
         0,
@@ -1499,7 +1328,7 @@ def test_xtdb_staging_deduces_foreign_keys_with_null_typed_empty_parent(
         ],
     )
 
-    result = XtdbStagingOps(object()).prepare_pipeline_item_dataframe(
+    result = _staging_with(stage_df).prepare_pipeline_item_dataframe(
         "stage-1",
         dataset,
         0,

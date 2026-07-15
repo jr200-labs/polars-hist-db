@@ -172,59 +172,6 @@ def test_xtdb_adbc_live_arrow_ingest_read_roundtrip():
     }
 
 
-def test_xtdb_adbc_live_staging_partition_roundtrip():
-    stream_name = f"live_adbc_stage_records_{int(time.time())}"
-    delta_table_config = TableConfig(
-        schema="sample",
-        name=stream_name,
-        columns=[
-            TableColumnConfig(stream_name, "record_id", "BIGINT", nullable=False),
-            TableColumnConfig(stream_name, "destination", "VARCHAR(255)"),
-            TableColumnConfig(stream_name, "amount_value", "DOUBLE"),
-        ],
-    )
-
-    with _xtdb_pgwire_and_adbc_connections() as (
-        pgwire_connection,
-        adbc_connection,
-    ):
-        backend = XtdbBackend(max_rows_per_insert=2)
-        staging = backend.staging(
-            pgwire_connection,
-            adbc_connection=adbc_connection,
-        )
-        stage_config = staging.ensure_table(delta_table_config)
-
-        inserted_count = staging.insert_partition(
-            pl.DataFrame(
-                {
-                    "record_id": [1, 2, 3],
-                    "destination": ["Alpha", "Beta", "Gamma"],
-                    "amount_value": [10.5, 20.25, 30.75],
-                }
-            ),
-            delta_table_config,
-            "stage-1",
-            datetime(2030, 1, 1, tzinfo=timezone.utc),
-            uniqueness_col_set=["record_id"],
-            prefill_nulls_with_default=True,
-        )
-        persisted = backend.dataframes(pgwire_connection).from_table(
-            stage_config.schema,
-            stage_config.name,
-        )
-
-    assert inserted_count == 3
-    assert persisted.sort("record_id").select(
-        ["record_id", "destination", "amount_value", "stage_run_id"]
-    ).to_dict(as_series=False) == {
-        "record_id": [1, 2, 3],
-        "destination": ["Alpha", "Beta", "Gamma"],
-        "amount_value": [10.5, 20.25, 30.75],
-        "stage_run_id": ["stage-1", "stage-1", "stage-1"],
-    }
-
-
 def test_xtdb_adbc_live_temporal_upsert_supports_system_time_asof():
     table_config = TableConfig(
         schema="public",

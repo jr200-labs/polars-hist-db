@@ -12,11 +12,9 @@ from sqlalchemy import Engine, text
 
 from polars_hist_db.backends import DbEngineConfig, XtdbBackend
 from polars_hist_db.config import (
-    DatasetConfig,
     DeltaConfig,
     TableColumnConfig,
     TableConfig,
-    ValidTimeConfig,
 )
 
 
@@ -717,88 +715,3 @@ def test_xtdb_live_temporal_upsert_honours_explicit_valid_time_window():
         "amount_value": [10.5],
     }
     assert after_window.is_empty()
-
-
-def test_xtdb_live_staging_roundtrip_projects_and_cleans_batch():
-    suffix = int(time.time())
-    delta_table_config = TableConfig(
-        schema="public",
-        name=f"live_stage_record_stream_{suffix}",
-        columns=[
-            TableColumnConfig("stage", "record_id", "BIGINT"),
-            TableColumnConfig("stage", "destination_name", "VARCHAR(255)"),
-            TableColumnConfig("stage", "msg_timestamp", "TIMESTAMP"),
-        ],
-    )
-    target_table_config = TableConfig(
-        schema="public",
-        name=f"live_stage_records_{suffix}",
-        primary_keys=["record_id"],
-        columns=[
-            TableColumnConfig("records", "record_id", "BIGINT", nullable=False),
-            TableColumnConfig("records", "destination", "VARCHAR(255)"),
-        ],
-    )
-    dataset = DatasetConfig(
-        name=delta_table_config.name,
-        delta_table_schema="public",
-        input_config={"type": "dsv", "search_paths": []},
-        pipeline=[
-            {
-                "schema": "public",
-                "table": target_table_config.name,
-                "type": "primary",
-                "columns": [
-                    {"source": "record_id", "target": "record_id"},
-                    {"source": "destination_name", "target": "destination"},
-                ],
-            }
-        ],
-    )
-    partition_time = datetime(2030, 1, 1, tzinfo=timezone.utc)
-    projected_partition_time = datetime(2030, 1, 1)
-
-    with _xtdb_engine() as engine:
-        with engine.connect() as connection:
-            backend = XtdbBackend()
-            staging = backend.staging(connection)
-
-            staging.ensure_table(delta_table_config)
-            inserted_count = staging.insert_partition(
-                pl.DataFrame(
-                    {
-                        "record_id": [1, 1],
-                        "destination_name": ["Beta", "Alpha"],
-                        "msg_timestamp": [partition_time, partition_time],
-                    }
-                ),
-                delta_table_config,
-                "stage-live-1",
-                partition_time,
-                uniqueness_col_set=["record_id"],
-                prefill_nulls_with_default=True,
-            )
-            projected = staging.prepare_pipeline_item_dataframe(
-                "stage-live-1",
-                dataset,
-                0,
-                target_table_config,
-                valid_time=ValidTimeConfig(
-                    table=target_table_config.name,
-                    from_column="msg_timestamp",
-                ),
-            )
-            staging.cleanup_run("stage-live-1", delta_table_config)
-            remaining = backend.dataframes(connection).from_raw_sql(
-                "SELECT * FROM "
-                f"public.__{delta_table_config.name}_stage "
-                "WHERE stage_run_id = 'stage-live-1'::TEXT"
-            )
-
-    assert inserted_count == 1
-    assert projected.to_dict(as_series=False) == {
-        "record_id": [1],
-        "destination": ["Alpha"],
-        "msg_timestamp": [projected_partition_time],
-    }
-    assert remaining.is_empty()
