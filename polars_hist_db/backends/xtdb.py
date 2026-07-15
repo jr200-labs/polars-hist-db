@@ -2149,10 +2149,26 @@ class XtdbStagingOps:
         ).join(resolver, on=value_sources, how="left")
 
     def cleanup_run(self, stage_run_id: str, delta_table_config: TableConfig) -> None:
-        self._stage_run_cache.pop(stage_run_id, None)
+        stage_df = self._stage_run_cache.pop(stage_run_id, None)
         table_name = _qualified_table_name(
             delta_table_config.schema, _xtdb_stage_table_name(delta_table_config.name)
         )
+        if stage_df is not None:
+            if stage_df.is_empty():
+                return
+            stage_config = self.stage_table_config(delta_table_config)
+            ids = _prepare_xtdb_insert_dataframe(stage_df, stage_config).get_column(
+                "_id"
+            )
+            ids_sql = ", ".join(
+                _xtdb_sql_literal(value, "TEXT") for value in ids.to_list()
+            )
+            _execute_xtdb_dml(
+                self.connection,
+                f"ERASE FROM {table_name} WHERE _id IN ({ids_sql})",
+            )
+            return
+
         stage_run_literal = _xtdb_sql_literal(stage_run_id, "TEXT")
         _execute_xtdb_dml(
             self.connection,
