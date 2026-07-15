@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.43](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.42...v0.12.43) (2026-07-15)
+
+
+### Bug Fixes
+
+* **deps:** update all non-major dependencies ([#192](https://github.com/jr200-labs/polars-hist-db/issues/192)) ([567ac20](https://github.com/jr200-labs/polars-hist-db/commit/567ac2098a17e2ecf22626013b3a17544803efbc))
+
+
+### Performance Improvements
+
+* **xtdb:** erase staging rows by document id ([#194](https://github.com/jr200-labs/polars-hist-db/issues/194)) ([e661000](https://github.com/jr200-labs/polars-hist-db/commit/e6610008af5820a6f63e0595eb8c882d122b55d1))
+
 ## [0.12.42](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.41...v0.12.42) (2026-07-13)
 
 
