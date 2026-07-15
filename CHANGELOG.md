@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.46](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.45...v0.12.46) (2026-07-15)
+
+
+### Performance Improvements
+
+* **xtdb:** keep ingest staging in memory ([#200](https://github.com/jr200-labs/polars-hist-db/issues/200)) ([c5b791e](https://github.com/jr200-labs/polars-hist-db/commit/c5b791efbe32a3f8a5498d44480b4fff5ebc55e8))
+
 ## [0.12.45](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.44...v0.12.45) (2026-07-15)
 
 
