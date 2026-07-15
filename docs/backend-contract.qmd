@@ -291,6 +291,9 @@ behaviour:
   finality it temporally deletes current rows whose `_id` is missing from the
   incoming snapshot. It then compares incoming rows against the current row at
   the same temporal basis and skips rows whose configured values are unchanged.
+  The comparison fetches only uploaded document IDs and requested columns, so
+  its transfer and client-memory cost scale with the upload rather than the
+  complete target table.
 - A live test proves the unchanged update returns zero changed rows and does
   not create a transaction at the unchanged `update_time`; the subsequent
   changed update remains visible through as-of valid-time/system-time queries.
@@ -313,18 +316,16 @@ behaviour:
   columns. This keeps feed semantics YAML-controlled: record snapshots can use
   message/as-of time, entity vectors can use source position time, and future
   rate feeds can use explicit validity windows.
-- Dataset ingestion keeps an explicit staging phase for XTDB. The adapter
-  writes each partition to a retained internal table named
-  `__<dataset>_stage`, keyed by `stage_run_id` and `stage_row_index`, then
-  deletes only that `stage_run_id` after the upload finishes. This mirrors the
-  MariaDB pattern of reusing the staging schema while keeping staged data scoped
-  to one upload.
+- Dataset ingestion keeps each XTDB partition in a process-local Polars
+  dataframe until the pipeline finishes, then discards it. It does not persist
+  a staging table in XTDB.
 - XTDB staging preserves pipeline source-to-target column mapping, duplicate
   removal, default filling, `update_time` system-time import, per-table
-  valid-time mapping, and `deduce_foreign_key` normalization for textual target
-  key columns. Missing normalized rows get deterministic IDs of the form
-  `xtdb-fk-v1:<schema>.<table>:<natural-key-json>`. Numeric generated IDs need
-  a separate allocator before they can be supported safely.
+  valid-time mapping, and `deduce_foreign_key` normalization. Parent lookups
+  fetch only uploaded natural keys. Missing textual rows get deterministic IDs
+  of the form `xtdb-fk-v1:<schema>.<table>:<natural-key-json>`. Missing numeric
+  rows use deterministic negative IDs, probe existing IDs, and resolve any
+  collisions before insert.
 - MariaDB continues to treat `__valid_from` / `__valid_to` as system-version
   history. Dataset valid-time mappings are XTDB business valid-time inputs and
   are not equivalent to MariaDB's generated system-time columns.

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
+from functools import partial
 import hashlib
 import json
 import logging
@@ -49,6 +50,7 @@ _XTDB_STAGE_ROW_INDEX_COLUMN = "stage_row_index"
 _XTDB_STAGE_PARTITION_TIME_COLUMN = "stage_partition_time"
 _XTDB_LAST_SYSTEM_TIME_KEY = "polars_hist_db_xtdb_last_system_time"
 _XTDB_RESERVED_IDENTIFIERS = {"flag", "timestamp"}
+_XTDB_QUERY_ROWS_PER_CHUNK = 10_000
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -1132,25 +1134,35 @@ def _filter_xtdb_unchanged_rows(
     indexed_df = df.with_row_index(row_index)
     incoming = _prepare_xtdb_insert_dataframe(indexed_df, table_config)
 
-    table_sql = _qualified_table_name(table_schema, table_name)
+    compare_columns = [
+        column
+        for column in incoming.columns
+        if column not in {row_index, "_valid_from", *_XTDB_READONLY_SYSTEM_COLUMNS}
+    ]
+    query_columns = [
+        "__valid_to" if column == "_valid_to" else column for column in compare_columns
+    ]
     try:
-        current = dataframe_ops.from_raw_sql(
-            f"SELECT * FROM {table_sql}{_xtdb_temporal_basis_clause(update_time)}"
+        current = dataframe_ops.table_query(
+            table_schema,
+            table_name,
+            incoming.select("_id").unique(maintain_order=True),
+            query_columns,
+            table_config=table_config,
+            basis_time=update_time,
         )
     except Exception as exc:
         if _is_xtdb_table_not_found_error(exc):
             _rollback_xtdb_connection(dataframe_ops.connection)
             return df
         raise
-    current = _restore_xtdb_logical_columns(current, table_config)
+    if "__valid_to" in current.columns:
+        current = current.rename({"__valid_to": "_valid_to"})
     if current.is_empty():
         return df
 
     compare_columns = [
-        column
-        for column in incoming.columns
-        if column not in {row_index, "_valid_from", *_XTDB_READONLY_SYSTEM_COLUMNS}
-        and column in current.columns
+        column for column in compare_columns if column in current.columns
     ]
     if "_id" not in compare_columns:
         raise ValueError("XTDB delta upsert requires current rows to include _id")
@@ -1329,6 +1341,7 @@ def _xtdb_deduced_foreign_key_id(
 
 def _xtdb_deduced_numeric_foreign_key_id(
     table_config: TableConfig,
+    target_column: str,
     value_targets: list[str],
     row: dict[str, Any],
 ) -> int:
@@ -1339,7 +1352,15 @@ def _xtdb_deduced_numeric_foreign_key_id(
         encoded_parts, separators=(",", ":"), ensure_ascii=False
     )
     digest = hashlib.sha256(payload.encode("utf-8")).digest()
-    generated = int.from_bytes(digest[:4], "big") & 0x7FFFFFFF
+    bits = (
+        63
+        if any(
+            column.name == target_column and column.data_type.upper() == "BIGINT"
+            for column in table_config.columns
+        )
+        else 31
+    )
+    generated = int.from_bytes(digest[:8], "big") & ((1 << bits) - 1)
     return -(generated or 1)
 
 
@@ -1380,6 +1401,23 @@ def _cast_null_parent_lookup_columns(
     if not casts:
         return parent_lookup
     return parent_lookup.with_columns(casts)
+
+
+def _xtdb_integer_min(table_config: TableConfig, column_name: str) -> int:
+    data_type = next(
+        column.data_type.upper()
+        for column in table_config.columns
+        if column.name == column_name
+    )
+    bits = {
+        "TINYINT": 8,
+        "SMALLINT": 16,
+        "MEDIUMINT": 24,
+        "INT": 32,
+        "INTEGER": 32,
+        "BIGINT": 64,
+    }[data_type]
+    return -(1 << (bits - 1))
 
 
 class XtdbDataframeOps:
@@ -1439,36 +1477,17 @@ class XtdbDataframeOps:
         query_df: pl.DataFrame,
         column_selection: Optional[list[str]],
         time_hint: TimeHint | None = None,
+        table_config: TableConfig | None = None,
+        basis_time: datetime | None = None,
     ) -> pl.DataFrame:
-        table_config = XtdbTableConfigOps(self.connection).from_table(
-            table_schema,
-            table_name,
-        )
+        if table_config is None:
+            table_config = XtdbTableConfigOps(self.connection).from_table(
+                table_schema,
+                table_name,
+            )
         output_columns = _xtdb_table_query_output_columns(
             table_config,
             column_selection,
-        )
-        select_sql = ", ".join(
-            _xtdb_table_query_select_expr(column, table_config)
-            for column in output_columns
-        )
-        join_clause = " AND ".join(
-            "t."
-            f"{_xtdb_table_query_target_column(column, table_config)} = "
-            f"q.{_xtdb_column_identifier(column)}"
-            for column in query_df.columns
-        )
-        table_sql = _qualified_table_name(table_schema, table_name)
-        valid_time_clause = _xtdb_valid_time_clause(time_hint)
-        query = (
-            f"WITH {_xtdb_values_cte('query_df', query_df)} "
-            f"SELECT {select_sql} "
-            "FROM ("
-            "SELECT *, _valid_from, _valid_to "
-            f"FROM {table_sql}{valid_time_clause}"
-            ") AS t "
-            "JOIN query_df AS q "
-            f"ON {join_clause}"
         )
         schema_overrides = {}
         for column in table_config.columns:
@@ -1477,6 +1496,38 @@ class XtdbDataframeOps:
             dtype = _xtdb_polars_type_or_none(column.data_type)
             if dtype is not None:
                 schema_overrides[column.name] = dtype
+        if "_id" in output_columns:
+            document_id_columns = _xtdb_document_id_columns(table_config)
+            if len(document_id_columns) > 1:
+                schema_overrides["_id"] = pl.String()
+            else:
+                id_config = next(
+                    (
+                        column
+                        for column in table_config.columns
+                        if column.name == document_id_columns[0]
+                    ),
+                    None,
+                )
+                if id_config is not None:
+                    schema_overrides["_id"] = (
+                        _xtdb_polars_type_or_none(id_config.data_type) or pl.String()
+                    )
+        for temporal_column in ["__valid_from", "__valid_to"]:
+            if temporal_column in output_columns:
+                schema_overrides[temporal_column] = pl.Datetime("us")
+        if query_df.is_empty():
+            return pl.DataFrame(schema=schema_overrides)
+        select_sql = ", ".join(
+            _xtdb_table_query_select_expr(column, table_config)
+            for column in output_columns
+        )
+        table_sql = _qualified_table_name(table_schema, table_name)
+        valid_time_clause = (
+            _xtdb_temporal_basis_clause(basis_time)
+            if basis_time is not None
+            else _xtdb_valid_time_clause(time_hint)
+        )
         single_key_alias = _xtdb_single_primary_key_alias(table_config)
         if single_key_alias is not None and single_key_alias in output_columns:
             id_column = next(
@@ -1487,11 +1538,27 @@ class XtdbDataframeOps:
             id_dtype = _xtdb_polars_type_or_none(id_column.data_type)
             if id_dtype is not None:
                 schema_overrides[single_key_alias] = id_dtype
-        for temporal_column in ["__valid_from", "__valid_to"]:
-            if temporal_column in output_columns:
-                schema_overrides[temporal_column] = pl.Datetime("us")
-
-        df = self.from_raw_sql(query, schema_overrides)
+        chunk_size = self.max_rows_per_insert or _XTDB_QUERY_ROWS_PER_CHUNK
+        chunks = []
+        for query_chunk in query_df.iter_slices(chunk_size):
+            join_clause = " AND ".join(
+                "t."
+                f"{_xtdb_table_query_target_column(column, table_config)} = "
+                f"q.{_xtdb_column_identifier(column)}"
+                for column in query_chunk.columns
+            )
+            query = (
+                f"WITH {_xtdb_values_cte('query_df', query_chunk)} "
+                f"SELECT {select_sql} "
+                "FROM ("
+                "SELECT *, _valid_from, _valid_to "
+                f"FROM {table_sql}{valid_time_clause}"
+                ") AS t "
+                "JOIN query_df AS q "
+                f"ON {join_clause}"
+            )
+            chunks.append(self.from_raw_sql(query, schema_overrides))
+        df = pl.concat(chunks, how="vertical_relaxed")
         for temporal_column in ["__valid_from", "__valid_to"]:
             if (
                 temporal_column in df.columns
@@ -1621,6 +1688,8 @@ class XtdbAdbcDataframeOps:
             query,
             schema_overrides,
         )
+
+    table_query = XtdbDataframeOps.table_query
 
     def table_insert(
         self,
@@ -2012,6 +2081,57 @@ class XtdbStagingOps:
         self._projected_parent_row_cache.update(new_parent_keys)
         return pl.DataFrame(rows_to_return, schema=projected_df.schema)
 
+    def _resolve_numeric_foreign_key_collisions(
+        self,
+        rows: pl.DataFrame,
+        table_config: TableConfig,
+        fk_targets: list[str],
+    ) -> pl.DataFrame:
+        if rows.is_empty():
+            return rows
+        resolved = rows
+        for target in fk_targets:
+            marker = f"__xtdb_generated_{target}"
+            if marker not in resolved.columns or not _xtdb_is_integer_config_column(
+                table_config, target
+            ):
+                continue
+
+            occupied: set[int] = set()
+            while True:
+                existing = self._dataframes().table_query(
+                    table_config.schema,
+                    table_config.name,
+                    resolved.select(target).unique(maintain_order=True),
+                    [target],
+                    table_config=table_config,
+                )
+                occupied.update(existing.get_column(target).drop_nulls().to_list())
+
+                used: set[int] = set()
+                values: list[int] = []
+                changed = False
+                minimum = _xtdb_integer_min(table_config, target)
+                for row in resolved.select([target, marker]).iter_rows(named=True):
+                    value = int(row[target])
+                    generated = bool(row[marker])
+                    if not generated and (value in occupied or value in used):
+                        raise ValueError(
+                            f"Foreign key {table_config.name}.{target} is already in use"
+                        )
+                    while value in occupied or value in used:
+                        value = value - 1 if value > minimum else -1
+                        changed = True
+                    used.add(value)
+                    values.append(value)
+
+                if changed:
+                    resolved = resolved.with_columns(pl.Series(target, values))
+                    continue
+                break
+
+        return resolved
+
     def _deduce_foreign_keys(
         self,
         stage_df: pl.DataFrame,
@@ -2075,12 +2195,22 @@ class XtdbStagingOps:
             }
         )
         for source_column, target_column in fk_map.items():
+            generated = generated.with_columns(
+                (
+                    pl.lit(True)
+                    if source_column not in candidates.columns
+                    else pl.col(target_column).is_null()
+                ).alias(f"__xtdb_generated_{target_column}")
+            )
             if _xtdb_is_integer_config_column(table_config, target_column):
                 generated_value = (
                     pl.struct(value_targets)
                     .map_elements(
-                        lambda row: _xtdb_deduced_numeric_foreign_key_id(
-                            table_config, value_targets, row
+                        partial(
+                            _xtdb_deduced_numeric_foreign_key_id,
+                            table_config,
+                            target_column,
+                            value_targets,
                         ),
                         return_dtype=pl.Int64,
                     )
@@ -2107,19 +2237,13 @@ class XtdbStagingOps:
                     pl.coalesce(target_column, generated_value).alias(target_column)
                 )
 
-        parent_df = self._dataframes().from_table(
+        parent_lookup = self._dataframes().table_query(
             table_config.schema,
             table_config.name,
+            generated.select(value_targets).unique(maintain_order=True),
+            [*fk_targets, *value_targets],
+            table_config=table_config,
         )
-        parent_lookup_columns = [
-            column
-            for column in [*fk_targets, *value_targets]
-            if column in parent_df.columns
-        ]
-        if parent_lookup_columns:
-            parent_lookup = parent_df.select(parent_lookup_columns)
-        else:
-            parent_lookup = pl.DataFrame(schema=generated.schema)
         parent_lookup = _cast_null_parent_lookup_columns(
             parent_lookup,
             generated,
@@ -2160,6 +2284,27 @@ class XtdbStagingOps:
                 )
         else:
             missing_parent_rows = joined
+
+        missing_parent_rows = self._resolve_numeric_foreign_key_collisions(
+            missing_parent_rows,
+            table_config,
+            fk_targets,
+        )
+        resolved_keys = missing_parent_rows.select(
+            [*value_targets, *fk_targets]
+        ).unique(maintain_order=True)
+        joined = joined.join(
+            resolved_keys,
+            on=value_targets,
+            how="left",
+            suffix="__resolved",
+        )
+        for target_column in fk_targets:
+            resolved_column = f"{target_column}__resolved"
+            if resolved_column in joined.columns:
+                joined = joined.with_columns(
+                    pl.coalesce(resolved_column, target_column).alias(target_column)
+                ).drop(resolved_column)
 
         parent_rows_to_insert = missing_parent_rows.select(
             [*fk_targets, *value_targets]

@@ -1,4 +1,4 @@
-"""Benchmark XTDB's current client-side delta calculation.
+"""Benchmark XTDB delta and foreign-key scaling.
 
 Examples:
     uv run python benchmarks/xtdb_delta.py
@@ -34,6 +34,23 @@ class CurrentRows:
 
     def from_table(self, _schema: str, _table: str) -> pl.DataFrame:
         return self.frame
+
+    def table_query(
+        self,
+        _schema: str,
+        _table: str,
+        query_df: pl.DataFrame,
+        column_selection: list[str],
+        **_kwargs: Any,
+    ) -> pl.DataFrame:
+        if query_df.is_empty():
+            return self.frame.select(column_selection).head(0)
+        frame = self.frame
+        if "id" in column_selection and "id" not in frame.columns:
+            frame = frame.with_columns(pl.col("_id").alias("id"))
+        return frame.join(query_df, on=query_df.columns, how="inner").select(
+            column_selection
+        )
 
 
 class ForeignKeyStaging(XtdbStagingOps):
@@ -240,7 +257,7 @@ def main() -> None:
 
     print(
         "target_rows,upload_rows,target_mb,upload_mb,"
-        "polars_compare_seconds_excluding_target_read,changed_rows"
+        "synthetic_selective_compare_seconds,changed_rows"
     )
     for target_rows in (int(value) for value in args.target_rows.split(",")):
         elapsed, target_mb, upload_mb, changed = benchmark_delta(
@@ -264,7 +281,7 @@ def main() -> None:
     print(
         "parent_rows,upload_rows,match_fraction,matched_rows,created_rows,"
         "generated_id_collisions,stage_updated,parent_mb,upload_fk_mb,"
-        "foreign_key_seconds_excluding_parent_read_and_parent_insert"
+        "synthetic_selective_fk_seconds_excluding_network_and_insert"
     )
     for parent_rows in (int(value) for value in args.target_rows.split(",")):
         for match_fraction in (
