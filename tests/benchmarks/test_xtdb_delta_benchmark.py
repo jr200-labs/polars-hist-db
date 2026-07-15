@@ -12,5 +12,8 @@ def test_xtdb_delta_benchmark_models_target_and_upload_independently():
     assert incoming.shape == (10, 3)
     assert network_floor_seconds(100, 10) == 80
 
-    _, parent_mb, upload_mb = benchmark_foreign_keys(100, 10, 1)
+    _, parent_mb, upload_mb, matched, created, collisions, updated = (
+        benchmark_foreign_keys(100, 10, 0.5, 1)
+    )
     assert parent_mb > upload_mb
+    assert (matched, created, collisions, updated) == (5, 5, 0, True)

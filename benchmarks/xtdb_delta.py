@@ -40,12 +40,14 @@ class ForeignKeyStaging(XtdbStagingOps):
     def __init__(self, parent: pl.DataFrame):
         super().__init__(object())
         self.rows = CurrentRows(parent)
+        self.inserted_rows = 0
 
     def _dataframes(self) -> Any:
         return self.rows
 
-    def _bulk_table_insert(self, *args, **kwargs) -> int:
-        raise AssertionError("benchmark rows should already exist in the parent table")
+    def _bulk_table_insert(self, df: pl.DataFrame, *args, **kwargs) -> int:
+        self.inserted_rows += len(df)
+        return len(df)
 
 
 def network_floor_seconds(data_gb: float, bandwidth_gbps: float) -> float:
@@ -150,18 +152,32 @@ def benchmark_delta(
 
 
 def benchmark_foreign_keys(
-    parent_rows: int, upload_rows: int, repeats: int
-) -> tuple[float, float, float]:
+    parent_rows: int, upload_rows: int, match_fraction: float, repeats: int
+) -> tuple[float, float, float, int, int, int, bool]:
     if upload_rows > parent_rows:
         raise ValueError("upload rows cannot exceed parent rows")
+    if not 0 <= match_fraction <= 1:
+        raise ValueError("match fraction must be between zero and one")
+    matched_rows = round(upload_rows * match_fraction)
+    unmatched_rows = upload_rows - matched_rows
     parent = pl.DataFrame(
         {"id": range(parent_rows), "natural_key": range(parent_rows)}
     ).sample(fraction=1, shuffle=True, seed=42)
+    incoming_keys = [
+        *range(matched_rows),
+        *range(parent_rows, parent_rows + unmatched_rows),
+    ]
     incoming = pl.DataFrame(
-        {"parent_id": range(upload_rows), "parent_key": range(upload_rows)}
+        {
+            "parent_id": pl.Series([None] * upload_rows, dtype=pl.Int64),
+            "parent_key": incoming_keys,
+        }
     )
     dataset, config = foreign_key_config()
     timings = []
+    inserted_rows = 0
+    generated_id_collisions = 0
+    stage_updated = False
     for _ in range(repeats):
         gc.collect()
         staging = ForeignKeyStaging(parent)
@@ -172,7 +188,24 @@ def benchmark_foreign_keys(
         )
         timings.append(perf_counter() - started)
         assert len(result) == upload_rows
-    return median(timings), parent.estimated_size("mb"), incoming.estimated_size("mb")
+        inserted_rows = staging.inserted_rows
+        staged = staging._stage_run_cache["benchmark"]
+        stage_updated = staged["parent_id"].null_count() == 0
+        generated_ids = staged.filter(pl.col("parent_key") >= parent_rows).get_column(
+            "parent_id"
+        )
+        generated_id_collisions = len(generated_ids) - generated_ids.n_unique()
+        assert inserted_rows == unmatched_rows
+        assert stage_updated
+    return (
+        median(timings),
+        parent.estimated_size("mb"),
+        incoming.estimated_size("mb"),
+        matched_rows,
+        inserted_rows,
+        generated_id_collisions,
+        stage_updated,
+    )
 
 
 def benchmark_remote_sample(dsn: str, table: str, limit: int) -> None:
@@ -200,6 +233,7 @@ def main() -> None:
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--target-gb", type=float, default=100)
     parser.add_argument("--bandwidth-gbps", default="1,10,100")
+    parser.add_argument("--fk-match-fractions", default="0,0.5,1")
     parser.add_argument("--remote-table")
     parser.add_argument("--remote-limit", type=int, default=50_000)
     args = parser.parse_args()
@@ -228,17 +262,24 @@ def main() -> None:
         )
 
     print(
-        "parent_rows,upload_rows,parent_mb,upload_fk_mb,"
-        "foreign_key_seconds_excluding_parent_read"
+        "parent_rows,upload_rows,match_fraction,matched_rows,created_rows,"
+        "generated_id_collisions,stage_updated,parent_mb,upload_fk_mb,"
+        "foreign_key_seconds_excluding_parent_read_and_parent_insert"
     )
     for parent_rows in (int(value) for value in args.target_rows.split(",")):
-        elapsed, parent_mb, upload_mb = benchmark_foreign_keys(
-            parent_rows, args.upload_rows, args.repeats
-        )
-        print(
-            f"{parent_rows},{args.upload_rows},{parent_mb:.2f},{upload_mb:.2f},"
-            f"{elapsed:.3f}"
-        )
+        for match_fraction in (
+            float(value) for value in args.fk_match_fractions.split(",")
+        ):
+            elapsed, parent_mb, upload_mb, matched, created, collisions, updated = (
+                benchmark_foreign_keys(
+                    parent_rows, args.upload_rows, match_fraction, args.repeats
+                )
+            )
+            print(
+                f"{parent_rows},{args.upload_rows},{match_fraction:g},{matched},"
+                f"{created},{collisions},{str(updated).lower()},{parent_mb:.2f},"
+                f"{upload_mb:.2f},{elapsed:.3f}"
+            )
 
     if args.remote_table:
         dsn = os.environ.get("XTDB_BENCHMARK_DSN")
