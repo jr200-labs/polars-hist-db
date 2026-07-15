@@ -562,7 +562,7 @@ def test_xtdb_staging_deduces_foreign_keys_and_inserts_missing_parent(
         Mock(return_value=stage_df),
     )
     monkeypatch.setattr(
-        "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_table",
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_query",
         Mock(return_value=parent_df),
     )
     inserted = {}
@@ -669,7 +669,7 @@ def test_xtdb_staging_inserts_missing_parent_with_adbc_bulk_connection(monkeypat
         Mock(return_value=stage_df),
     )
     monkeypatch.setattr(
-        "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_table",
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_query",
         Mock(return_value=parent_df),
     )
     monkeypatch.setattr(
@@ -758,7 +758,7 @@ def test_xtdb_staging_deduces_explicit_numeric_foreign_keys(monkeypatch):
         Mock(return_value=stage_df),
     )
     monkeypatch.setattr(
-        "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_table",
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_query",
         Mock(return_value=parent_df),
     )
     inserted = {}
@@ -868,7 +868,7 @@ def test_xtdb_staging_generates_numeric_foreign_key_when_source_key_is_missing(
         Mock(return_value=stage_df),
     )
     monkeypatch.setattr(
-        "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_table",
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_query",
         Mock(return_value=parent_df),
     )
     inserted = {}
@@ -980,7 +980,7 @@ def test_xtdb_staging_reuses_deduced_foreign_key_for_later_primary_item(
         Mock(return_value=stage_df),
     )
     monkeypatch.setattr(
-        "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_table",
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_query",
         Mock(return_value=parent_df),
     )
     monkeypatch.setattr(
@@ -1101,7 +1101,7 @@ def test_xtdb_staging_does_not_insert_same_generated_parent_twice(
         Mock(return_value=stage_df),
     )
     monkeypatch.setattr(
-        "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_table",
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_query",
         Mock(return_value=parent_df),
     )
     inserted = []
@@ -1215,7 +1215,7 @@ def test_xtdb_staging_deduces_existing_foreign_key_without_insert(monkeypatch):
         Mock(return_value=stage_df),
     )
     monkeypatch.setattr(
-        "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_table",
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_query",
         Mock(return_value=parent_df),
     )
     table_insert = Mock(return_value=0)
@@ -1290,7 +1290,7 @@ def test_xtdb_staging_deduces_foreign_keys_with_null_typed_empty_parent(
         Mock(return_value=stage_df),
     )
     monkeypatch.setattr(
-        "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_table",
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_query",
         Mock(return_value=parent_df),
     )
     table_insert = Mock(return_value=1)
@@ -1340,3 +1340,60 @@ def test_xtdb_staging_deduces_foreign_keys_with_null_typed_empty_parent(
         "country_id": ["country:japan"],
         "name": ["Japan"],
     }
+
+
+def test_xtdb_staging_resolves_generated_numeric_key_collisions(monkeypatch):
+    table_config = TableConfig(
+        schema="ref",
+        name="parents",
+        primary_keys=["id"],
+        columns=[TableColumnConfig("parents", "id", "INT", nullable=False)],
+    )
+    table_query = Mock(return_value=pl.DataFrame({"id": []}, schema={"id": pl.Int64}))
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_query",
+        table_query,
+    )
+    rows = pl.DataFrame(
+        {
+            "id": [-42, -42],
+            "__xtdb_generated_id": [True, True],
+        }
+    )
+
+    result = XtdbStagingOps(object())._resolve_numeric_foreign_key_collisions(
+        rows,
+        table_config,
+        ["id"],
+    )
+
+    assert result.get_column("id").to_list() == [-42, -43]
+    assert table_query.call_count == 2
+
+
+def test_xtdb_staging_avoids_existing_generated_numeric_key(monkeypatch):
+    table_config = TableConfig(
+        schema="ref",
+        name="parents",
+        primary_keys=["id"],
+        columns=[TableColumnConfig("parents", "id", "INT", nullable=False)],
+    )
+    table_query = Mock(
+        side_effect=[
+            pl.DataFrame({"id": [-42]}),
+            pl.DataFrame({"id": []}, schema={"id": pl.Int64}),
+        ]
+    )
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_query",
+        table_query,
+    )
+    rows = pl.DataFrame({"id": [-42], "__xtdb_generated_id": [True]})
+
+    result = XtdbStagingOps(object())._resolve_numeric_foreign_key_collisions(
+        rows,
+        table_config,
+        ["id"],
+    )
+
+    assert result.get_column("id").to_list() == [-43]

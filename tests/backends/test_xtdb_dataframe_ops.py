@@ -366,6 +366,41 @@ def test_xtdb_dataframe_ops_splits_pgwire_insert_by_max_rows():
     assert cursor.executemany.call_args.args[1] == [(5, "E")]
 
 
+def test_xtdb_dataframe_ops_chunks_table_query(monkeypatch):
+    table_config = TableConfig(
+        schema="test",
+        name="records",
+        primary_keys=["id"],
+        columns=[TableColumnConfig("records", "id", "BIGINT", nullable=False)],
+    )
+    monkeypatch.setattr(
+        XtdbTableConfigOps,
+        "from_table",
+        lambda self, table_schema, table_name: table_config,
+    )
+    ops = XtdbDataframeOps(object(), max_rows_per_insert=2)
+    ops.from_raw_sql = Mock(
+        side_effect=[
+            pl.DataFrame({"id": [1, 2]}),
+            pl.DataFrame({"id": [3, 4]}),
+            pl.DataFrame({"id": [5]}),
+        ]
+    )
+
+    result = ops.table_query(
+        "test",
+        "records",
+        pl.DataFrame({"id": [1, 2, 3, 4, 5]}),
+        ["id"],
+    )
+
+    assert result.to_dict(as_series=False) == {"id": [1, 2, 3, 4, 5]}
+    assert ops.from_raw_sql.call_count == 3
+    assert all(
+        call.args[0].count("UNION ALL") <= 1 for call in ops.from_raw_sql.call_args_list
+    )
+
+
 def test_xtdb_arrow_copy_writes_one_arrow_stream_transaction():
     driver_connection = MagicMock()
     connection = Mock()

@@ -399,7 +399,7 @@ def test_xtdb_temporal_upsert_takes_last_duplicate_source_key():
 def test_xtdb_temporal_upsert_drop_unchanged_treats_missing_table_as_empty():
     backend = XtdbBackend()
     ops = Mock()
-    ops.from_raw_sql.side_effect = Exception("Table not found: test.records")
+    ops.table_query.side_effect = Exception("Table not found: test.records")
     ops.table_insert.return_value = 1
     table_config = TableConfig(
         schema="test",
@@ -464,7 +464,7 @@ def test_xtdb_temporal_upsert_dropout_treats_missing_table_as_empty():
 def test_xtdb_temporal_upsert_treats_explicit_valid_time_change_as_changed():
     backend = XtdbBackend()
     ops = Mock()
-    ops.from_raw_sql.return_value = pl.DataFrame(
+    ops.table_query.return_value = pl.DataFrame(
         {
             "_id": [1],
             "destination": ["Alpha"],
@@ -513,7 +513,7 @@ def test_xtdb_temporal_upsert_treats_explicit_valid_time_change_as_changed():
 def test_xtdb_temporal_upsert_ignores_valid_from_when_filtering_unchanged_rows():
     backend = XtdbBackend()
     ops = Mock()
-    ops.from_raw_sql.return_value = pl.DataFrame(
+    ops.table_query.return_value = pl.DataFrame(
         {
             "_id": [1],
             "destination": ["Alpha"],
@@ -554,7 +554,7 @@ def test_xtdb_temporal_upsert_ignores_valid_from_when_filtering_unchanged_rows()
 def test_xtdb_temporal_upsert_normalizes_types_when_filtering_unchanged_rows():
     backend = XtdbBackend()
     ops = Mock()
-    ops.from_raw_sql.return_value = pl.DataFrame(
+    ops.table_query.return_value = pl.DataFrame(
         {
             "_id": [1],
             "destination": ["Alpha"],
@@ -655,7 +655,7 @@ def test_xtdb_temporal_upsert_prefills_configured_defaults_before_insert():
 def test_xtdb_temporal_upsert_treats_null_to_value_as_changed():
     backend = XtdbBackend()
     ops = Mock()
-    ops.from_raw_sql.return_value = pl.DataFrame(
+    ops.table_query.return_value = pl.DataFrame(
         {
             "_id": [1],
             "amount_value": [None],
