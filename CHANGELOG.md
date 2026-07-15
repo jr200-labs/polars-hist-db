@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.47](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.46...v0.12.47) (2026-07-15)
+
+
+### Performance Improvements
+
+* **xtdb:** benchmark ingest lookup scaling ([#202](https://github.com/jr200-labs/polars-hist-db/issues/202)) ([d1178bf](https://github.com/jr200-labs/polars-hist-db/commit/d1178bf23e43a4cbf1515d86491c2c90bf7636b0))
+* **xtdb:** bound delta reads to incoming keys ([#204](https://github.com/jr200-labs/polars-hist-db/issues/204)) ([88d1f8c](https://github.com/jr200-labs/polars-hist-db/commit/88d1f8c3c6c533c17c8d5951aba051186ca25de9))
+
 ## [0.12.46](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.45...v0.12.46) (2026-07-15)
 
 
