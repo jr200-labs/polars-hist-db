@@ -10,7 +10,9 @@ Examples:
 from argparse import ArgumentParser
 from dataclasses import dataclass
 import gc
+import json
 import os
+from pathlib import Path
 import re
 from statistics import median
 from time import perf_counter
@@ -253,7 +255,9 @@ def main() -> None:
     parser.add_argument("--fk-match-fractions", default="0,0.5,1")
     parser.add_argument("--remote-table")
     parser.add_argument("--remote-limit", type=int, default=50_000)
+    parser.add_argument("--json-output")
     args = parser.parse_args()
+    results = []
 
     print(
         "target_rows,upload_rows,target_mb,upload_mb,"
@@ -269,6 +273,13 @@ def main() -> None:
         print(
             f"{target_rows},{args.upload_rows},{target_mb:.2f},{upload_mb:.2f},"
             f"{elapsed:.3f},{changed}"
+        )
+        results.append(
+            {
+                "name": f"delta {target_rows} stored / {args.upload_rows} uploaded",
+                "unit": "seconds",
+                "value": elapsed,
+            }
         )
 
     print("target_gb,bandwidth_gbps,ideal_transfer_floor_seconds")
@@ -297,12 +308,25 @@ def main() -> None:
                 f"{created},{collisions},{str(updated).lower()},{parent_mb:.2f},"
                 f"{upload_mb:.2f},{elapsed:.3f}"
             )
+            results.append(
+                {
+                    "name": (
+                        f"foreign keys {parent_rows} stored / "
+                        f"{args.upload_rows} uploaded / {match_fraction:g} matched"
+                    ),
+                    "unit": "seconds",
+                    "value": elapsed,
+                }
+            )
 
     if args.remote_table:
         dsn = os.environ.get("XTDB_BENCHMARK_DSN")
         if not dsn:
             parser.error("XTDB_BENCHMARK_DSN is required with --remote-table")
         benchmark_remote_sample(dsn, args.remote_table, args.remote_limit)
+
+    if args.json_output:
+        Path(args.json_output).write_text(json.dumps(results, indent=2) + "\n")
 
 
 if __name__ == "__main__":
