@@ -14,11 +14,15 @@ import os
 import re
 from statistics import median
 from time import perf_counter
+from typing import Any
 
 import polars as pl
 
-from polars_hist_db.backends.xtdb import _filter_xtdb_unchanged_rows
-from polars_hist_db.config import TableColumnConfig, TableConfig
+from polars_hist_db.backends.xtdb import (
+    XtdbStagingOps,
+    _filter_xtdb_unchanged_rows,
+)
+from polars_hist_db.config import DatasetConfig, TableColumnConfig, TableConfig
 
 
 @dataclass
@@ -27,6 +31,21 @@ class CurrentRows:
 
     def from_raw_sql(self, _sql: str) -> pl.DataFrame:
         return self.frame
+
+    def from_table(self, _schema: str, _table: str) -> pl.DataFrame:
+        return self.frame
+
+
+class ForeignKeyStaging(XtdbStagingOps):
+    def __init__(self, parent: pl.DataFrame):
+        super().__init__(object())
+        self.rows = CurrentRows(parent)
+
+    def _dataframes(self) -> Any:
+        return self.rows
+
+    def _bulk_table_insert(self, *args, **kwargs) -> int:
+        raise AssertionError("benchmark rows should already exist in the parent table")
 
 
 def network_floor_seconds(data_gb: float, bandwidth_gbps: float) -> float:
@@ -70,6 +89,39 @@ def table_config(value_columns: int) -> TableConfig:
     )
 
 
+def foreign_key_config() -> tuple[DatasetConfig, TableConfig]:
+    dataset = DatasetConfig(
+        name="records",
+        delta_table_schema="benchmark",
+        input_config={"type": "dsv", "search_paths": []},  # type: ignore[arg-type]
+        pipeline=[  # type: ignore[arg-type]
+            {
+                "schema": "benchmark",
+                "table": "parents",
+                "type": "primary",
+                "columns": [
+                    {
+                        "source": "parent_id",
+                        "target": "id",
+                        "deduce_foreign_key": True,
+                    },
+                    {"source": "parent_key", "target": "natural_key"},
+                ],
+            }
+        ],
+    )
+    config = TableConfig(
+        schema="benchmark",
+        name="parents",
+        primary_keys=["id"],
+        columns=[
+            TableColumnConfig("parents", "id", "BIGINT", nullable=False),
+            TableColumnConfig("parents", "natural_key", "BIGINT"),
+        ],
+    )
+    return dataset, config
+
+
 def benchmark_delta(
     target_rows: int,
     upload_rows: int,
@@ -95,6 +147,32 @@ def benchmark_delta(
         incoming.estimated_size("mb"),
         changed_rows,
     )
+
+
+def benchmark_foreign_keys(
+    parent_rows: int, upload_rows: int, repeats: int
+) -> tuple[float, float, float]:
+    if upload_rows > parent_rows:
+        raise ValueError("upload rows cannot exceed parent rows")
+    parent = pl.DataFrame(
+        {"id": range(parent_rows), "natural_key": range(parent_rows)}
+    ).sample(fraction=1, shuffle=True, seed=42)
+    incoming = pl.DataFrame(
+        {"parent_id": range(upload_rows), "parent_key": range(upload_rows)}
+    )
+    dataset, config = foreign_key_config()
+    timings = []
+    for _ in range(repeats):
+        gc.collect()
+        staging = ForeignKeyStaging(parent)
+        staging._stage_run_cache["benchmark"] = incoming
+        started = perf_counter()
+        result = staging.prepare_pipeline_item_dataframe(
+            "benchmark", dataset, 0, config, valid_time=None
+        )
+        timings.append(perf_counter() - started)
+        assert len(result) == upload_rows
+    return median(timings), parent.estimated_size("mb"), incoming.estimated_size("mb")
 
 
 def benchmark_remote_sample(dsn: str, table: str, limit: int) -> None:
@@ -147,6 +225,19 @@ def main() -> None:
         print(
             f"{args.target_gb:g},{bandwidth:g},"
             f"{network_floor_seconds(args.target_gb, bandwidth):.1f}"
+        )
+
+    print(
+        "parent_rows,upload_rows,parent_mb,upload_fk_mb,"
+        "foreign_key_seconds_excluding_parent_read"
+    )
+    for parent_rows in (int(value) for value in args.target_rows.split(",")):
+        elapsed, parent_mb, upload_mb = benchmark_foreign_keys(
+            parent_rows, args.upload_rows, args.repeats
+        )
+        print(
+            f"{parent_rows},{args.upload_rows},{parent_mb:.2f},{upload_mb:.2f},"
+            f"{elapsed:.3f}"
         )
 
     if args.remote_table:
