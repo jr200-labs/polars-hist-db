@@ -401,6 +401,8 @@ def _xtdb_cast_type(data_type: str) -> str:
     normalized = data_type.upper()
     if normalized.startswith(("VARCHAR", "CHAR")) or "TEXT" in normalized:
         return "TEXT"
+    if normalized in {"JSON", "JSONB"}:
+        return "TEXT"
     if normalized in {"DOUBLE", "DOUBLE PRECISION"}:
         return "DOUBLE PRECISION"
     if normalized in {"FLOAT", "REAL"}:
@@ -413,13 +415,13 @@ def _xtdb_cast_type(data_type: str) -> str:
         return "INTEGER"
     if normalized in {"BIGINT", "DATE", "TIME"}:
         return normalized
-    if normalized == "DATETIME":
+    if normalized.startswith("DATETIME"):
         return "TIMESTAMP"
     if normalized.startswith(("DECIMAL", "NUMERIC")):
         return normalized
     if normalized.startswith("TIMESTAMP"):
         return normalized
-    return "TEXT"
+    raise ValueError(f"Unsupported XTDB column type: {data_type}")
 
 
 def _xtdb_cast_type_from_polars(dtype: pl.DataType) -> str:
