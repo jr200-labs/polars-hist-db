@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.48](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.47...v0.12.48) (2026-07-16)
+
+
+### Bug Fixes
+
+* **deps:** update quarto-cli digest to 2e66958 ([#205](https://github.com/jr200-labs/polars-hist-db/issues/205)) ([7507ace](https://github.com/jr200-labs/polars-hist-db/commit/7507aced00c068a360401a92564e948defac70f7))
+* **xtdb:** cast datetime precision columns as timestamps ([#206](https://github.com/jr200-labs/polars-hist-db/issues/206)) ([6cee1db](https://github.com/jr200-labs/polars-hist-db/commit/6cee1dbdbbad67906e5120bd6f4e31564ebb90fb))
+
 ## [0.12.47](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.46...v0.12.47) (2026-07-15)
 
 

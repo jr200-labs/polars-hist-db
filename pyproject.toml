@@ -1,6 +1,6 @@
 [project]
 name = "polars-hist-db"
-version = "0.12.47"
+version = "0.12.48"
 description = "(dsv,jetstream) --> dataframe <--> bitemporal-tables"
 authors = [{ name = "jr200", email = "jayshan+git@gmail.com" }]
 readme = "README.md"
@@ -68,7 +68,7 @@ testpaths = [
 ]
 
 [tool.uv.sources]
-quarto-cli = { git = "https://github.com/quarto-dev/quarto-cli", rev = "2e6695811bc5f377d0b3c7a4a471439ff23b0fe1" }
+quarto-cli = { git = "https://github.com/quarto-dev/quarto-cli", rev = "c284199a529520cacb3831d06cc4315a7dac468c" }
 
 [tool.mypy]
 warn_unused_configs = true
