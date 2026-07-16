@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.49](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.48...v0.12.49) (2026-07-16)
+
+
+### Bug Fixes
+
+* **xtdb:** order composition history by system time ([#208](https://github.com/jr200-labs/polars-hist-db/issues/208)) ([334badf](https://github.com/jr200-labs/polars-hist-db/commit/334badff6f5e5afa902418ba94d939b3e2b3926d))
+
 ## [0.12.48](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.47...v0.12.48) (2026-07-16)
 
 
