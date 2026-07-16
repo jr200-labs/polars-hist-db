@@ -1,10 +1,11 @@
-from .base import HistoricalDbBackend
+from .base import HistoricalDbBackend, TableHealthResult
 from .config import BackendName, DbEngineConfig
 
 __all__ = [
     "BackendName",
     "DbEngineConfig",
     "HistoricalDbBackend",
+    "TableHealthResult",
     "MariaDbBackend",
     "XtdbBackend",
     "backend_from_config",

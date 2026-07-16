@@ -8,6 +8,11 @@ from sqlalchemy.engine import Engine
 
 from ..core import DataframeOps, TableConfigOps, TableOps
 from ..core import TimeHint
+from .base import (
+    TableHealthResult,
+    bounded_table_health_query,
+    execute_table_health_query,
+)
 from .config import DbEngineConfig
 from .temporal import system_time_hint_clause
 
@@ -75,6 +80,26 @@ class MariaDbBackend:
 
     def tables(self, table_schema: str, table_name: str, connection: Any) -> TableOps:
         return TableOps(table_schema, table_name, connection)
+
+    def table_health_query(
+        self, table_schema: str, table_name: str, minimum_rows: int = 0
+    ) -> str:
+        return bounded_table_health_query(
+            table_schema, table_name, minimum_rows, quote="`"
+        )
+
+    def check_table_resource(
+        self,
+        connection: Any,
+        table_schema: str,
+        table_name: str,
+        minimum_rows: int = 0,
+    ) -> TableHealthResult:
+        return execute_table_health_query(
+            connection,
+            self.table_health_query(table_schema, table_name, minimum_rows),
+            minimum_rows,
+        )
 
     def time_hint_clause(self, time_hint: TimeHint) -> str | None:
         return system_time_hint_clause(time_hint)

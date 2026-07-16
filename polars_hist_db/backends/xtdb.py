@@ -27,6 +27,11 @@ from ..core import TimeHint
 from ..pipeline_projection import project_staged_pipeline_item_dataframe
 from ..types import PolarsType
 from .config import DbEngineConfig
+from .base import (
+    TableHealthResult,
+    bounded_table_health_query,
+    execute_table_health_query,
+)
 from .temporal import system_time_hint_clause
 
 if TYPE_CHECKING:
@@ -2403,6 +2408,26 @@ class XtdbBackend:
 
     def table_configs(self, connection: Any) -> XtdbTableConfigOps:
         return XtdbTableConfigOps(connection)
+
+    def table_health_query(
+        self, table_schema: str, table_name: str, minimum_rows: int = 0
+    ) -> str:
+        return bounded_table_health_query(
+            table_schema, table_name, minimum_rows, quote='"'
+        )
+
+    def check_table_resource(
+        self,
+        connection: Any,
+        table_schema: str,
+        table_name: str,
+        minimum_rows: int = 0,
+    ) -> TableHealthResult:
+        return execute_table_health_query(
+            connection,
+            self.table_health_query(table_schema, table_name, minimum_rows),
+            minimum_rows,
+        )
 
     def crdt_documents(
         self,
