@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.50](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.49...v0.12.50) (2026-07-16)
+
+
+### Features
+
+* add backend-neutral table health probes ([#210](https://github.com/jr200-labs/polars-hist-db/issues/210)) ([35af278](https://github.com/jr200-labs/polars-hist-db/commit/35af278990ed3034fa00ff7b5831d14c0282e75f))
+
 ## [0.12.49](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.48...v0.12.49) (2026-07-16)
 
 
