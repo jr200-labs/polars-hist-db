@@ -9,6 +9,7 @@ from polars_hist_db.overrides import (
     build_layer_composition_table_config,
     build_override_purge_table_config,
 )
+from polars_hist_db.overrides.xtdb import XtdbLayerCompositionStore
 
 
 def test_configurable_composition_and_purge_tables() -> None:
@@ -45,3 +46,22 @@ def test_in_memory_composition_store_preserves_revision_order() -> None:
     store.append(first, "editor")
 
     assert store.revisions("root") == (first,)
+
+
+def test_xtdb_composition_history_orders_by_system_time() -> None:
+    class Connection:
+        statement = ""
+
+        def execute(self, statement):
+            self.statement = str(statement)
+            return self
+
+        def mappings(self):
+            return []
+
+    connection = Connection()
+    store = XtdbLayerCompositionStore(connection, LayerCompositionStoreConfig())
+
+    assert store.revisions() == ()
+    assert "_system_from AS system_from" in connection.statement
+    assert "ORDER BY _system_from, revision_id" in connection.statement
