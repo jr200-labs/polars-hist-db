@@ -97,9 +97,10 @@ class XtdbLayerCompositionStore:
             rows = self.connection.execute(
                 text(
                     "SELECT revision_id, layer_id, child_layer_ids_json, "
-                    f"valid_from, valid_to, recorded_at, supersedes_revision_id "
+                    f"valid_from, valid_to, recorded_at, _system_from AS system_from, "
+                    f"supersedes_revision_id "
                     f"FROM {_table_name(self.table)}"
-                    f"{predicate} ORDER BY recorded_at, revision_id"
+                    f"{predicate} ORDER BY _system_from, revision_id"
                 )
             ).mappings()
             return tuple(_composition_revision(row) for row in rows)
@@ -122,7 +123,7 @@ def _composition_revision(row: Mapping[str, object]) -> CompositionRevision:
         tuple(str(item) for item in children),
         _datetime(row["valid_from"]),
         None if row.get("valid_to") is None else _datetime(row["valid_to"]),
-        _datetime(row["recorded_at"]),
+        _datetime(row.get("system_from") or row["recorded_at"]),
         None
         if row.get("supersedes_revision_id") is None
         else str(row["supersedes_revision_id"]),
