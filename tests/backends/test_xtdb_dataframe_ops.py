@@ -551,6 +551,39 @@ def test_xtdb_dataframe_ops_normalizes_bound_timestamp_parameters_to_naive_utc()
     assert insert_call.args[1] == [(1, 1, datetime(2030, 1, 1, 12, 30))]
 
 
+def test_xtdb_dataframe_ops_casts_datetime_precision_to_timestamp():
+    driver_connection = Mock()
+    connection = Mock()
+    connection.connection.driver_connection = driver_connection
+    connection.in_transaction.return_value = False
+    ops = XtdbDataframeOps(connection)
+    table_config = TableConfig(
+        schema="test",
+        name="records",
+        primary_keys=["id"],
+        columns=[
+            TableColumnConfig("records", "id", "BIGINT", nullable=False),
+            TableColumnConfig("records", "seen_at", "DATETIME(6)"),
+        ],
+    )
+
+    ops.table_insert(
+        pl.DataFrame(
+            {
+                "id": [1],
+                "seen_at": [datetime(2030, 1, 1, 12, 30, tzinfo=timezone.utc)],
+            }
+        ),
+        "test",
+        "records",
+        table_config=table_config,
+    )
+
+    insert_call = _single_executemany_call(driver_connection)
+    assert "%s::TIMESTAMP" in insert_call.args[0]
+    assert insert_call.args[1] == [(1, 1, datetime(2030, 1, 1, 12, 30))]
+
+
 def test_xtdb_dataframe_ops_uses_native_casts_for_mysql_compatibility_types():
     driver_connection = Mock()
     connection = Mock()

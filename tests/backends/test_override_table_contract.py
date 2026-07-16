@@ -3,6 +3,8 @@ from polars_hist_db.overrides import (
     build_override_table_config,
     build_override_valid_time_config,
 )
+from polars_hist_db.types import SQLAlchemyType
+from sqlalchemy.dialects import mysql
 
 
 def test_override_table_config_builds_sqlalchemy_columns_for_mariadb_path():
@@ -27,6 +29,15 @@ def test_override_table_config_builds_sqlalchemy_columns_for_mariadb_path():
     }
     operation_id = next(column for column in columns if column.name == "operation_id")
     assert operation_id.primary_key is True
+    assert {
+        column.name: column.type.fsp
+        for column in columns
+        if isinstance(column.type, mysql.DATETIME)
+    } == {"valid_from": 6, "valid_to": 6, "recorded_at": 6}
+
+
+def test_mariadb_datetime_without_precision_remains_supported():
+    assert repr(SQLAlchemyType.from_sql("DATETIME()")) == "DATETIME()"
 
 
 def test_override_valid_time_config_targets_business_window_for_xtdb_path():

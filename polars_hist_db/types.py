@@ -267,13 +267,15 @@ class SQLAlchemyType:
     @staticmethod
     def from_sql(sql_type: str) -> TypeEngine:
         t = sql_type.upper()
+        type_name, params, param_dict = _TypeConversionUtils._parse_parameterised_type(
+            t
+        )
+        if type_name == "DATETIME" and params and params[0]:
+            return mysql.DATETIME(fsp=int(params[0]))
         idx = _TypeConversionUtils._rowidx_from_sql_type(t)
         if idx >= 0:
             return TYPE_PRIORITY_MAP[idx][2]
 
-        type_name, params, param_dict = _TypeConversionUtils._parse_parameterised_type(
-            t
-        )
         if type_name == "VARCHAR":
             length = int(param_dict.get("length") or param_dict.get("a") or params[0])
             return sqlalchemy.types.VARCHAR(length=length)

@@ -32,6 +32,11 @@ def test_xtdb_casts_mediumtext_as_text():
     assert _xtdb_cast_type("MEDIUMTEXT") == "TEXT"
 
 
+def test_xtdb_rejects_unknown_configured_column_type():
+    with pytest.raises(ValueError, match="Unsupported XTDB column type: UUID"):
+        _xtdb_cast_type("UUID")
+
+
 def test_xtdb_backend_builds_crdt_document_store(monkeypatch):
     class Store:
         def __init__(self, connection, document_store, projection):
