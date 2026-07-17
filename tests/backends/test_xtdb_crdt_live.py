@@ -148,7 +148,7 @@ def test_xtdb_override_bulk_write_uses_native_timestamp_instants():
                         "operation_type": ["set", "close"],
                         "recorded_at": [at, at],
                         "valid_from": [at, at],
-                        "valid_to": [None, None],
+                        "valid_to": [None, at + timedelta(days=1)],
                     }
                 ),
                 "public",
@@ -175,7 +175,10 @@ def test_xtdb_override_bulk_write_uses_native_timestamp_instants():
             )
 
     assert operations == ["op-z-close", "op-a-set"]
-    assert all(":utf8" not in str(data_type) for data_type in timestamp_types.values())
+    assert set(timestamp_types) == {"recorded_at", "valid_from", "valid_to"}
+    assert all(
+        ":utf8" not in str(data_type) for data_type in timestamp_types.values()
+    ), timestamp_types
     assert all(
         "timestamp-tz" in str(data_type) for data_type in timestamp_types.values()
-    )
+    ), timestamp_types
