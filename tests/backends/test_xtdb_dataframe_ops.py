@@ -81,7 +81,8 @@ def test_xtdb_dml_retries_with_append_time_when_system_time_is_too_old():
     assert row_count == 0
     assert connection.connection.driver_connection.rollback_count == 1
     assert connection.connection.driver_connection.executed == [
-        "BEGIN READ WRITE WITH (SYSTEM_TIME = TIMESTAMP '2025-01-01T00:00:00+00:00')",
+        "BEGIN READ WRITE WITH (SYSTEM_TIME = TIMESTAMP WITH TIME ZONE "
+        "'2025-01-01T00:00:00+00:00')",
         "INSERT INTO test.records (_id) VALUES (1)",
         "COMMIT",
         "ROLLBACK",
@@ -156,7 +157,7 @@ def test_xtdb_dataframe_ops_reads_table_with_configured_schema_overrides(monkeyp
         schema_overrides={
             "_id": pl.Int64,
             "id": pl.Int64,
-            "destination_date": pl.Datetime(),
+            "destination_date": pl.Datetime("us", "UTC"),
             "amount_value": pl.Float64,
             "_valid_from": pl.Datetime("us", "UTC"),
             "_valid_to": pl.Datetime("us", "UTC"),
@@ -341,7 +342,8 @@ def test_xtdb_dataframe_ops_uses_system_time_transaction_for_update_time():
 
     assert result == 1
     assert driver_connection.execute.call_args_list[0].args == (
-        "BEGIN READ WRITE WITH (SYSTEM_TIME = TIMESTAMP '2030-01-01T12:00:00+00:00')",
+        "BEGIN READ WRITE WITH (SYSTEM_TIME = TIMESTAMP WITH TIME ZONE "
+        "'2030-01-01T12:00:00+00:00')",
     )
 
 
@@ -470,9 +472,11 @@ def test_xtdb_dml_advances_reused_system_time_on_same_connection():
         if statement.startswith("BEGIN READ WRITE")
     ]
     assert begin_statements == [
-        "BEGIN READ WRITE WITH (SYSTEM_TIME = TIMESTAMP '2030-01-01T12:00:00+00:00')",
+        "BEGIN READ WRITE WITH (SYSTEM_TIME = TIMESTAMP WITH TIME ZONE "
+        "'2030-01-01T12:00:00+00:00')",
         "BEGIN READ WRITE WITH "
-        "(SYSTEM_TIME = TIMESTAMP '2030-01-01T12:00:00.000001+00:00')",
+        "(SYSTEM_TIME = TIMESTAMP WITH TIME ZONE "
+        "'2030-01-01T12:00:00.000001+00:00')",
     ]
 
 
@@ -518,7 +522,7 @@ def test_xtdb_dml_skips_text_dumper_when_psycopg_is_unavailable(monkeypatch):
     driver_connection.adapters.register_dumper.assert_not_called()
 
 
-def test_xtdb_dataframe_ops_normalizes_bound_timestamp_parameters_to_naive_utc():
+def test_xtdb_dataframe_ops_preserves_bound_timestamp_parameters_as_utc_instants():
     driver_connection = Mock()
     connection = Mock()
     connection.connection.driver_connection = driver_connection
@@ -547,11 +551,13 @@ def test_xtdb_dataframe_ops_normalizes_bound_timestamp_parameters_to_naive_utc()
     )
 
     insert_call = _single_executemany_call(driver_connection)
-    assert "%s::TIMESTAMP" in insert_call.args[0]
-    assert insert_call.args[1] == [(1, 1, datetime(2030, 1, 1, 12, 30))]
+    assert "%s::TIMESTAMP WITH TIME ZONE" in insert_call.args[0]
+    assert insert_call.args[1] == [
+        (1, 1, datetime(2030, 1, 1, 12, 30, tzinfo=timezone.utc))
+    ]
 
 
-def test_xtdb_dataframe_ops_casts_datetime_precision_to_timestamp():
+def test_xtdb_dataframe_ops_casts_datetime_precision_to_timestamp_with_timezone():
     driver_connection = Mock()
     connection = Mock()
     connection.connection.driver_connection = driver_connection
@@ -580,8 +586,10 @@ def test_xtdb_dataframe_ops_casts_datetime_precision_to_timestamp():
     )
 
     insert_call = _single_executemany_call(driver_connection)
-    assert "%s::TIMESTAMP" in insert_call.args[0]
-    assert insert_call.args[1] == [(1, 1, datetime(2030, 1, 1, 12, 30))]
+    assert "%s::TIMESTAMP WITH TIME ZONE" in insert_call.args[0]
+    assert insert_call.args[1] == [
+        (1, 1, datetime(2030, 1, 1, 12, 30, tzinfo=timezone.utc))
+    ]
 
 
 def test_xtdb_dataframe_ops_uses_native_casts_for_mysql_compatibility_types():
@@ -629,7 +637,7 @@ def test_xtdb_dataframe_ops_uses_native_casts_for_mysql_compatibility_types():
     assert "INSERT INTO test.compat_types" in insert_sql
     assert "%s::BOOLEAN" in insert_sql
     assert insert_sql.count("%s::INTEGER") == 6
-    assert "%s::TIMESTAMP" in insert_sql
+    assert "%s::TIMESTAMP WITH TIME ZONE" in insert_sql
     assert "%s::TIME" in insert_sql
     assert insert_call.args[1] == [
         (
@@ -640,7 +648,7 @@ def test_xtdb_dataframe_ops_uses_native_casts_for_mysql_compatibility_types():
             2,
             738221,
             4,
-            datetime(2030, 1, 1, 12, 0),
+            datetime(2030, 1, 1, 12, 0, tzinfo=timezone.utc),
             datetime(2030, 1, 1, 12, 30).time(),
         )
     ]
@@ -678,7 +686,7 @@ def test_xtdb_dataframe_ops_casts_null_values_to_configured_types():
 
     insert_call = _single_executemany_call(driver_connection)
     insert_sql = insert_call.args[0]
-    assert "%s::TIMESTAMP" in insert_sql
+    assert "%s::TIMESTAMP WITH TIME ZONE" in insert_sql
     assert "%s::DOUBLE PRECISION" in insert_sql
     assert insert_call.args[1] == [(1, 1, None, None)]
 

@@ -52,7 +52,7 @@ def test_xtdb_staging_partition_stays_in_memory_without_database_io():
         "record_id": [1],
         "destination_name": ["Alpha"],
         "stage_run_id": ["stage-1"],
-        "stage_partition_time": [partition_time.replace(tzinfo=None)],
+        "stage_partition_time": [partition_time],
     }
     connection.assert_not_called()
 
@@ -455,7 +455,7 @@ def test_xtdb_staging_cache_materializes_missing_columns(monkeypatch):
         "destination_name": ["Alpha"],
         "source_note": [None],
         "stage_run_id": ["stage-1"],
-        "stage_partition_time": [datetime(2030, 1, 1)],
+        "stage_partition_time": [datetime(2030, 1, 1, tzinfo=timezone.utc)],
     }
     assert staging._stage_run_cache["stage-1"].schema["source_note"] == pl.String
     table_insert.assert_not_called()

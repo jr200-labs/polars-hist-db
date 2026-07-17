@@ -222,17 +222,16 @@ def test_xtdb_temporal_upsert_dropout_deletes_missing_current_keys():
     executed_sql = [call.args[0] for call in driver_connection.execute.call_args_list]
     assert executed_sql[1] == (
         "DELETE FROM test.records FOR PORTION OF VALID_TIME FROM "
-        "TIMESTAMP '1970-01-01T00:00:00+00:00' TO NULL "
+        "TIMESTAMP WITH TIME ZONE '1970-01-01T00:00:00+00:00' TO NULL "
         "WHERE _id IN (2::BIGINT)"
     )
     insert_call = driver_connection.cursor.return_value.executemany.call_args
     assert insert_call.args[0] == (
         "INSERT INTO test.records (_id, id, destination, _valid_from) "
-        "VALUES (%s::BIGINT, %s::BIGINT, %s::TEXT, %s::TIMESTAMP)"
+        "VALUES (%s::BIGINT, %s::BIGINT, %s::TEXT, "
+        "%s::TIMESTAMP WITH TIME ZONE)"
     )
-    assert insert_call.args[1] == [
-        (1, 1, "Alpha", _NON_TEMPORAL_VALID_FROM.replace(tzinfo=None))
-    ]
+    assert insert_call.args[1] == [(1, 1, "Alpha", _NON_TEMPORAL_VALID_FROM)]
 
 
 def test_xtdb_temporal_upsert_dropout_closes_missing_keys_at_valid_time():
@@ -272,7 +271,7 @@ def test_xtdb_temporal_upsert_dropout_closes_missing_keys_at_valid_time():
     executed_sql = [call.args[0] for call in driver_connection.execute.call_args_list]
     assert executed_sql[1] == (
         "DELETE FROM test.records FOR PORTION OF VALID_TIME FROM "
-        "TIMESTAMP '2030-01-02T00:00:00+00:00' TO NULL "
+        "TIMESTAMP WITH TIME ZONE '2030-01-02T00:00:00+00:00' TO NULL "
         "WHERE _id IN (2::BIGINT)"
     )
 
@@ -309,7 +308,7 @@ def test_xtdb_temporal_upsert_dropout_uses_explicit_close_time_for_empty_batches
     executed_sql = [call.args[0] for call in driver_connection.execute.call_args_list]
     assert executed_sql[1] == (
         "DELETE FROM test.records FOR PORTION OF VALID_TIME FROM "
-        "TIMESTAMP '2030-01-03T00:00:00+00:00' TO NULL "
+        "TIMESTAMP WITH TIME ZONE '2030-01-03T00:00:00+00:00' TO NULL "
         "WHERE _id IN (1::BIGINT, 2::BIGINT)"
     )
 

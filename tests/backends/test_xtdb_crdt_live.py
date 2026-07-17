@@ -17,6 +17,7 @@ from polars_hist_db.overrides import (
     build_crdt_document_table_config,
     build_crdt_update_table_config,
     build_override_table_config,
+    migrate_xtdb_override_timestamps,
     override_recorded_order_sql,
     prepare_crdt_update,
 )
@@ -132,8 +133,9 @@ def test_xtdb_crdt_store_persists_projection_at_operation_valid_time():
     assert dict(operation) == {"actor_id": "user-1", "crdt_document_revision": 1}
 
 
-def test_xtdb_override_order_accepts_legacy_text_recorded_at():
+def test_xtdb_migrates_legacy_override_timestamps_to_native_instants():
     table = f"override_order_{uuid4().hex}"
+    config = OverrideLedgerConfig(schema="public", table=table)
     order = override_recorded_order_sql("xtdb")
 
     with _xtdb_engine() as engine:
@@ -145,11 +147,13 @@ def test_xtdb_override_order_accepts_legacy_text_recorded_at():
                     (_id, operation_id, operation_type, recorded_at, valid_from)
                 VALUES
                     ('set', 'op-a-set', 'set', '2026-07-17T00:00:00Z',
-                     TIMESTAMP '2026-07-17 00:00:00'),
+                     '2026-07-17T00:00:00Z'),
                     ('close', 'op-z-close', 'close', '2026-07-17T00:00:00Z',
-                     TIMESTAMP '2026-07-17 00:00:00')
+                     '2026-07-17T00:00:00Z')
                 """,
             )
+            assert migrate_xtdb_override_timestamps(connection, config) == 2
+            assert migrate_xtdb_override_timestamps(connection, config) == 0
             operations = (
                 connection.execute(
                     text(f"SELECT operation_id FROM public.{table} ORDER BY {order}")
@@ -157,5 +161,20 @@ def test_xtdb_override_order_accepts_legacy_text_recorded_at():
                 .scalars()
                 .all()
             )
+            timestamp_types = dict(
+                connection.execute(
+                    text(
+                        "SELECT column_name, data_type "
+                        "FROM information_schema.columns "
+                        "WHERE table_schema = 'public' AND table_name = :table "
+                        "AND column_name IN ('recorded_at', 'valid_from', 'valid_to')"
+                    ),
+                    {"table": table},
+                ).all()
+            )
 
     assert operations == ["op-z-close", "op-a-set"]
+    assert all(":utf8" not in str(data_type) for data_type in timestamp_types.values())
+    assert all(
+        "timestamp-tz" in str(data_type) for data_type in timestamp_types.values()
+    )

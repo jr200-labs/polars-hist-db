@@ -423,7 +423,9 @@ def _xtdb_cast_type(data_type: str) -> str:
     if normalized in {"BIGINT", "DATE", "TIME"}:
         return normalized
     if normalized.startswith("DATETIME"):
-        return "TIMESTAMP"
+        return "TIMESTAMP WITH TIME ZONE"
+    if normalized.startswith("TIMESTAMPTZ"):
+        return "TIMESTAMP WITH TIME ZONE"
     if normalized.startswith(("DECIMAL", "NUMERIC")):
         return normalized
     if normalized.startswith("TIMESTAMP"):
@@ -445,7 +447,9 @@ def _xtdb_cast_type_from_polars(dtype: pl.DataType) -> str:
     if dtype == pl.Date:
         return "DATE"
     if isinstance(dtype, pl.Datetime):
-        return "TIMESTAMP"
+        return (
+            "TIMESTAMP WITH TIME ZONE" if dtype.time_zone is not None else "TIMESTAMP"
+        )
     return "TEXT"
 
 
@@ -713,7 +717,8 @@ def _driver_connection(connection: Any) -> Any | None:
 
 def _xtdb_timestamp_literal(value: datetime) -> str:
     escaped = value.isoformat().replace("'", "''")
-    return f"TIMESTAMP '{escaped}'"
+    timestamp_type = "TIMESTAMP WITH TIME ZONE" if value.tzinfo else "TIMESTAMP"
+    return f"{timestamp_type} '{escaped}'"
 
 
 def _next_xtdb_system_time(connection: Any, system_time: datetime) -> datetime:
@@ -763,7 +768,9 @@ def _xtdb_parameter_value(value: Any, cast_type: str) -> Any:
         and cast_type.upper().startswith("TIMESTAMP")
         and value.tzinfo is not None
     ):
-        return value.astimezone(timezone.utc).replace(tzinfo=None)
+        value = value.astimezone(timezone.utc)
+        if "WITH TIME ZONE" not in cast_type.upper():
+            value = value.replace(tzinfo=None)
     return value
 
 
@@ -780,9 +787,10 @@ def _normalize_xtdb_timestamp_columns(
             and dtype.time_zone is not None
             and cast_type.upper().startswith("TIMESTAMP")
         ):
-            expressions.append(
-                pl.col(column).dt.convert_time_zone("UTC").dt.replace_time_zone(None)
-            )
+            expression = pl.col(column).dt.convert_time_zone("UTC")
+            if "WITH TIME ZONE" not in cast_type.upper():
+                expression = expression.dt.replace_time_zone(None)
+            expressions.append(expression)
     if not expressions:
         return df
     return df.with_columns(expressions)
@@ -950,10 +958,9 @@ def _xtdb_sql_literal(value: Any, cast_type: str) -> str:
 def _xtdb_temporal_basis_clause(update_time: Optional[datetime]) -> str:
     if update_time is None:
         return ""
-    timestamp = update_time.isoformat().replace("'", "''")
     return (
-        f" FOR VALID_TIME AS OF TIMESTAMP '{timestamp}'"
-        f" FOR SYSTEM_TIME AS OF TIMESTAMP '{timestamp}'"
+        f" FOR VALID_TIME AS OF {_xtdb_timestamp_literal(update_time)}"
+        f" FOR SYSTEM_TIME AS OF {_xtdb_timestamp_literal(update_time)}"
     )
 
 
@@ -1048,6 +1055,11 @@ def _xtdb_values_cte(name: str, df: pl.DataFrame) -> str:
 
 
 def _xtdb_polars_type_or_none(data_type: str) -> pl.DataType | None:
+    normalized = data_type.upper()
+    if normalized.startswith(("DATETIME", "TIMESTAMPTZ")) or normalized.startswith(
+        "TIMESTAMP WITH TIME ZONE"
+    ):
+        return pl.Datetime("us", "UTC")
     try:
         return PolarsType.from_sql(data_type)
     except ValueError:
