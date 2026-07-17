@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784250589030,
+  "lastUpdate": 1784255231872,
   "repoUrl": "https://github.com/jr200-labs/polars-hist-db",
   "entries": {
     "Benchmark": [
@@ -755,6 +755,90 @@ window.BENCHMARK_DATA = {
           {
             "name": "foreign keys 5000000 stored / 50000 uploaded / 1 matched",
             "value": 0.5190069719999997,
+            "unit": "seconds"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "jr200@users.noreply.github.com",
+            "name": "Jayshan Raghunandan",
+            "username": "jr200"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9c09fab55b9ab2b714db07d1e49fd6733f901041",
+          "message": "fix(xtdb): store UTC instants as native timestamps (#216)\n\n* fix(overrides): avoid mixed timestamp ordering\n\n* fix(xtdb): store UTC instants as native timestamps\n\n* refactor(xtdb): reset test overrides instead of migrating\n\n* test(xtdb): exercise nullable timestamp values\n\n* test(xtdb): assert native instant schema type",
+          "timestamp": "2026-07-17T11:25:56+09:00",
+          "tree_id": "90b2f4732a5181355b383b9acd89d36f57648ea3",
+          "url": "https://github.com/jr200-labs/polars-hist-db/commit/9c09fab55b9ab2b714db07d1e49fd6733f901041"
+        },
+        "date": 1784255231095,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "delta 50000 stored / 50000 uploaded",
+            "value": 0.007410536999998385,
+            "unit": "seconds"
+          },
+          {
+            "name": "delta 500000 stored / 50000 uploaded",
+            "value": 0.009771220999994057,
+            "unit": "seconds"
+          },
+          {
+            "name": "delta 5000000 stored / 50000 uploaded",
+            "value": 0.026467268999994076,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 50000 stored / 50000 uploaded / 0 matched",
+            "value": 0.802722407999994,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 50000 stored / 50000 uploaded / 0.5 matched",
+            "value": 0.656506477999983,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 50000 stored / 50000 uploaded / 1 matched",
+            "value": 0.5127632710000114,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 500000 stored / 50000 uploaded / 0 matched",
+            "value": 0.7959553869999922,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 500000 stored / 50000 uploaded / 0.5 matched",
+            "value": 0.6608280659999934,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 500000 stored / 50000 uploaded / 1 matched",
+            "value": 0.5146154379999928,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 5000000 stored / 50000 uploaded / 0 matched",
+            "value": 0.8238975029999835,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 5000000 stored / 50000 uploaded / 0.5 matched",
+            "value": 0.680737124999979,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 5000000 stored / 50000 uploaded / 1 matched",
+            "value": 0.5288547669999843,
             "unit": "seconds"
           }
         ]
