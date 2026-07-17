@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.53](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.52...v0.12.53) (2026-07-17)
+
+
+### Features
+
+* **overrides:** add typed columnar projection ([#218](https://github.com/jr200-labs/polars-hist-db/issues/218)) ([2bb9b95](https://github.com/jr200-labs/polars-hist-db/commit/2bb9b95a5a7ef1f0426e5d4f6401a52e6fc90e48))
+
 ## [0.12.52](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.51...v0.12.52) (2026-07-17)
 
 
