@@ -50,7 +50,6 @@ from .xtdb import (
     XtdbCrdtDocumentStore,
     XtdbDocumentAccessStore,
     XtdbLayerCompositionStore,
-    migrate_xtdb_override_timestamps,
 )
 from .composition import InMemoryLayerCompositionStore, LayerCompositionStore
 from .replicated import (
@@ -106,7 +105,6 @@ __all__ = [
     "override_recorded_order_sql",
     "override_recorded_time_sql",
     "project_personal_override_operations",
-    "migrate_xtdb_override_timestamps",
     "OverrideLedgerConfig",
     "OverrideOperation",
     "OverrideOperationType",

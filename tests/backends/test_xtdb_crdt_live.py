@@ -5,19 +5,18 @@ from uuid import uuid4
 import subprocess
 import time
 
+import polars as pl
 from pycrdt import Doc, Map
 import pytest
 from sqlalchemy import Engine, text
 
 from polars_hist_db.backends import DbEngineConfig, XtdbBackend
-from polars_hist_db.backends.xtdb import _execute_xtdb_dml
 from polars_hist_db.overrides import (
     CrdtDocumentStoreConfig,
     OverrideLedgerConfig,
     build_crdt_document_table_config,
     build_crdt_update_table_config,
     build_override_table_config,
-    migrate_xtdb_override_timestamps,
     override_recorded_order_sql,
     prepare_crdt_update,
 )
@@ -133,27 +132,29 @@ def test_xtdb_crdt_store_persists_projection_at_operation_valid_time():
     assert dict(operation) == {"actor_id": "user-1", "crdt_document_revision": 1}
 
 
-def test_xtdb_migrates_legacy_override_timestamps_to_native_instants():
+def test_xtdb_override_bulk_write_uses_native_timestamp_instants():
     table = f"override_order_{uuid4().hex}"
     config = OverrideLedgerConfig(schema="public", table=table)
+    table_config = build_override_table_config(config)
     order = override_recorded_order_sql("xtdb")
+    at = datetime(2026, 7, 17, tzinfo=timezone.utc)
 
     with _xtdb_engine() as engine:
         with engine.connect() as connection:
-            _execute_xtdb_dml(
-                connection,
-                f"""
-                INSERT INTO public.{table}
-                    (_id, operation_id, operation_type, recorded_at, valid_from)
-                VALUES
-                    ('set', 'op-a-set', 'set', '2026-07-17T00:00:00Z',
-                     '2026-07-17T00:00:00Z'),
-                    ('close', 'op-z-close', 'close', '2026-07-17T00:00:00Z',
-                     '2026-07-17T00:00:00Z')
-                """,
+            XtdbBackend().dataframes(connection).table_insert(
+                pl.DataFrame(
+                    {
+                        "operation_id": ["op-a-set", "op-z-close"],
+                        "operation_type": ["set", "close"],
+                        "recorded_at": [at, at],
+                        "valid_from": [at, at],
+                        "valid_to": [None, None],
+                    }
+                ),
+                "public",
+                table,
+                table_config=table_config,
             )
-            assert migrate_xtdb_override_timestamps(connection, config) == 2
-            assert migrate_xtdb_override_timestamps(connection, config) == 0
             operations = (
                 connection.execute(
                     text(f"SELECT operation_id FROM public.{table} ORDER BY {order}")
