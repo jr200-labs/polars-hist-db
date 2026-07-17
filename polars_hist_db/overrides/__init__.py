@@ -29,6 +29,7 @@ from .ordering import (
     override_recorded_time_sql,
     project_personal_override_operations,
 )
+from .projection import ColumnOverride, apply_columnar_overrides
 from .access import (
     AccessDocument,
     AccessGrant,
@@ -105,6 +106,8 @@ __all__ = [
     "override_recorded_order_sql",
     "override_recorded_time_sql",
     "project_personal_override_operations",
+    "ColumnOverride",
+    "apply_columnar_overrides",
     "OverrideLedgerConfig",
     "OverrideOperation",
     "OverrideOperationType",
