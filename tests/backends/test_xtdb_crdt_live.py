@@ -180,5 +180,5 @@ def test_xtdb_override_bulk_write_uses_native_timestamp_instants():
         ":utf8" not in str(data_type) for data_type in timestamp_types.values()
     ), timestamp_types
     assert all(
-        "timestamp-tz" in str(data_type) for data_type in timestamp_types.values()
+        ":instant" in str(data_type) for data_type in timestamp_types.values()
     ), timestamp_types
