@@ -1529,7 +1529,7 @@ sqlalchemy = [
 
 [[package]]
 name = "polars-hist-db"
-version = "0.12.50"
+version = "0.12.51"
 source = { editable = "." }
 dependencies = [
     { name = "nats-py" },
@@ -1597,7 +1597,7 @@ provides-extras = ["sqlalchemy", "nats", "xtdb", "crdt"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "coverage", specifier = ">=7.15.2" },
+    { name = "coverage", specifier = ">=7.15.1" },
     { name = "ipykernel", specifier = ">=7.3.0" },
     { name = "mypy", specifier = ">=2.3.0" },
     { name = "pyarrow-stubs", specifier = ">=20.0.0.20260625" },
@@ -1605,8 +1605,8 @@ dev = [
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
     { name = "quarto-cli", git = "https://github.com/quarto-dev/quarto-cli?rev=c284199a529520cacb3831d06cc4315a7dac468c" },
-    { name = "ruff", specifier = ">=0.15.22" },
-    { name = "types-python-dateutil", specifier = ">=2.9.0.20260716" },
+    { name = "ruff", specifier = ">=0.15.21" },
+    { name = "types-python-dateutil", specifier = ">=2.9.0.20260518" },
     { name = "types-pytz", specifier = ">=2026.2.0.20260518" },
     { name = "types-pyyaml", specifier = ">=6.0.12.20260518" },
 ]
