@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.51](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.50...v0.12.51) (2026-07-17)
+
+
+### Bug Fixes
+
+* **deps:** update all non-major dependencies ([#213](https://github.com/jr200-labs/polars-hist-db/issues/213)) ([fd0e7e5](https://github.com/jr200-labs/polars-hist-db/commit/fd0e7e5543b0a3f0850a33f57d3372bfaefe2252))
+* **overrides:** preserve deterministic replacement order ([#214](https://github.com/jr200-labs/polars-hist-db/issues/214)) ([5add70f](https://github.com/jr200-labs/polars-hist-db/commit/5add70fe2950332eea8e2f988c49035310c08295))
+
 ## [0.12.50](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.49...v0.12.50) (2026-07-16)
 
 
