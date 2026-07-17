@@ -11,7 +11,9 @@ from polars_hist_db.overrides import (
 def test_xtdb_order_preserves_close_before_set_within_one_transaction() -> None:
     sql = override_recorded_order_sql("xtdb")
 
-    assert sql.startswith("_system_from, COALESCE(recorded_at, valid_from)")
+    assert sql.startswith("_system_from, CASE")
+    assert "recorded_at" not in sql
+    assert "valid_from" not in sql
     assert "THEN 0 ELSE 1 END, operation_id" in sql
 
 

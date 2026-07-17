@@ -10,12 +10,14 @@ import pytest
 from sqlalchemy import Engine, text
 
 from polars_hist_db.backends import DbEngineConfig, XtdbBackend
+from polars_hist_db.backends.xtdb import _execute_xtdb_dml
 from polars_hist_db.overrides import (
     CrdtDocumentStoreConfig,
     OverrideLedgerConfig,
     build_crdt_document_table_config,
     build_crdt_update_table_config,
     build_override_table_config,
+    override_recorded_order_sql,
     prepare_crdt_update,
 )
 
@@ -128,3 +130,32 @@ def test_xtdb_crdt_store_persists_projection_at_operation_valid_time():
     assert accepted.revision == 1
     assert duplicate.duplicate is True
     assert dict(operation) == {"actor_id": "user-1", "crdt_document_revision": 1}
+
+
+def test_xtdb_override_order_accepts_legacy_text_recorded_at():
+    table = f"override_order_{uuid4().hex}"
+    order = override_recorded_order_sql("xtdb")
+
+    with _xtdb_engine() as engine:
+        with engine.connect() as connection:
+            _execute_xtdb_dml(
+                connection,
+                f"""
+                INSERT INTO public.{table}
+                    (_id, operation_id, operation_type, recorded_at, valid_from)
+                VALUES
+                    ('set', 'op-a-set', 'set', '2026-07-17T00:00:00Z',
+                     TIMESTAMP '2026-07-17 00:00:00'),
+                    ('close', 'op-z-close', 'close', '2026-07-17T00:00:00Z',
+                     TIMESTAMP '2026-07-17 00:00:00')
+                """,
+            )
+            operations = (
+                connection.execute(
+                    text(f"SELECT operation_id FROM public.{table} ORDER BY {order}")
+                )
+                .scalars()
+                .all()
+            )
+
+    assert operations == ["op-z-close", "op-a-set"]

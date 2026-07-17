@@ -14,11 +14,8 @@ def override_recorded_time_sql(db_backend: str) -> str:
 
 def override_recorded_order_sql(db_backend: str) -> str:
     recorded = override_recorded_time_sql(db_backend)
-    payload_order = (
-        ", COALESCE(recorded_at, valid_from)" if db_backend == "xtdb" else ""
-    )
     return (
-        f"{recorded}{payload_order}, "
+        f"{recorded}, "
         "CASE WHEN operation_type IN ('close', 'system_close') THEN 0 ELSE 1 END, "
         "operation_id"
     )
