@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784255231872,
+  "lastUpdate": 1784255521695,
   "repoUrl": "https://github.com/jr200-labs/polars-hist-db",
   "entries": {
     "Benchmark": [
@@ -839,6 +839,90 @@ window.BENCHMARK_DATA = {
           {
             "name": "foreign keys 5000000 stored / 50000 uploaded / 1 matched",
             "value": 0.5288547669999843,
+            "unit": "seconds"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "273732104+jr200-labs-cicd-bot[bot]@users.noreply.github.com",
+            "name": "jr200-labs-cicd-bot[bot]",
+            "username": "jr200-labs-cicd-bot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2fb51012083b6b0ab2817e60fff3adcb1d24a2bd",
+          "message": "chore(master): release 0.12.52 (#217)\n\n* chore(master): release 0.12.52\n\n* chore: update release lockfile\n\n---------\n\nCo-authored-by: jr200-labs-cicd-bot[bot] <273732104+jr200-labs-cicd-bot[bot]@users.noreply.github.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-07-17T11:30:38+09:00",
+          "tree_id": "f4d89eeb1588db1c59b47acd048d3b5840f006a8",
+          "url": "https://github.com/jr200-labs/polars-hist-db/commit/2fb51012083b6b0ab2817e60fff3adcb1d24a2bd"
+        },
+        "date": 1784255520684,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "delta 50000 stored / 50000 uploaded",
+            "value": 0.007408053000006021,
+            "unit": "seconds"
+          },
+          {
+            "name": "delta 500000 stored / 50000 uploaded",
+            "value": 0.009481484999994905,
+            "unit": "seconds"
+          },
+          {
+            "name": "delta 5000000 stored / 50000 uploaded",
+            "value": 0.023468440999991458,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 50000 stored / 50000 uploaded / 0 matched",
+            "value": 0.7977465219999971,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 50000 stored / 50000 uploaded / 0.5 matched",
+            "value": 0.6600076569999942,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 50000 stored / 50000 uploaded / 1 matched",
+            "value": 0.5134916989999994,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 500000 stored / 50000 uploaded / 0 matched",
+            "value": 0.7994286960000068,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 500000 stored / 50000 uploaded / 0.5 matched",
+            "value": 0.6624497779999956,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 500000 stored / 50000 uploaded / 1 matched",
+            "value": 0.516879080999999,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 5000000 stored / 50000 uploaded / 0 matched",
+            "value": 0.8303953179999866,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 5000000 stored / 50000 uploaded / 0.5 matched",
+            "value": 0.6904453310000065,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 5000000 stored / 50000 uploaded / 1 matched",
+            "value": 0.5338702060000031,
             "unit": "seconds"
           }
         ]
