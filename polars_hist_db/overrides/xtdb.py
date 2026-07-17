@@ -1024,7 +1024,12 @@ def _insert_statement(
     if valid_from is not None:
         values["_valid_from"] = valid_from
         values["_valid_to"] = valid_to
-        types.update({"_valid_from": "TIMESTAMP", "_valid_to": "TIMESTAMP"})
+        types.update(
+            {
+                "_valid_from": "TIMESTAMP WITH TIME ZONE",
+                "_valid_to": "TIMESTAMP WITH TIME ZONE",
+            }
+        )
     column_sql = ", ".join(_xtdb_column_identifier(name) for name in values)
     value_sql = ", ".join(
         _literal(value, types[name]) for name, value in values.items()

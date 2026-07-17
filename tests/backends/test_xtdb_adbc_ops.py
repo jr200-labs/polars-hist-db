@@ -103,7 +103,9 @@ def test_xtdb_adbc_dataframe_ops_ingests_null_columns_with_configured_arrow_type
 
     assert result == 1
     _, arrow_table, _, _ = connection.cursor_instance.ingests[0]
-    assert arrow_table.schema.field("destination_date").type == pa.timestamp("us")
+    assert arrow_table.schema.field("destination_date").type == pa.timestamp(
+        "us", tz="UTC"
+    )
     assert arrow_table.schema.field("amount_value").type == pa.float64()
     assert arrow_table.to_pydict() == {
         "_id": [1],
