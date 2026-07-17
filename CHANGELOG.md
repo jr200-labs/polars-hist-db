@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.52](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.51...v0.12.52) (2026-07-17)
+
+
+### Bug Fixes
+
+* **xtdb:** store UTC instants as native timestamps ([#216](https://github.com/jr200-labs/polars-hist-db/issues/216)) ([9c09fab](https://github.com/jr200-labs/polars-hist-db/commit/9c09fab55b9ab2b714db07d1e49fd6733f901041))
+
 ## [0.12.51](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.50...v0.12.51) (2026-07-17)
 
 
