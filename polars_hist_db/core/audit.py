@@ -318,26 +318,35 @@ class AuditOps:
             if not self._xtdb_data_table_exists(connection):
                 return data_source_items
 
-            existing_tbl_entries = (
-                _xtdb_dataframe_ops(connection)
-                .from_raw_sql(
-                    "SELECT data_source, MAX(data_source_ts) AS data_source_ts "
-                    f"FROM {self._table_sql()} "
-                    f"WHERE table_name = {_sql_literal(target_table_name)} "
-                    "GROUP BY data_source",
-                    schema_overrides={"data_source_ts": pl.Datetime("us", "UTC")},
-                )
-                .with_columns(pl.col("data_source").cast(pl.Utf8))
+            dataframe_ops = _xtdb_dataframe_ops(connection)
+            latest_log = dataframe_ops.from_raw_sql(
+                "SELECT MAX(data_source_ts) AS data_source_ts "
+                f"FROM {self._table_sql()} "
+                f"WHERE table_name = {_sql_literal(target_table_name)}",
+                schema_overrides={"data_source_ts": pl.Datetime("us", "UTC")},
             )
-
-            if existing_tbl_entries.is_empty():
+            if latest_log.is_empty() or latest_log[0, "data_source_ts"] is None:
                 return data_source_items
 
+            candidates = data_source_items.select(
+                pl.col(data_source_col_name).cast(pl.Utf8).alias("data_source")
+            ).unique(maintain_order=True)
+            existing_tbl_entries = dataframe_ops.table_query(
+                self.schema,
+                self._table_name,
+                candidates,
+                ["data_source"],
+                table_config=self._table_config(),
+            ).with_columns(pl.col("data_source").cast(pl.Utf8))
             data_source_items = self._filter_unprocessed_items(
                 data_source_items, existing_tbl_entries, data_source_col_name
             )
-            return self._filter_historic_items(
-                data_source_items, existing_tbl_entries, data_source_ts_col_name
+            latest_log_ts: datetime = latest_log[0, "data_source_ts"]
+            return data_source_items.filter(
+                pl.col(data_source_ts_col_name)
+                >= pl.lit(latest_log_ts).cast(
+                    pl.dtype_of(pl.col(data_source_ts_col_name))
+                )
             )
 
         audit_tbl = self.create(connection)
