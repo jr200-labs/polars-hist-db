@@ -2282,6 +2282,8 @@ class XtdbStagingOps:
             how="left",
             suffix="__existing",
         )
+        first_fk = fk_targets[0]
+        has_existing_fk = f"{first_fk}__existing" in joined.columns
         for target_column in fk_targets:
             existing_column = f"{target_column}__existing"
             if existing_column in joined.columns:
@@ -2289,17 +2291,7 @@ class XtdbStagingOps:
                     pl.coalesce(existing_column, target_column).alias(target_column)
                 ).drop(existing_column)
 
-        first_fk = fk_targets[0]
-        existing_first_fk = f"{first_fk}__existing"
-        if (
-            existing_first_fk
-            in generated.join(
-                parent_lookup,
-                on=value_targets,
-                how="left",
-                suffix="__existing",
-            ).columns
-        ):
+        if has_existing_fk:
             missing_parent_rows = joined.filter(pl.col(first_fk).is_not_null())
             if not parent_lookup.is_empty():
                 existing_keys = parent_lookup.select(value_targets).unique()
