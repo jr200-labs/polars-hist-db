@@ -842,7 +842,7 @@ def test_xtdb_table_creation_maps_mysql_compatibility_types(monkeypatch):
     assert executed_sql == [
         "INSERT INTO test.__polars_hist_db_xtdb_table_configs "
         "(_id, table_schema, table_name, primary_keys_json, id_policy, "
-        "columns_json, foreign_keys_json) "
+        "columns_json, foreign_keys_json, is_temporal) "
         "VALUES ('test.compat_types'::TEXT, 'test'::TEXT, 'compat_types'::TEXT, "
         "'[\"id\"]'::TEXT, 'single-key'::TEXT, "
         '\'[{"table":"compat_types","name":"id","data_type":"INT",'
@@ -861,7 +861,7 @@ def test_xtdb_table_creation_maps_mysql_compatibility_types(monkeypatch):
         '"autoincrement":false,"nullable":true,"unique_constraint":[]},'
         '{"table":"compat_types","name":"time_col","data_type":"TIME",'
         '"default_value":null,"autoincrement":false,"nullable":true,'
-        "\"unique_constraint\":[]}]'::TEXT, '[]'::TEXT)",
+        "\"unique_constraint\":[]}]'::TEXT, '[]'::TEXT, FALSE::BOOL)",
     ]
     assert _xtdb_declared_columns(table_config) == [
         "_id",
@@ -1043,7 +1043,7 @@ def test_xtdb_table_creation_records_configured_columns_without_ddl(monkeypatch)
     assert executed_sql == [
         "INSERT INTO test.__polars_hist_db_xtdb_table_configs "
         "(_id, table_schema, table_name, primary_keys_json, id_policy, "
-        "columns_json, foreign_keys_json) "
+        "columns_json, foreign_keys_json, is_temporal) "
         "VALUES ('test.records'::TEXT, 'test'::TEXT, 'records'::TEXT, "
         "'[\"id\"]'::TEXT, 'single-key'::TEXT, "
         '\'[{"table":"records","name":"id","data_type":"BIGINT",'
@@ -1053,7 +1053,7 @@ def test_xtdb_table_creation_records_configured_columns_without_ddl(monkeypatch)
         '"nullable":true,"unique_constraint":[]},{"table":"records",'
         '"name":"amount_value","data_type":"DECIMAL(20,6)","default_value":null,'
         '"autoincrement":false,"nullable":true,"unique_constraint":[]}]'
-        "'::TEXT, '[]'::TEXT)",
+        "'::TEXT, '[]'::TEXT, FALSE::BOOL)",
     ]
 
 
@@ -1103,7 +1103,7 @@ def test_xtdb_table_creation_records_composite_primary_key_columns(monkeypatch):
     assert executed_sql == [
         "INSERT INTO test.__polars_hist_db_xtdb_table_configs "
         "(_id, table_schema, table_name, primary_keys_json, id_policy, "
-        "columns_json, foreign_keys_json) "
+        "columns_json, foreign_keys_json, is_temporal) "
         "VALUES ('test.records'::TEXT, 'test'::TEXT, 'records'::TEXT, "
         "'[\"entity_id\",\"record_id\"]'::TEXT, 'xtdb-pk-v1'::TEXT, "
         '\'[{"table":"records","name":"entity_id","data_type":"BIGINT",'
@@ -1113,7 +1113,7 @@ def test_xtdb_table_creation_records_composite_primary_key_columns(monkeypatch):
         '"nullable":false,"unique_constraint":[]},{"table":"records",'
         '"name":"destination","data_type":"VARCHAR(255)","default_value":null,'
         '"autoincrement":false,"nullable":true,"unique_constraint":[]}]'
-        "'::TEXT, '[]'::TEXT)",
+        "'::TEXT, '[]'::TEXT, FALSE::BOOL)",
     ]
 
 
@@ -1139,14 +1139,15 @@ def test_xtdb_table_creation_records_primary_key_metadata(monkeypatch):
     assert executed_sql == [
         "INSERT INTO test.__polars_hist_db_xtdb_table_configs "
         "(_id, table_schema, table_name, primary_keys_json, id_policy, "
-        "columns_json, foreign_keys_json) "
+        "columns_json, foreign_keys_json, is_temporal) "
         "VALUES ('test.records'::TEXT, 'test'::TEXT, 'records'::TEXT, "
         "'[\"entity_id\",\"record_id\"]'::TEXT, 'xtdb-pk-v1'::TEXT, "
         '\'[{"table":"records","name":"entity_id","data_type":"BIGINT",'
         '"default_value":null,"autoincrement":false,"nullable":false,'
         '"unique_constraint":[]},{"table":"records","name":"record_id",'
         '"data_type":"VARCHAR(255)","default_value":null,"autoincrement":false,'
-        '"nullable":false,"unique_constraint":[]}]\'::TEXT, \'[]\'::TEXT)',
+        '"nullable":false,"unique_constraint":[]}]\'::TEXT, \'[]\'::TEXT, '
+        "FALSE::BOOL)",
     ]
 
 
@@ -1253,6 +1254,7 @@ def test_xtdb_table_reflection_prefers_configured_column_metadata(monkeypatch):
                     "primary_keys_json": ['["id"]'],
                     "id_policy": ["single-key"],
                     "columns_json": [columns_json],
+                    "is_temporal": [False],
                 }
             ),
             pl.DataFrame(
@@ -1273,6 +1275,39 @@ def test_xtdb_table_reflection_prefers_configured_column_metadata(monkeypatch):
         ("id", "INT"),
         ("decimal_col", "DECIMAL(10,2)"),
         ("real_col", "REAL"),
+    ]
+    assert table_config.is_temporal is False
+
+
+def test_xtdb_table_reflection_returns_recorded_config_before_physical_rows(
+    monkeypatch,
+):
+    columns_json = (
+        '[{"table":"records","name":"id","data_type":"INT",'
+        '"default_value":null,"autoincrement":false,"nullable":false,'
+        '"unique_constraint":[]}]'
+    )
+    read_database = Mock(
+        side_effect=[
+            pl.DataFrame(),
+            pl.DataFrame({"table_name": ["__polars_hist_db_xtdb_table_configs"]}),
+            pl.DataFrame(
+                {
+                    "primary_keys_json": ['["id"]'],
+                    "columns_json": [columns_json],
+                    "is_temporal": [False],
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr(pl, "read_database", read_database)
+
+    table_config = XtdbTableConfigOps(object()).from_table("test", "records")
+
+    assert table_config.primary_keys == ["id"]
+    assert table_config.is_temporal is False
+    assert [(column.name, column.data_type) for column in table_config.columns] == [
+        ("id", "INT")
     ]
 
 

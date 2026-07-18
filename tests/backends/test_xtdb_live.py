@@ -243,7 +243,7 @@ def test_xtdb_live_insert_non_public_table_with_reserved_column_name():
             backend.dataframes(connection).table_insert(
                 pl.DataFrame(
                     {
-                        "entity_id": [311038700],
+                        "entity_id": pl.Series([311038700], dtype=pl.Int32),
                         "name": ["ALPHA"],
                         "flag": ["BS"],
                     }
@@ -286,8 +286,10 @@ def test_xtdb_live_insert_column_with_slash_roundtrip():
             backend.dataframes(connection).table_insert(
                 pl.DataFrame(
                     {
-                        "entity_id": [1],
-                        "capacity/bcm": ["4.080"],
+                        "entity_id": pl.Series([1], dtype=pl.Int32),
+                        "capacity/bcm": pl.Series(
+                            [Decimal("4.080")], dtype=pl.Decimal(15, 3)
+                        ),
                     }
                 ),
                 table_config.schema,
@@ -370,8 +372,8 @@ def test_xtdb_live_normalizes_foreign_keys_end_to_end():
     )
     upload = pl.DataFrame(
         {
-            "trade_id": [1, 2, 3],
-            "country_id": pl.Series([None, None, None], dtype=pl.Int64),
+            "trade_id": pl.Series([1, 2, 3], dtype=pl.Int32),
+            "country_id": pl.Series([None, None, None], dtype=pl.Int32),
             "country_name": ["Japan", "Korea", "Korea"],
         }
     )
@@ -382,7 +384,12 @@ def test_xtdb_live_normalizes_foreign_keys_end_to_end():
         _create_config_tables(engine, tables, backend)
         with engine.connect() as connection:
             backend.dataframes(connection).table_insert(
-                pl.DataFrame({"country_id": [7], "name": ["Japan"]}),
+                pl.DataFrame(
+                    {
+                        "country_id": pl.Series([7], dtype=pl.Int32),
+                        "name": ["Japan"],
+                    }
+                ),
                 "public",
                 "live_countries",
                 table_config=tables["live_countries"],
@@ -817,7 +824,7 @@ def test_xtdb_live_delta_upsert_dropout_closes_missing_rows_at_valid_time():
                     {
                         "id": [1, 2],
                         "destination": ["Alpha", "Beta"],
-                        "_valid_from": [datetime(1985, 1, 1)] * 2,
+                        "_valid_from": [datetime(1985, 1, 1, tzinfo=timezone.utc)] * 2,
                     }
                 ),
                 table_config.schema,
@@ -831,7 +838,7 @@ def test_xtdb_live_delta_upsert_dropout_closes_missing_rows_at_valid_time():
                     {
                         "id": [1],
                         "destination": ["Alpha"],
-                        "_valid_from": [datetime(1986, 1, 1)],
+                        "_valid_from": [datetime(1986, 1, 1, tzinfo=timezone.utc)],
                     }
                 ),
                 table_config.schema,

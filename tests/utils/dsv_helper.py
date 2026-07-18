@@ -247,12 +247,15 @@ def setup_fixture_dataset(test_file: str, backend_name: str = "mariadb"):
     container_id = None
     if backend_name == "mariadb":
         engine = mariadb_engine_test()
-        backend = backend_from_config(DbEngineConfig(backend="mariadb"))
+        backend_config = DbEngineConfig(backend="mariadb")
+        backend = backend_from_config(backend_config)
     elif backend_name == "xtdb":
         engine, container_id = xtdb_engine_test()
-        backend = backend_from_config(DbEngineConfig(backend="xtdb"))
+        backend_config = DbEngineConfig(backend="xtdb")
+        backend = backend_from_config(backend_config)
     else:
         raise ValueError(f"unsupported test backend {backend_name!r}")
+    config.db_config = backend_config
     engine._polars_hist_db_backend = backend  # type: ignore[attr-defined]
 
     table_schema = config.tables.schemas()[0]
@@ -478,6 +481,26 @@ def modify_and_read(
     return_view: bool = False,
 ) -> Tuple[pl.DataFrame, Optional[pl.DataFrame]]:
     backend = _backend_from_engine(engine)
+    schema = {
+        column.name: PolarsType.from_sql(column.data_type)
+        for column in table_config.columns
+        if column.name in df.columns
+    }
+    df = PolarsType.apply_schema_to_dataframe(df, **schema)
+    if backend.name == "xtdb":
+        datetime_columns = [
+            column.name
+            for column in table_config.columns
+            if column.name in df.columns
+            and isinstance(df.schema[column.name], pl.Datetime)
+            and getattr(df.schema[column.name], "time_zone", None) is None
+            and column.data_type.upper() in {"DATETIME", "TIMESTAMPTZ"}
+        ]
+        if datetime_columns:
+            df = df.with_columns(
+                pl.col(column).dt.replace_time_zone("UTC")
+                for column in datetime_columns
+            )
     connection_context = engine.connect if backend.name == "xtdb" else engine.begin
     with connection_context() as connection:
         # config = (
@@ -490,7 +513,7 @@ def modify_and_read(
             assert dataset.delta_config is not None
             if app_time is not None and "_valid_from" not in df.columns:
                 df = df.with_columns(
-                    pl.lit(app_time.replace(tzinfo=None)).alias("_valid_from")
+                    pl.lit(app_time.astimezone(timezone.utc)).alias("_valid_from")
                 )
             backend.temporal_upsert(
                 df,
@@ -501,7 +524,7 @@ def modify_and_read(
                 delta_config=dataset.delta_config,
                 valid_time=dataset.valid_time_for_table(table_schema, config.name),
                 dropout_close_time=(
-                    app_time.replace(tzinfo=None) if app_time is not None else None
+                    app_time.astimezone(timezone.utc) if app_time is not None else None
                 ),
             )
         elif operation == "delete":

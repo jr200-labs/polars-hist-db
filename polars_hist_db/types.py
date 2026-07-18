@@ -233,21 +233,23 @@ class PolarsType:
         if df[col].dtype == target_type:
             return df
 
-        if target_type.is_integer():
-            df = df.with_columns(pl.col(col).cast(pl.Float64).cast(target_type))
-        elif target_type.is_decimal():
-            assert isinstance(target_type, pl.Decimal)
-            if target_type.scale == 0:
-                df = df.with_columns(
-                    pl.col(col).cast(pl.Float64).cast(pl.Int64).cast(target_type)
-                )
-        elif isinstance(target_type, pl.Datetime):
-            df = df.with_columns(pl.col(col).str.to_datetime())
-        elif isinstance(target_type, pl.Date):
-            df = df.with_columns(pl.col(col).str.to_date())
+        source = pl.col(col)
+        source_type = df.schema[col]
+        if isinstance(target_type, pl.Datetime) and is_polars_type(
+            source_type, pl.String
+        ):
+            source = source.str.to_datetime(
+                time_unit=target_type.time_unit,
+                time_zone=target_type.time_zone,
+                strict=True,
+            )
+        elif isinstance(target_type, pl.Date) and is_polars_type(
+            source_type, pl.String
+        ):
+            source = source.str.to_date(strict=True)
         else:
-            df = df.with_columns(pl.col(col).cast(target_type))
-        return df
+            source = source.cast(target_type, strict=True)
+        return df.with_columns(source)
 
     @staticmethod
     def apply_schema_to_dataframe(
@@ -259,13 +261,13 @@ class PolarsType:
                     continue
                 target_type = schema_overrides[col_name]
                 df = PolarsType.apply_dtype_to_column(df, col_name, target_type)
-            except Exception as e:
+            except Exception:
                 LOGGER.exception(
                     "Failed to type column %s with type %s",
                     col_name,
                     target_type,
-                    exc_info=e,
                 )
+                raise
         df = PolarsType.cast_str_to_cat(df)
         return df
 

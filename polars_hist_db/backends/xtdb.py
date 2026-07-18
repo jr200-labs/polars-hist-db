@@ -495,7 +495,12 @@ def _xtdb_table_config_from_metadata(
         columns=columns,
         foreign_keys=foreign_keys,
         primary_keys=primary_keys or [],
-        is_temporal=True,
+        is_temporal=(
+            bool(metadata[0, "is_temporal"])
+            if "is_temporal" in metadata.columns
+            and metadata[0, "is_temporal"] is not None
+            else True
+        ),
     )
 
 
@@ -1156,12 +1161,15 @@ class XtdbTableConfigOps:
             _xtdb_foreign_keys_json(table_config),
         ]
         values_sql = ", ".join(_xtdb_sql_literal(value, "TEXT") for value in values)
+        values_sql = (
+            f"{values_sql}, {_xtdb_sql_literal(table_config.is_temporal, 'BOOL')}"
+        )
         metadata_table = _xtdb_table_config_metadata_table(table_config.schema)
         _execute_xtdb_dml(
             self.connection,
             f"INSERT INTO {metadata_table} "
             "(_id, table_schema, table_name, primary_keys_json, "
-            "id_policy, columns_json, foreign_keys_json) "
+            "id_policy, columns_json, foreign_keys_json, is_temporal) "
             f"VALUES ({values_sql})",
         )
 
@@ -1181,11 +1189,6 @@ class XtdbTableConfigOps:
         """,
             self.connection,
         )
-        if metadata.is_empty():
-            raise ValueError(
-                f"XTDB table metadata not found for {table_schema}.{table_name}"
-            )
-
         config_metadata = _xtdb_table_config_metadata(
             self.connection,
             table_schema,
@@ -1197,8 +1200,14 @@ class XtdbTableConfigOps:
             table_name,
         )
         if configured_table is not None:
-            _validate_xtdb_physical_types(metadata, configured_table)
+            if not metadata.is_empty():
+                _validate_xtdb_physical_types(metadata, configured_table)
             return configured_table
+
+        if metadata.is_empty():
+            raise ValueError(
+                f"XTDB table metadata not found for {table_schema}.{table_name}"
+            )
 
         columns = []
         primary_keys = []
