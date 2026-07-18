@@ -48,6 +48,10 @@ class MariaDbBackend:
             max_overflow=config.max_overflow,
         )
 
+    def connection_scope(self, engine: Engine) -> Any:
+        """Open one atomic MariaDB unit of work."""
+        return engine.begin()
+
     def dataframes(self, connection: Any) -> DataframeOps:
         return DataframeOps(connection)
 

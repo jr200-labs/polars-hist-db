@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 import re
 from typing import TYPE_CHECKING, Any, Protocol
@@ -67,6 +68,10 @@ class HistoricalDbBackend(Protocol):
     name: str
 
     def create_engine(self, config: DbEngineConfig) -> Any: ...
+
+    def connection_scope(self, engine: Any) -> AbstractContextManager[Any]:
+        """Open a backend-correct connection and commit successful work."""
+        ...
 
     def dataframes(self, connection: Any) -> Any: ...
 
