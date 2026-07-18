@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>Polars Hist DB</title>
+<title>Benchmarks – Polars Hist DB</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -327,7 +327,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">Polars Hist DB</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">Polars Hist DB</a></li><li class="breadcrumb-item"><a href="./benchmarks.html">Benchmarks</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -341,7 +341,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <ul class="list-unstyled mt-1">
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a href="./index.html" class="sidebar-item-text sidebar-link active">
+            <a href="./index.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Polars Hist DB</span></a>
           <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
             <i class="bi bi-chevron-right ms-2"></i>
@@ -374,7 +374,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="./benchmarks.html" class="sidebar-item-text sidebar-link">
+  <a href="./benchmarks.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Benchmarks</span></a>
   </div>
 </li>
@@ -396,23 +396,22 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#polars-hist-db" id="toc-polars-hist-db" class="nav-link active" data-scroll-target="#polars-hist-db">polars-hist-db</a>
+  <li><a href="#what-is-measured" id="toc-what-is-measured" class="nav-link active" data-scroll-target="#what-is-measured">What is measured</a></li>
+  <li><a href="#tracked-results" id="toc-tracked-results" class="nav-link" data-scroll-target="#tracked-results">Tracked results</a>
   <ul class="collapse">
-  <li><a href="#features" id="toc-features" class="nav-link" data-scroll-target="#features">Features</a></li>
-  <li><a href="#quick-start" id="toc-quick-start" class="nav-link" data-scroll-target="#quick-start">Quick Start</a></li>
-  <li><a href="#development" id="toc-development" class="nav-link" data-scroll-target="#development">Development</a></li>
-  <li><a href="#license" id="toc-license" class="nav-link" data-scroll-target="#license">License</a></li>
+  <li><a href="#history" id="toc-history" class="nav-link" data-scroll-target="#history">History</a></li>
   </ul></li>
+  <li><a href="#run-locally" id="toc-run-locally" class="nav-link" data-scroll-target="#run-locally">Run locally</a></li>
   </ul>
-<div class="toc-actions"><ul><li><a href="https://github.com/jr200-labs/polars-hist-db/blob/main/index.qmd" class="toc-action"><i class="bi bi-github"></i>View source</a></li><li><a href="https://github.com/jr200-labs/polars-hist-db/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></nav>
+<div class="toc-actions"><ul><li><a href="https://github.com/jr200-labs/polars-hist-db/blob/main/benchmarks.qmd" class="toc-action"><i class="bi bi-github"></i>View source</a></li><li><a href="https://github.com/jr200-labs/polars-hist-db/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></nav>
     </div>
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
 
-<header id="title-block-header" class="quarto-title-block default">
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">Polars Hist DB</a></li><li class="breadcrumb-item"><a href="./benchmarks.html">Benchmarks</a></li></ol></nav>
 <div class="quarto-title">
-<h1 class="title">Polars Hist DB</h1>
+<h1 class="title">Benchmarks</h1>
 </div>
 
 
@@ -429,41 +428,87 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </header>
 
 
-<section id="polars-hist-db" class="level1">
-<h1>polars-hist-db</h1>
-<p>A Python library for building bitemporal data pipelines with <a href="https://pola.rs/">Polars</a> and <a href="https://mariadb.com/">MariaDB</a>.</p>
-<p>It ingests data from DSV files or <a href="https://docs.nats.io/nats-concepts/jetstream">NATS JetStream</a> subjects, tracks history using MariaDB’s system-versioned tables, and exposes everything as strongly-typed Polars DataFrames.</p>
-<section id="features" class="level3">
-<h3 class="anchored" data-anchor-id="features">Features</h3>
-<ul>
-<li><strong>Typed uploads</strong> — push Polars DataFrames into MariaDB with automatic type mapping between Polars, SQL, and SQLAlchemy.</li>
-<li><strong>Typed queries</strong> — read tables back into DataFrames with column types inferred from the database schema. Temporal query hints (<code>asof</code>, <code>span</code>, <code>all</code>) let you slice history without writing SQL.</li>
-<li><strong>YAML-driven pipelines</strong> — define scrape specifications that handle column typing, enrichment via custom transform functions, normalization across tables, and foreign-key deduction.</li>
-<li><strong>Deduplication</strong> — an audit log tracks what has already been ingested so re-runs skip previously processed files or messages.</li>
-<li><strong>Transactional ingestion</strong> — each file or message is processed in its own transaction; failures roll back cleanly without affecting other items.</li>
-<li><strong>Dual input sources</strong> — crawl directories for DSV files, or consume messages from NATS JetStream with configurable fetch/subscription strategies.</li>
-<li><strong>Delta upserts</strong> — staging tables detect changed rows, handle duplicates (<code>take_first</code>, <code>take_last</code>, <code>error</code>), and optionally mark disappeared rows as dropped.</li>
-</ul>
-<p>Full documentation: <a href="https://jr200.github.io/polars-hist-db">jr200.github.io/polars-hist-db</a></p>
+<p>The benchmark suite tracks the ingestion paths most likely to dominate runtime as datasets grow. Results are synthetic and intended for regression tracking; they are not database service-level guarantees.</p>
+<section id="what-is-measured" class="level2">
+<h2 class="anchored" data-anchor-id="what-is-measured">What is measured</h2>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Benchmark</th>
+<th>Workload</th>
+<th>Included</th>
+<th>Excluded</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Selective delta</td>
+<td>Compare a 50,000-row upload with increasingly large current tables</td>
+<td>Polars filtering and changed-row selection</td>
+<td>XTDB network and write latency</td>
+</tr>
+<tr class="even">
+<td>Normalized foreign keys</td>
+<td>Resolve existing natural keys, generate missing IDs, and update the staged primary rows</td>
+<td>Lookup joins, deterministic ID generation, collision handling</td>
+<td>XTDB network and insert latency</td>
+</tr>
+<tr class="odd">
+<td>Unordered time partitioning</td>
+<td>Sort, deduplicate, and split an interleaved DSV frame into daily buckets</td>
+<td>Polars preparation and partition slicing</td>
+<td>CSV decoding and database writes</td>
+</tr>
+</tbody>
+</table>
+<p>The runner also prints theoretical transfer floors for 1, 10, and 100 Gbps links. An optional remote-read mode can measure decoding from a live XTDB table, but it is not part of the portable CI history because it requires a deployment-specific DSN.</p>
 </section>
-<section id="quick-start" class="level2">
-<h2 class="anchored" data-anchor-id="quick-start">Quick Start</h2>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> sync</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> test</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<section id="tracked-results" class="level2">
+<h2 class="anchored" data-anchor-id="tracked-results">Tracked results</h2>
+<p>Each successful benchmark run on <code>master</code> appends its custom benchmark output to <a href="benchmark-history.json"><code>docs/benchmark-history.json</code></a>. The workflow keeps the latest 100 commits, commits the updated history, and republishes this Quarto site.</p>
+<div id="benchmark-status" class="benchmark-note">
+Loading benchmark history…
+</div>
+<div id="benchmark-latest">
+
+</div>
+<section id="history" class="level3">
+<h3 class="anchored" data-anchor-id="history">History</h3>
+<label for="benchmark-select"><strong>Benchmark series</strong></label> <select id="benchmark-select" class="form-select benchmark-select"></select>
+<div id="benchmark-chart" class="benchmark-chart">
+
+</div>
 </section>
-<section id="development" class="level2">
-<h2 class="anchored" data-anchor-id="development">Development</h2>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> check       <span class="co"># ruff + mypy</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> docs        <span class="co"># render and preview quarto docs</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> bump PART=patch</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> release</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
-<section id="license" class="level2">
-<h2 class="anchored" data-anchor-id="license">License</h2>
-<p>This project is licensed under the <a href="LICENSE">MIT</a> license.</p>
+<section id="run-locally" class="level2">
+<h2 class="anchored" data-anchor-id="run-locally">Run locally</h2>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> benchmark-xtdb-delta</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>For a smaller development run:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> run python benchmarks/xtdb_delta.py <span class="dt">\</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--target-rows</span> 50000 <span class="dt">\</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">--upload-rows</span> 10000 <span class="dt">\</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">--partition-rows</span> 100000 <span class="dt">\</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">--repeats</span> 1</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The JSON consumed by CI can be generated with <code>--json-output</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> run python benchmarks/xtdb_delta.py <span class="at">--json-output</span> benchmark-results.json</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<style>
+.benchmark-note { margin: 1rem 0; color: var(--bs-secondary-color); }
+.benchmark-select { max-width: 52rem; margin: .5rem 0 1rem; }
+.benchmark-chart { overflow-x: auto; min-height: 18rem; }
+.benchmark-chart svg { width: 100%; min-width: 44rem; height: auto; }
+.benchmark-chart .axis { stroke: currentColor; opacity: .35; }
+.benchmark-chart .series { fill: none; stroke: #2780e3; stroke-width: 3; }
+.benchmark-chart .point { fill: #2780e3; }
+</style>
+<script src="benchmark-history.js"></script>
 
 
-</section>
 </section>
 
 </main> <!-- /main -->
@@ -893,7 +938,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>   
     <div class="nav-footer-center">
       &nbsp;
-    <div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/jr200-labs/polars-hist-db/blob/main/index.qmd" class="toc-action"><i class="bi bi-github"></i>View source</a></li><li><a href="https://github.com/jr200-labs/polars-hist-db/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></div>
+    <div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/jr200-labs/polars-hist-db/blob/main/benchmarks.qmd" class="toc-action"><i class="bi bi-github"></i>View source</a></li><li><a href="https://github.com/jr200-labs/polars-hist-db/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></div>
     <div class="nav-footer-right">
       &nbsp;
     </div>

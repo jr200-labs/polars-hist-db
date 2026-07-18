@@ -363,6 +363,54 @@
     ]
   },
   {
+    "objectID": "benchmarks.html",
+    "href": "benchmarks.html",
+    "title": "Benchmarks",
+    "section": "",
+    "text": "The benchmark suite tracks the ingestion paths most likely to dominate runtime as datasets grow. Results are synthetic and intended for regression tracking; they are not database service-level guarantees.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Benchmarks"
+    ]
+  },
+  {
+    "objectID": "benchmarks.html#what-is-measured",
+    "href": "benchmarks.html#what-is-measured",
+    "title": "Benchmarks",
+    "section": "What is measured",
+    "text": "What is measured\n\n\n\n\n\n\n\n\n\nBenchmark\nWorkload\nIncluded\nExcluded\n\n\n\n\nSelective delta\nCompare a 50,000-row upload with increasingly large current tables\nPolars filtering and changed-row selection\nXTDB network and write latency\n\n\nNormalized foreign keys\nResolve existing natural keys, generate missing IDs, and update the staged primary rows\nLookup joins, deterministic ID generation, collision handling\nXTDB network and insert latency\n\n\nUnordered time partitioning\nSort, deduplicate, and split an interleaved DSV frame into daily buckets\nPolars preparation and partition slicing\nCSV decoding and database writes\n\n\n\nThe runner also prints theoretical transfer floors for 1, 10, and 100 Gbps links. An optional remote-read mode can measure decoding from a live XTDB table, but it is not part of the portable CI history because it requires a deployment-specific DSN.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Benchmarks"
+    ]
+  },
+  {
+    "objectID": "benchmarks.html#tracked-results",
+    "href": "benchmarks.html#tracked-results",
+    "title": "Benchmarks",
+    "section": "Tracked results",
+    "text": "Tracked results\nEach successful benchmark run on master appends its custom benchmark output to docs/benchmark-history.json. The workflow keeps the latest 100 commits, commits the updated history, and republishes this Quarto site.\n\nLoading benchmark history…\n\n\n\n\n\nHistory\nBenchmark series",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Benchmarks"
+    ]
+  },
+  {
+    "objectID": "benchmarks.html#run-locally",
+    "href": "benchmarks.html#run-locally",
+    "title": "Benchmarks",
+    "section": "Run locally",
+    "text": "Run locally\nmake benchmark-xtdb-delta\nFor a smaller development run:\nuv run python benchmarks/xtdb_delta.py \\\n  --target-rows 50000 \\\n  --upload-rows 10000 \\\n  --partition-rows 100000 \\\n  --repeats 1\nThe JSON consumed by CI can be generated with --json-output:\nuv run python benchmarks/xtdb_delta.py --json-output benchmark-results.json",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Benchmarks"
+    ]
+  },
+  {
     "objectID": "configuration.html",
     "href": "configuration.html",
     "title": "Configuration",
