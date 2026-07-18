@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.55](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.54...v0.12.55) (2026-07-18)
+
+
+### Features
+
+* add bounded ingestion workers ([#224](https://github.com/jr200-labs/polars-hist-db/issues/224)) ([bf35f57](https://github.com/jr200-labs/polars-hist-db/commit/bf35f573dbb77bb38253dda5f9d2d9eff88b0765))
+
+
+### Performance Improvements
+
+* reduce XTDB lookup data movement ([#226](https://github.com/jr200-labs/polars-hist-db/issues/226)) ([9fa60ae](https://github.com/jr200-labs/polars-hist-db/commit/9fa60ae83960adb073c04632a3397c27c816c086))
+
 ## [0.12.54](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.53...v0.12.54) (2026-07-18)
 
 
