@@ -73,7 +73,7 @@ fi
 fetch_from() {
     local base="$1" remote="$2" out="$3"
     mkdir -p "$(dirname "$out")"
-    curl -sfL --retry 3 --retry-delay 1 --max-time 15 "${base}/${remote}" -o "${out}.tmp" || return 1
+    curl -sfL --max-time 10 "${base}/${remote}" -o "${out}.tmp" || return 1
     mv "${out}.tmp" "$out"
 }
 
@@ -84,21 +84,7 @@ fetch() {
 
 fetch_shared() {
     local remote="$1" out="$2"
-    fetch_from "$SHARED_BASE_URL" "$remote" "$out" && return 0
-
-    local api_url="https://api.github.com/repos/${REPO}/contents/${remote}?ref=${REF}"
-    local api_tmp
-    api_tmp=$(mktemp)
-
-    if curl -sfL --retry 3 --retry-delay 1 --max-time 15 "$api_url" -o "$api_tmp" && \
-       jq -r '.content' "$api_tmp" | tr -d '\n' | base64 --decode > "${out}.tmp"; then
-        mv "${out}.tmp" "$out"
-        rm -f "$api_tmp"
-        return 0
-    fi
-
-    rm -f "${out}.tmp" "$api_tmp"
-    return 1
+    fetch_from "$SHARED_BASE_URL" "$remote" "$out"
 }
 
 ensure_git_hooks_path() {
