@@ -387,6 +387,18 @@
     ]
   },
   {
+    "objectID": "configuration.html#ingestion",
+    "href": "configuration.html#ingestion",
+    "title": "Configuration",
+    "section": "ingestion",
+    "text": "ingestion\nDataset execution is bounded and preserves ordering for datasets that write to the same tables. Independent datasets can run concurrently:\ningestion:\n  max_workers: 2\n  queue_size: 2\nBoth values default to 1. Increase max_workers only after confirming the database pool and target database can sustain the additional concurrent writes.",
+    "crumbs": [
+      "Overview",
+      "Polars Hist DB",
+      "Configuration"
+    ]
+  },
+  {
     "objectID": "configuration.html#table_configs",
     "href": "configuration.html#table_configs",
     "title": "Configuration",
