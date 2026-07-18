@@ -1201,6 +1201,30 @@ def test_xtdb_table_reflection_builds_table_config_from_information_schema(
     )
 
 
+def test_xtdb_table_reflection_does_not_query_missing_config_metadata(monkeypatch):
+    read_database = Mock(
+        side_effect=[
+            pl.DataFrame(
+                {
+                    "column_name": ["_id", "destination"],
+                    "data_type": [":i64", "[:? :UTF8]"],
+                    "is_nullable": ["NO", "YES"],
+                }
+            ),
+            pl.DataFrame({"table_name": []}, schema={"table_name": pl.String}),
+        ]
+    )
+    monkeypatch.setattr(pl, "read_database", read_database)
+
+    table_config = XtdbTableConfigOps(object()).from_table("test", "records")
+
+    assert [(column.name, column.data_type) for column in table_config.columns] == [
+        ("_id", "BIGINT"),
+        ("destination", "VARCHAR(255)"),
+    ]
+    assert read_database.call_count == 2
+
+
 def test_xtdb_table_reflection_prefers_configured_column_metadata(monkeypatch):
     columns_json = (
         '[{"table":"all_types","name":"id","data_type":"INT",'
@@ -1221,6 +1245,7 @@ def test_xtdb_table_reflection_prefers_configured_column_metadata(monkeypatch):
                     "is_nullable": ["NO", "YES", "YES"],
                 }
             ),
+            pl.DataFrame({"table_name": ["__polars_hist_db_xtdb_table_configs"]}),
             pl.DataFrame(
                 {
                     "primary_keys_json": ['["id"]'],
@@ -1270,6 +1295,7 @@ def test_xtdb_table_reflection_restores_foreign_key_metadata(monkeypatch):
                     "is_nullable": ["NO", "NO"],
                 }
             ),
+            pl.DataFrame({"table_name": ["__polars_hist_db_xtdb_table_configs"]}),
             pl.DataFrame(
                 {
                     "primary_keys_json": ['["id"]'],
@@ -1309,6 +1335,7 @@ def test_xtdb_table_reflection_recovers_composite_primary_keys_from_metadata(
                     "is_nullable": ["NO", "NO", "NO", "YES"],
                 }
             ),
+            pl.DataFrame({"table_name": ["__polars_hist_db_xtdb_table_configs"]}),
             pl.DataFrame(
                 {
                     "primary_keys_json": ['["entity_id","record_id"]'],
@@ -1368,6 +1395,33 @@ def test_xtdb_physical_schema_rejects_heterogeneous_scalar_union():
 
     with pytest.raises(TypeError, match="physical schema"):
         _validate_xtdb_physical_types(metadata, table_config)
+
+
+def test_xtdb_physical_schema_accepts_nullable_type_shorthand():
+    table_config = TableConfig(
+        schema="test",
+        name="records",
+        primary_keys=["id"],
+        columns=[
+            TableColumnConfig("records", "id", "BIGINT", nullable=False),
+            TableColumnConfig("records", "label", "VARCHAR(255)"),
+            TableColumnConfig("records", "seen_at", "DATETIME"),
+        ],
+    )
+    metadata = pl.DataFrame(
+        {
+            "column_name": ["_id", "id", "label", "seen_at"],
+            "data_type": [
+                ":i64",
+                ":i64",
+                "[:? :UTF8]",
+                '[:? [:timestamp-tz :micro "UTC"]]',
+            ],
+            "is_nullable": ["NO", "NO", "YES", "YES"],
+        }
+    )
+
+    _validate_xtdb_physical_types(metadata, table_config)
 
 
 def test_xtdb_declared_columns_quotes_non_identifier_column_names():
