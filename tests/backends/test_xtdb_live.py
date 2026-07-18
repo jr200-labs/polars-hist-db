@@ -13,9 +13,14 @@ from sqlalchemy import Engine, text
 from polars_hist_db.backends import DbEngineConfig, XtdbBackend
 from polars_hist_db.config import (
     DeltaConfig,
+    DatasetConfig,
     TableColumnConfig,
     TableConfig,
+    TableConfigs,
 )
+from polars_hist_db.dataset.entrypoint import _build_delta_table_config
+from polars_hist_db.dataset.scrape import _run_pipeline_as_transaction
+from polars_hist_db.loaders.input_source import BatchFinalizer
 
 
 pytestmark = [
@@ -202,6 +207,115 @@ def test_xtdb_live_insert_column_with_slash_roundtrip():
         "_id": [1],
         "capacity/bcm": [Decimal("4.080")],
     }
+
+
+def test_xtdb_live_normalizes_foreign_keys_end_to_end():
+    tables = TableConfigs(
+        items=[
+            {
+                "schema": "public",
+                "name": "live_countries",
+                "primary_keys": ["country_id"],
+                "columns": [
+                    {"name": "country_id", "data_type": "INT", "nullable": False},
+                    {"name": "name", "data_type": "VARCHAR(64)", "nullable": False},
+                ],
+            },
+            {
+                "schema": "public",
+                "name": "live_trades",
+                "primary_keys": ["trade_id"],
+                "foreign_keys": [
+                    {
+                        "name": "country_id",
+                        "references": {
+                            "schema": "public",
+                            "table": "live_countries",
+                            "column": "country_id",
+                        },
+                    }
+                ],
+                "columns": [
+                    {"name": "trade_id", "data_type": "INT", "nullable": False},
+                    {"name": "country_id", "data_type": "INT", "nullable": False},
+                ],
+            },
+        ]
+    )
+    dataset = DatasetConfig(
+        name="live_trade_upload",
+        delta_table_schema="public",
+        input_config={"type": "dsv", "search_paths": []},
+        delta_config={"drop_unchanged_rows": True},
+        pipeline=[
+            {
+                "schema": "public",
+                "table": "live_countries",
+                "columns": [
+                    {
+                        "source": "country_id",
+                        "target": "country_id",
+                        "deduce_foreign_key": True,
+                    },
+                    {"source": "country_name", "target": "name"},
+                ],
+            },
+            {
+                "schema": "public",
+                "table": "live_trades",
+                "type": "primary",
+                "columns": [
+                    {"source": "trade_id", "target": "trade_id"},
+                    {"source": "country_id", "target": "country_id"},
+                ],
+            },
+        ],
+    )
+    upload = pl.DataFrame(
+        {
+            "trade_id": [1, 2, 3],
+            "country_id": pl.Series([None, None, None], dtype=pl.Int64),
+            "country_name": ["Japan", "Korea", "Korea"],
+        }
+    )
+    delta_table_config = _build_delta_table_config(tables, dataset)
+
+    with _xtdb_engine() as engine:
+        backend = XtdbBackend()
+        with engine.connect() as connection:
+            backend.table_configs(connection).create(tables["live_countries"])
+            backend.dataframes(connection).table_insert(
+                pl.DataFrame({"country_id": [7], "name": ["Japan"]}),
+                "public",
+                "live_countries",
+                table_config=tables["live_countries"],
+            )
+
+        for _ in range(2):
+            _run_pipeline_as_transaction(
+                [(datetime.now(timezone.utc), upload)],
+                dataset,
+                tables,
+                engine,
+                BatchFinalizer(),
+                delta_table_config=delta_table_config,
+                backend=backend,
+            )
+
+        with engine.connect() as connection:
+            countries = backend.dataframes(connection).from_table(
+                "public", "live_countries"
+            )
+            trades = backend.dataframes(connection).from_table("public", "live_trades")
+
+    country_ids = dict(countries.select("name", "country_id").iter_rows())
+    assert country_ids["Japan"] == 7
+    assert set(country_ids) == {"Japan", "Korea"}
+    assert trades.sort("trade_id").select("trade_id", "country_id").rows() == [
+        (1, 7),
+        (2, country_ids["Korea"]),
+        (3, country_ids["Korea"]),
+    ]
 
 
 def test_xtdb_live_composite_primary_key_roundtrip():
