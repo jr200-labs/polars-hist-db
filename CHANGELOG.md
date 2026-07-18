@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.56](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.55...v0.12.56) (2026-07-18)
+
+
+### Performance Improvements
+
+* bound XTDB audit filtering ([#227](https://github.com/jr200-labs/polars-hist-db/issues/227)) ([81a15da](https://github.com/jr200-labs/polars-hist-db/commit/81a15da0022f626e30f14857b2bd73394de4e5da))
+
 ## [0.12.55](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.54...v0.12.55) (2026-07-18)
 
 
