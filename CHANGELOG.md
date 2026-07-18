@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.63](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.62...v0.12.63) (2026-07-18)
+
+
+### Bug Fixes
+
+* preserve timezone-aware timestamp types ([#260](https://github.com/jr200-labs/polars-hist-db/issues/260)) ([78b89fb](https://github.com/jr200-labs/polars-hist-db/commit/78b89fb22231a11462b38a1cd231303d40e88b67))
+
 ## [0.12.62](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.61...v0.12.62) (2026-07-18)
 
 
