@@ -957,6 +957,22 @@ def _materialize_xtdb_missing_columns(
     return materialized.select([*configured_columns, *extra_columns])
 
 
+def _cast_xtdb_configured_columns(
+    df: pl.DataFrame,
+    table_config: TableConfig,
+    column_names: Iterable[str],
+) -> pl.DataFrame:
+    configured_types = {
+        column.name: PolarsType.from_sql(column.data_type)
+        for column in table_config.columns
+    }
+    return df.with_columns(
+        pl.col(column_name).cast(configured_types[column_name])
+        for column_name in column_names
+        if column_name in df.columns and column_name in configured_types
+    )
+
+
 def _dedupe_xtdb_staging_dataframe(
     df: pl.DataFrame, uniqueness_col_set: Iterable[str]
 ) -> pl.DataFrame:
@@ -1621,6 +1637,13 @@ class XtdbStagingOps:
                 table_config, value_targets, generated.schema
             )
             if _xtdb_is_integer_config_column(table_config, target_column):
+                target_dtype = PolarsType.from_sql(
+                    next(
+                        column.data_type
+                        for column in table_config.columns
+                        if column.name == target_column
+                    )
+                )
                 bits = (
                     63
                     if any(
@@ -1630,10 +1653,14 @@ class XtdbStagingOps:
                     )
                     else 31
                 )
-                generated_value = generated_payload.map_batches(
-                    partial(_xtdb_deduced_numeric_foreign_key_ids, bits=bits),
-                    return_dtype=pl.Int64,
-                ).alias(target_column)
+                generated_value = (
+                    generated_payload.map_batches(
+                        partial(_xtdb_deduced_numeric_foreign_key_ids, bits=bits),
+                        return_dtype=pl.Int64,
+                    )
+                    .cast(target_dtype)
+                    .alias(target_column)
+                )
             else:
                 generated_value = generated_payload.alias(target_column)
             if source_column not in candidates.columns:
@@ -1691,6 +1718,11 @@ class XtdbStagingOps:
             table_config,
             fk_targets,
         )
+        missing_parent_rows = _cast_xtdb_configured_columns(
+            missing_parent_rows,
+            table_config,
+            fk_targets,
+        )
         resolved_keys = missing_parent_rows.select(
             [*value_targets, *fk_targets]
         ).unique(maintain_order=True)
@@ -1706,6 +1738,7 @@ class XtdbStagingOps:
                 joined = joined.with_columns(
                     pl.coalesce(resolved_column, target_column).alias(target_column)
                 ).drop(resolved_column)
+        joined = _cast_xtdb_configured_columns(joined, table_config, fk_targets)
 
         parent_rows_to_insert = missing_parent_rows.select(
             [*fk_targets, *value_targets]

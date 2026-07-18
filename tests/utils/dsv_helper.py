@@ -84,20 +84,30 @@ def _docker(args: list[str]) -> str:
     return subprocess.check_output(["docker", *args], text=True).strip()
 
 
-def _published_port(container_id: str) -> int:
-    output = _docker(["port", container_id, "5432/tcp"])
+def _published_port(container_id: str, container_port: str) -> int:
+    output = _docker(["port", container_id, container_port])
     first_binding = output.splitlines()[0]
     return int(first_binding.rsplit(":", 1)[1])
 
 
 def xtdb_engine_test() -> tuple[Engine, str, DbEngineConfig]:
     container_id = _docker(
-        ["run", "--rm", "-d", "-p", "5432", "ghcr.io/xtdb/xtdb:nightly"]
+        [
+            "run",
+            "--rm",
+            "-d",
+            "-p",
+            "5432",
+            "-p",
+            "9832",
+            "ghcr.io/xtdb/xtdb:nightly",
+        ]
     )
     config = DbEngineConfig(
         backend="xtdb",
         hostname="127.0.0.1",
-        port=_published_port(container_id),
+        port=_published_port(container_id, "5432/tcp"),
+        adbc_port=_published_port(container_id, "9832/tcp"),
     )
     engine = XtdbBackend().create_engine(config)
     deadline = time.monotonic() + 60
