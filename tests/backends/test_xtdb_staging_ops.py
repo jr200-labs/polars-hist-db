@@ -1,10 +1,15 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from unittest.mock import Mock
 
 import polars as pl
 import pytest
 
-from polars_hist_db.backends.xtdb import XtdbBackend, XtdbStagingOps
+from polars_hist_db.backends.xtdb import (
+    XtdbBackend,
+    XtdbStagingOps,
+    _xtdb_deduced_foreign_key_payload,
+)
 from polars_hist_db.config import (
     DatasetConfig,
     TableColumnConfig,
@@ -23,6 +28,27 @@ def _empty_numeric_key_occupancy():
     return pl.DataFrame(
         {"id": [None], "__xtdb_minimum_id": [None]},
         schema={"id": pl.Int64, "__xtdb_minimum_id": pl.Int64},
+    )
+
+
+def test_xtdb_generated_foreign_key_payload_preserves_canonical_ids():
+    table_config = TableConfig(schema="ref", name="events", columns=[])
+    values = pl.DataFrame(
+        {
+            "name": ['a"b'],
+            "day": [date(2020, 1, 2)],
+            "at": [datetime(2020, 1, 2, 3, 4, 5, 123400, tzinfo=timezone.utc)],
+            "amount": [Decimal("2.10")],
+        }
+    )
+
+    payload = values.select(
+        _xtdb_deduced_foreign_key_payload(table_config, values.columns, values.schema)
+    ).item()
+
+    assert payload == (
+        'xtdb-fk-v1:ref.events:[["name","a\\"b"],["day","2020-01-02"],'
+        '["at","2020-01-02T03:04:05.123400+00:00"],["amount","2.10"]]'
     )
 
 
@@ -940,8 +966,7 @@ def test_xtdb_staging_generates_numeric_foreign_key_when_source_key_is_missing(
     )
 
     generated_id = result[0, "id"]
-    assert isinstance(generated_id, int)
-    assert generated_id < 0
+    assert generated_id == -970706434
     assert inserted["df"].to_dict(as_series=False) == {
         "id": [generated_id],
         "name": ["Southern Europe"],

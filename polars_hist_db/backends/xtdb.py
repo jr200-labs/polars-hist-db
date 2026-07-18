@@ -1343,42 +1343,57 @@ def _xtdb_is_integer_config_column(table_config: TableConfig, column_name: str) 
     return data_type in {"BIGINT", "INT", "INTEGER", "MEDIUMINT", "SMALLINT", "TINYINT"}
 
 
-def _xtdb_deduced_foreign_key_id(
+def _xtdb_deduced_foreign_key_payload(
     table_config: TableConfig,
     value_targets: list[str],
-    row: dict[str, Any],
-) -> str:
-    encoded_parts = [
-        [column, _xtdb_json_safe_key_value(row[column])] for column in value_targets
-    ]
-    return f"xtdb-fk-v1:{table_config.schema}.{table_config.name}:" + json.dumps(
-        encoded_parts, separators=(",", ":"), ensure_ascii=False
-    )
+    schema: Mapping[str, pl.DataType],
+) -> pl.Expr:
+    encoded_parts = []
+    for column in value_targets:
+        value = pl.col(column)
+        dtype = schema[column]
+        if isinstance(dtype, pl.Datetime):
+            timezone_suffix = "%:z" if dtype.time_zone else ""
+            value = value.dt.strftime(f"%Y-%m-%dT%H:%M:%S%.f{timezone_suffix}")
+        elif dtype == pl.Date or dtype.is_decimal():
+            value = value.cast(pl.String)
 
-
-def _xtdb_deduced_numeric_foreign_key_id(
-    table_config: TableConfig,
-    target_column: str,
-    value_targets: list[str],
-    row: dict[str, Any],
-) -> int:
-    encoded_parts = [
-        [column, _xtdb_json_safe_key_value(row[column])] for column in value_targets
-    ]
-    payload = f"xtdb-fk-v1:{table_config.schema}.{table_config.name}:" + json.dumps(
-        encoded_parts, separators=(",", ":"), ensure_ascii=False
-    )
-    digest = hashlib.sha256(payload.encode("utf-8")).digest()
-    bits = (
-        63
-        if any(
-            column.name == target_column and column.data_type.upper() == "BIGINT"
-            for column in table_config.columns
+        encoded_column = json.dumps(column, ensure_ascii=False)
+        encoded_value = (
+            pl.struct(value.alias(column))
+            .struct.json_encode()
+            .str.strip_prefix(f"{{{encoded_column}:")
+            .str.strip_suffix("}")
         )
-        else 31
+        encoded_parts.append(
+            pl.concat_str(
+                pl.lit("["),
+                pl.lit(encoded_column),
+                pl.lit(","),
+                encoded_value,
+                pl.lit("]"),
+            )
+        )
+
+    return pl.concat_str(
+        pl.lit(f"xtdb-fk-v1:{table_config.schema}.{table_config.name}:["),
+        pl.concat_str(encoded_parts, separator=","),
+        pl.lit("]"),
     )
-    generated = int.from_bytes(digest[:8], "big") & ((1 << bits) - 1)
-    return -(generated or 1)
+
+
+def _xtdb_deduced_numeric_foreign_key_ids(payloads: pl.Series, bits: int) -> pl.Series:
+    mask = (1 << bits) - 1
+
+    def generated_id(payload: str) -> int:
+        digest = hashlib.sha256(payload.encode("utf-8")).digest()
+        generated = int.from_bytes(digest[:8], "big") & mask
+        return -(generated or 1)
+
+    return pl.Series(
+        [generated_id(payload) for payload in payloads],
+        dtype=pl.Int64,
+    )
 
 
 def _xtdb_parent_row_cache_key(
@@ -2258,31 +2273,25 @@ class XtdbStagingOps:
                     else pl.col(target_column).is_null()
                 ).alias(f"__xtdb_generated_{target_column}")
             )
+            generated_payload = _xtdb_deduced_foreign_key_payload(
+                table_config, value_targets, generated.schema
+            )
             if _xtdb_is_integer_config_column(table_config, target_column):
-                generated_value = (
-                    pl.struct(value_targets)
-                    .map_elements(
-                        partial(
-                            _xtdb_deduced_numeric_foreign_key_id,
-                            table_config,
-                            target_column,
-                            value_targets,
-                        ),
-                        return_dtype=pl.Int64,
+                bits = (
+                    63
+                    if any(
+                        column.name == target_column
+                        and column.data_type.upper() == "BIGINT"
+                        for column in table_config.columns
                     )
-                    .alias(target_column)
+                    else 31
                 )
+                generated_value = generated_payload.map_batches(
+                    partial(_xtdb_deduced_numeric_foreign_key_ids, bits=bits),
+                    return_dtype=pl.Int64,
+                ).alias(target_column)
             else:
-                generated_value = (
-                    pl.struct(value_targets)
-                    .map_elements(
-                        lambda row: _xtdb_deduced_foreign_key_id(
-                            table_config, value_targets, row
-                        ),
-                        return_dtype=pl.String,
-                    )
-                    .alias(target_column)
-                )
+                generated_value = generated_payload.alias(target_column)
             if source_column not in candidates.columns:
                 generated = generated.with_columns(generated_value)
                 continue
