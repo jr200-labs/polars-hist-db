@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime
 import logging
-from typing import AsyncGenerator, List, Tuple
+from typing import Any, AsyncGenerator, List, Tuple
 
 from nats.js.api import ConsumerConfig
 from nats.js.client import JetStreamContext
@@ -40,6 +40,93 @@ class JetStreamInputSource(InputSource[JetStreamInputConfig]):
     async def cleanup(self) -> None:
         # Caller owns the NATS client — do not close it here
         pass
+
+    def _prepare_batch(
+        self,
+        msgs: list[Any],
+        msg_ts: datetime,
+        engine: Engine,
+        table_schema: str,
+        table_name: str,
+        subject: str,
+    ) -> tuple[List[Tuple[datetime, pl.DataFrame]], BatchFinalizer]:
+        all_dfs = []
+        msg_audits = []
+        for msg in msgs:
+            df = load_df_from_msg(msg, msg_ts, self.config.payload_ingest)
+            msg_audits.extend(
+                list(df.select("__path", "__created_at").unique().iter_rows())
+            )
+            all_dfs.append(df)
+
+        df = pl.concat(all_dfs)
+        num_items_received = len(df)
+        received_items_ts = (
+            df.select(
+                pl.concat_list(pl.min("__created_at"), pl.max("__created_at"))
+                .explode()
+                .sort()
+                .unique()
+                .dt.strftime("%Y-%m-%d %H:%M:%S")
+            )
+            .get_column("__created_at")
+            .to_list()
+        )
+        df = self._search_and_filter_files(df, table_schema, table_name, engine)
+        audit_entries = df["__path"].unique().to_list()
+        df = df.drop("__path", "__created_at").pipe(
+            apply_transformations, self.column_definitions
+        )
+        LOGGER.info(
+            "got [%d/%d] %s@t=%s...",
+            len(df),
+            num_items_received,
+            subject,
+            received_items_ts,
+        )
+        record_uploader_batch(
+            table=f"{table_schema}.{table_name}",
+            subject=subject,
+            received=num_items_received,
+            written=len(df),
+        )
+        partitions = self._apply_time_partitioning(df, msg_ts)
+
+        def write_audit_before_commit(
+            connection: Connection,
+            modified_tables: List[Tuple[str, str]],
+        ) -> bool:
+            for audit_log_id, created_at in msg_audits:
+                result = True
+                if audit_log_id in audit_entries:
+                    for modified_schema, modified_table in modified_tables:
+                        result = result and AuditOps(modified_schema).add_entry(
+                            "nats-jetstream",
+                            audit_log_id,
+                            modified_table,
+                            connection,
+                            created_at,
+                        )
+                if not result:
+                    LOGGER.error(
+                        "audit for [%s.%s - %s]: FAILED",
+                        table_schema,
+                        table_name,
+                        audit_log_id,
+                    )
+                    raise NonRetryableException("Failed to update audit log")
+            return True
+
+        async def ack_after_commit() -> None:
+            for msg in msgs:
+                await msg.ack()
+
+        return partitions, BatchFinalizer(write_audit_before_commit, ack_after_commit)
+
+    async def _heartbeat(self, msgs: list[Any]) -> None:
+        while True:
+            await asyncio.sleep(self.config.jetstream.fetch.heartbeat_interval)
+            await asyncio.gather(*(msg.in_progress() for msg in msgs))
 
     async def next_df(
         self, engine: Engine
@@ -118,123 +205,20 @@ class JetStreamInputSource(InputSource[JetStreamInputConfig]):
                         remaining_msgs -= len(msgs)
                     msg_ts: datetime = msgs[-1].metadata.timestamp
 
-                    all_dfs = []
-                    msg_audits = []
-                    for msg in msgs:
-                        df = load_df_from_msg(msg, msg_ts, self.config.payload_ingest)
-                        msg_audits.extend(
-                            list(
-                                df.select("__path", "__created_at").unique().iter_rows()
-                            )
-                        )
-                        all_dfs.append(df)
-
-                    df = pl.concat(all_dfs)
-
-                    num_items_received = len(df)
-                    received_items_ts = (
-                        df.select(
-                            pl.concat_list(
-                                pl.min("__created_at"), pl.max("__created_at")
-                            )
-                            .explode()
-                            .sort()
-                            .unique()
-                            .dt.strftime("%Y-%m-%d %H:%M:%S")
-                        )
-                        .get_column("__created_at")
-                        .to_list()
-                    )
-
-                    df = self._search_and_filter_files(
-                        df, table_schema, table_name, engine
-                    )
-
-                    audit_entries = df["__path"].unique().to_list()
-
-                    df = df.drop("__path", "__created_at").pipe(
-                        apply_transformations, self.column_definitions
-                    )
-                    LOGGER.info(
-                        "got [%d/%d] %s@t=%s...",
-                        len(df),
-                        num_items_received,
-                        js_sub_cfg.subject,
-                        received_items_ts,
-                    )
-                    record_uploader_batch(
-                        table=f"{table_schema}.{table_name}",
-                        subject=js_sub_cfg.subject,
-                        received=num_items_received,
-                        written=len(df),
-                    )
-
-                    partitions = self._apply_time_partitioning(df, msg_ts)
-
-                    def _make_finalizer(
-                        bound_msgs: list,
-                        bound_msg_audits: list,
-                        bound_audit_entries: List[str],
-                    ) -> BatchFinalizer:
-                        def write_audit_before_commit(
-                            connection: Connection,
-                            modified_tables: List[Tuple[str, str]],
-                        ) -> bool:
-                            for audit_log_id, created_at in bound_msg_audits:
-                                result = True
-                                if audit_log_id in bound_audit_entries:
-                                    for (
-                                        modified_schema,
-                                        modified_table,
-                                    ) in modified_tables:
-                                        aops = AuditOps(modified_schema)
-                                        result = result and aops.add_entry(
-                                            "nats-jetstream",
-                                            audit_log_id,
-                                            modified_table,
-                                            connection,
-                                            created_at,
-                                        )
-
-                                if not result:
-                                    LOGGER.error(
-                                        "audit for [%s.%s - %s]: FAILED",
-                                        table_schema,
-                                        table_name,
-                                        audit_log_id,
-                                    )
-                                    raise NonRetryableException(
-                                        "Failed to update audit log"
-                                    )
-
-                            return True
-
-                        async def ack_after_commit() -> None:
-                            for msg in bound_msgs:
-                                await msg.ack()
-
-                        return BatchFinalizer(
-                            write_audit_before_commit, ack_after_commit
-                        )
-
-                    async def heartbeat(bound_msgs: list) -> None:
-                        while True:
-                            await asyncio.sleep(
-                                self.config.jetstream.fetch.heartbeat_interval
-                            )
-                            await asyncio.gather(
-                                *(msg.in_progress() for msg in bound_msgs)
-                            )
-
                     heartbeat_task = (
-                        asyncio.create_task(heartbeat(msgs))
+                        asyncio.create_task(self._heartbeat(msgs))
                         if self.config.jetstream.fetch.heartbeat_interval > 0
                         else None
                     )
                     try:
-                        yield (
-                            partitions,
-                            _make_finalizer(msgs, msg_audits, audit_entries),
+                        yield await asyncio.to_thread(
+                            self._prepare_batch,
+                            msgs,
+                            msg_ts,
+                            engine,
+                            table_schema,
+                            table_name,
+                            js_sub_cfg.subject,
                         )
                     finally:
                         if heartbeat_task is not None:

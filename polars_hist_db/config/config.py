@@ -9,6 +9,18 @@ from ..backends.config import DbEngineConfig
 
 
 @dataclass(frozen=True)
+class IngestionConfig:
+    max_workers: int = 1
+    queue_size: int = 1
+
+    def __post_init__(self):
+        if self.max_workers < 1:
+            raise ValueError("ingestion.max_workers must be at least 1")
+        if self.queue_size < 1:
+            raise ValueError("ingestion.queue_size must be at least 1")
+
+
+@dataclass(frozen=True)
 class ParitySemanticForeignKeyConfig:
     source: str
     target: str
@@ -64,9 +76,11 @@ class PolarsHistDbConfig:
         table_params = get_nested_key(cfg_dict, table_configs_path)
         db_params = get_nested_key(cfg_dict, ["db"]) or {}
         parity_params = get_nested_key(cfg_dict, ["parity"]) or {}
+        ingestion_params = get_nested_key(cfg_dict, ["ingestion"]) or {}
 
         self.db_config = DbEngineConfig.from_mapping(db_params)
         self.parity = ParityConfig(**parity_params)
+        self.ingestion = IngestionConfig(**ingestion_params)
         self.tables = TableConfigs(items=table_params)
 
         if dataset_params:
