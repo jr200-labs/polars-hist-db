@@ -8,7 +8,7 @@ import polars as pl
 
 from ...config.parser_config import IngestionColumnConfig
 from ..transform import header_configs
-from ...types import PolarsType
+from ...types import PolarsType, is_polars_type
 
 LOGGER = logging.getLogger(__name__)
 
@@ -67,7 +67,9 @@ def load_typed_dsv(
 
     def _is_forced_dtype(dtype: pl.DataType) -> bool:
         return (
-            dtype.is_temporal() or dtype.is_decimal() or dtype in {pl.String, pl.Utf8}
+            dtype.is_temporal()
+            or dtype.is_decimal()
+            or is_polars_type(dtype, pl.String, pl.Utf8)
         )
 
     headers_ingestion_schema: Mapping[str, pl.DataType] = {

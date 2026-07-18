@@ -10,7 +10,7 @@ from sqlalchemy import text
 
 from ..config import TableConfig
 from ..core import TimeHint
-from ..types import PolarsType
+from ..types import PolarsType, is_polars_type
 from .temporal import system_time_hint_clause
 
 
@@ -197,7 +197,7 @@ def _xtdb_cast_type(data_type: str) -> str:
 
 
 def _xtdb_cast_type_from_polars(dtype: pl.DataType) -> str:
-    if dtype in {pl.Int8, pl.Int16, pl.Int32}:
+    if is_polars_type(dtype, pl.Int8, pl.Int16, pl.Int32):
         return "INTEGER"
     if dtype == pl.Int64:
         return "BIGINT"
@@ -217,7 +217,7 @@ def _xtdb_cast_type_from_polars(dtype: pl.DataType) -> str:
         )
     if isinstance(dtype, pl.Decimal):
         return f"DECIMAL({dtype.precision},{dtype.scale})"
-    if dtype in {pl.String, pl.Utf8, pl.Categorical}:
+    if is_polars_type(dtype, pl.String, pl.Utf8, pl.Categorical):
         return "TEXT"
     raise ValueError(
         f"Unsupported XTDB Polars type {dtype}; provide a supported typed "

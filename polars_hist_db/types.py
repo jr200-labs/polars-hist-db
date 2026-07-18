@@ -19,16 +19,25 @@ from sqlalchemy.types import TypeEngine
 from sqlalchemy.sql.sqltypes import NullType
 
 from .observability import record_database_type_contract
+from .utils.exceptions import NonRetryableException
 
 LOGGER = logging.getLogger(__name__)
 
 
-class TypeContractError(TypeError):
+class TypeContractError(TypeError, NonRetryableException):
     """A DataFrame does not satisfy a database table's declared types."""
 
 
+def is_polars_type(
+    dtype: pl.DataType,
+    *candidates: Union[pl.DataType, type[pl.DataType]],
+) -> bool:
+    """Compare Polars dtypes without relying on inconsistent dtype hashing."""
+    return any(dtype == candidate for candidate in candidates)
+
+
 def _polars_type_family(dtype: pl.DataType) -> str:
-    if dtype in {pl.String, pl.Utf8, pl.Categorical}:
+    if is_polars_type(dtype, pl.String, pl.Utf8, pl.Categorical):
         return "string"
     if dtype.is_integer():
         return "integer"
@@ -125,7 +134,7 @@ class SQLType:
         if isinstance(pl_dtype, pl.Decimal):
             return f"NUMERIC({pl_dtype.precision},{pl_dtype.scale})"
 
-        if pl_dtype in [pl.Utf8, pl.String, pl.Categorical]:
+        if is_polars_type(pl_dtype, pl.Utf8, pl.String, pl.Categorical):
             return f"VARCHAR({default_varchar_length})"
 
         raise ValueError(f"Unknown Polars data type: {pl_dtype}.")
@@ -271,16 +280,13 @@ class PolarsType:
     ) -> pl.DataFrame:
         """Fail closed on implicit database-boundary type conversions."""
         result = df
-        string_types = {pl.String, pl.Utf8, pl.Categorical}
         for column, expected in expected_schema.items():
             if column not in df.columns:
                 continue
             actual = df.schema[column]
-            if (
-                actual == expected
-                or actual in string_types
-                and expected in string_types
-            ):
+            actual_family = _polars_type_family(actual)
+            expected_family = _polars_type_family(expected)
+            if actual == expected or actual_family == expected_family == "string":
                 continue
             if actual == pl.Null:
                 result = result.with_columns(pl.col(column).cast(expected))
@@ -306,7 +312,7 @@ class PolarsType:
                 )
             LOGGER.warning("%s; applying explicit strict conversion", message)
             source = pl.col(column)
-            if actual == pl.Categorical and expected not in string_types:
+            if is_polars_type(actual, pl.Categorical) and expected_family != "string":
                 source = source.cast(pl.String)
             try:
                 result = result.with_columns(source.cast(expected, strict=True))

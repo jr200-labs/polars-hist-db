@@ -13,6 +13,7 @@ from polars_hist_db.core.delta_table import (
     _prevalidate_upsert_from_table,
 )
 from polars_hist_db.loaders.dsv.dsv_loader import _validate_expected_columns
+from polars_hist_db.types import PolarsType
 
 
 def test_boolean_string_defaults_are_parsed():
@@ -49,6 +50,22 @@ def test_missing_dsv_columns_are_added_to_rows():
 
     assert result.schema == {"missing": pl.String}
     assert result["missing"].to_list() == [None, None]
+
+
+@pytest.mark.parametrize("expected", [pl.String, pl.Utf8, pl.Categorical])
+def test_database_contract_accepts_all_string_encodings(expected):
+    categorical = pl.DataFrame({"value": ["one", "two"]}).with_columns(
+        pl.col("value").cast(pl.Categorical)
+    )
+
+    result = PolarsType.enforce_database_schema(
+        categorical,
+        {"value": expected},
+        backend="test",
+        operation="table_insert",
+    )
+
+    assert result.schema["value"] == pl.Categorical
 
 
 def test_last_delta_column_type_mismatch_raises():
