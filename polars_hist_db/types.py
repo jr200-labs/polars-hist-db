@@ -18,7 +18,36 @@ from sqlalchemy.dialects import mysql
 from sqlalchemy.types import TypeEngine
 from sqlalchemy.sql.sqltypes import NullType
 
+from .observability import record_database_type_contract
+
 LOGGER = logging.getLogger(__name__)
+
+
+class TypeContractError(TypeError):
+    """A DataFrame does not satisfy a database table's declared types."""
+
+
+def _polars_type_family(dtype: pl.DataType) -> str:
+    if dtype in {pl.String, pl.Utf8, pl.Categorical}:
+        return "string"
+    if dtype.is_integer():
+        return "integer"
+    if dtype.is_float():
+        return "float"
+    if dtype.is_decimal():
+        return "decimal"
+    if dtype == pl.Boolean:
+        return "boolean"
+    if dtype == pl.Date:
+        return "date"
+    if dtype == pl.Time:
+        return "time"
+    if isinstance(dtype, pl.Datetime):
+        return "timestamp_tz" if dtype.time_zone is not None else "timestamp"
+    if dtype == pl.Null:
+        return "null"
+    return "other"
+
 
 # This mapping is used by all three converters.
 TYPE_PRIORITY_MAP: List[Tuple[str, pl.DataType, TypeEngine]] = [
@@ -230,6 +259,77 @@ class PolarsType:
                 )
         df = PolarsType.cast_str_to_cat(df)
         return df
+
+    @staticmethod
+    def enforce_database_schema(
+        df: pl.DataFrame,
+        expected_schema: Mapping[str, pl.DataType],
+        *,
+        backend: str,
+        operation: str,
+        force_type_coercion: bool = False,
+    ) -> pl.DataFrame:
+        """Fail closed on implicit database-boundary type conversions."""
+        result = df
+        string_types = {pl.String, pl.Utf8, pl.Categorical}
+        for column, expected in expected_schema.items():
+            if column not in df.columns:
+                continue
+            actual = df.schema[column]
+            if (
+                actual == expected
+                or actual in string_types
+                and expected in string_types
+            ):
+                continue
+            if actual == pl.Null:
+                result = result.with_columns(pl.col(column).cast(expected))
+                continue
+
+            message = (
+                f"{backend} {operation} type contract failed for column {column!r}: "
+                f"expected {expected}, received {actual}"
+            )
+            if not force_type_coercion:
+                record_database_type_contract(
+                    backend=backend,
+                    operation=operation,
+                    expected_type=_polars_type_family(expected),
+                    actual_type=_polars_type_family(actual),
+                    forced=False,
+                    outcome="rejected",
+                )
+                LOGGER.error(message)
+                raise TypeContractError(
+                    f"{message}; pass force_type_coercion=True for an explicit "
+                    "strict conversion"
+                )
+            LOGGER.warning("%s; applying explicit strict conversion", message)
+            source = pl.col(column)
+            if actual == pl.Categorical and expected not in string_types:
+                source = source.cast(pl.String)
+            try:
+                result = result.with_columns(source.cast(expected, strict=True))
+            except Exception:
+                record_database_type_contract(
+                    backend=backend,
+                    operation=operation,
+                    expected_type=_polars_type_family(expected),
+                    actual_type=_polars_type_family(actual),
+                    forced=True,
+                    outcome="failed",
+                )
+                raise
+            record_database_type_contract(
+                backend=backend,
+                operation=operation,
+                expected_type=_polars_type_family(expected),
+                actual_type=_polars_type_family(actual),
+                forced=True,
+                outcome="coerced",
+            )
+
+        return result
 
     @staticmethod
     def cast_str_to_cat(

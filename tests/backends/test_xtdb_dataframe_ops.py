@@ -16,6 +16,7 @@ from polars_hist_db.backends.xtdb import (
 )
 from polars_hist_db.config import TableColumnConfig, TableConfig
 from polars_hist_db.core import TimeHint
+from polars_hist_db.types import TypeContractError
 
 
 def _single_executemany_call(driver_connection: Mock):
@@ -634,6 +635,7 @@ def test_xtdb_dataframe_ops_uses_native_casts_for_mysql_compatibility_types():
         "test",
         "compat_types",
         table_config=table_config,
+        force_type_coercion=True,
     )
 
     insert_call = _single_executemany_call(driver_connection)
@@ -722,6 +724,7 @@ def test_xtdb_dataframe_ops_casts_categorical_values_to_configured_decimal():
         "test",
         "records",
         table_config=table_config,
+        force_type_coercion=True,
     )
 
     insert_call = _single_executemany_call(driver_connection)
@@ -758,6 +761,7 @@ def test_xtdb_dataframe_ops_quotes_reserved_insert_columns():
         "source_a",
         "entity_info",
         table_config=table_config,
+        force_type_coercion=True,
     )
 
     insert_sql = _single_executemany_call(driver_connection).args[0]
@@ -792,6 +796,7 @@ def test_xtdb_dataframe_ops_encodes_insert_columns_with_slashes():
         "source_a",
         "entity_info",
         table_config=table_config,
+        force_type_coercion=True,
     )
 
     insert_call = _single_executemany_call(driver_connection)
@@ -833,6 +838,7 @@ def test_xtdb_dataframe_ops_uses_underscore_column_mapping():
         "source_a",
         "entity_info",
         table_config=table_config,
+        force_type_coercion=True,
     )
 
     insert_sql = _single_executemany_call(driver_connection).args[0]
@@ -868,6 +874,62 @@ def test_xtdb_dataframe_ops_rejects_physical_column_mapping_collisions():
             "source_a",
             "entity_info",
             table_config=table_config,
+        )
+
+
+def test_xtdb_dataframe_ops_rejects_implicit_type_coercion():
+    connection = Mock()
+    connection.connection.driver_connection = Mock()
+    ops = XtdbDataframeOps(connection)
+    table_config = TableConfig(
+        schema="test",
+        name="records",
+        primary_keys=["id"],
+        columns=[
+            TableColumnConfig("records", "id", "BIGINT", nullable=False),
+            TableColumnConfig("records", "seen_at", "DATETIME"),
+        ],
+    )
+
+    with pytest.raises(TypeContractError, match="force_type_coercion=True"):
+        ops.table_insert(
+            pl.DataFrame({"id": [1], "seen_at": ["2030-01-01T00:00:00Z"]}),
+            "test",
+            "records",
+            table_config=table_config,
+        )
+
+
+def test_xtdb_dataframe_ops_rejects_unknown_unconfigured_type():
+    connection = Mock()
+    connection.connection.driver_connection = Mock()
+    ops = XtdbDataframeOps(connection)
+
+    with pytest.raises(ValueError, match="Unsupported XTDB Polars type"):
+        ops.table_insert(pl.DataFrame({"values": [[1, 2]]}), "test", "records")
+
+
+def test_xtdb_dataframe_ops_forced_conversion_never_replaces_bad_values_with_null():
+    connection = Mock()
+    connection.connection.driver_connection = Mock()
+    ops = XtdbDataframeOps(connection)
+    table_config = TableConfig(
+        schema="test",
+        name="records",
+        primary_keys=["id"],
+        columns=[
+            TableColumnConfig("records", "id", "BIGINT", nullable=False),
+            TableColumnConfig("records", "amount", "DOUBLE"),
+        ],
+    )
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        ops.table_insert(
+            pl.DataFrame({"id": [1], "amount": ["not-a-number"]}),
+            "test",
+            "records",
+            table_config=table_config,
+            force_type_coercion=True,
         )
 
 

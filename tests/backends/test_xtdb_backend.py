@@ -16,6 +16,7 @@ from polars_hist_db.backends.xtdb import (
     _execute_xtdb_transaction,
     _xtdb_cast_type,
     _xtdb_declared_columns,
+    _validate_xtdb_physical_types,
 )
 from polars_hist_db.config import (
     DeltaConfig,
@@ -1341,6 +1342,32 @@ def test_xtdb_table_reflection_errors_when_table_has_no_metadata(monkeypatch):
         ValueError, match="XTDB table metadata not found for test.records"
     ):
         ops.from_table("test", "records")
+
+
+def test_xtdb_physical_schema_rejects_heterogeneous_scalar_union():
+    table_config = TableConfig(
+        schema="test",
+        name="records",
+        primary_keys=["id"],
+        columns=[
+            TableColumnConfig("records", "id", "BIGINT", nullable=False),
+            TableColumnConfig("records", "seen_at", "DATETIME"),
+        ],
+    )
+    metadata = pl.DataFrame(
+        {
+            "column_name": ["_id", "id", "seen_at"],
+            "data_type": [
+                ":i64",
+                ":i64",
+                '[:union #{:utf8 [:timestamp-tz :micro "UTC"] :null}]',
+            ],
+            "is_nullable": ["NO", "NO", "YES"],
+        }
+    )
+
+    with pytest.raises(TypeError, match="physical schema"):
+        _validate_xtdb_physical_types(metadata, table_config)
 
 
 def test_xtdb_declared_columns_quotes_non_identifier_column_names():
