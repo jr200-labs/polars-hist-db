@@ -120,6 +120,33 @@ def test_record_uploader_batch_noop_without_otel(monkeypatch):
     )
 
 
+def test_record_database_type_contract_uses_low_cardinality_attributes(monkeypatch):
+    meter = _install_fake_otel(monkeypatch)
+
+    observability.record_database_type_contract(
+        backend="xtdb",
+        operation="table_insert",
+        expected_type="timestamp_tz",
+        actual_type="string",
+        forced=False,
+        outcome="rejected",
+    )
+
+    assert meter.counters["database_type_contract_violations_total"].calls == [
+        (
+            1,
+            {
+                "backend": "xtdb",
+                "operation": "table_insert",
+                "expected_type": "timestamp_tz",
+                "actual_type": "string",
+                "forced": False,
+                "outcome": "rejected",
+            },
+        )
+    ]
+
+
 def test_record_uploader_batch_ignores_negative_counts(monkeypatch):
     meter = _install_fake_otel(monkeypatch)
 

@@ -34,7 +34,8 @@ from ..config import (
 )
 from ..core import TimeHint
 from ..pipeline_projection import project_staged_pipeline_item_dataframe
-from ..types import PolarsType
+from ..observability import record_database_type_contract
+from ..types import PolarsType, TypeContractError
 from .config import DbEngineConfig
 from .base import (
     TableHealthResult,
@@ -57,6 +58,7 @@ from .xtdb_transport import (
     _xtdb_column_identifier,
     _xtdb_document_id_columns,
     _xtdb_json_safe_key_value,
+    _xtdb_physical_column_map,
     _xtdb_table_query_target_column,
     _xtdb_temporal_basis_clause,
     _xtdb_timestamp_literal,
@@ -131,6 +133,96 @@ def _xtdb_type_to_config_type(data_type: str) -> str:
         ":TIMESTAMP": "TIMESTAMP",
     }
     return xtdb_types.get(normalized, normalized)
+
+
+def _xtdb_physical_type_family(data_type: str) -> str:
+    normalized = data_type.upper().strip()
+    if normalized.startswith("[:UNION"):
+        members = set(
+            re.findall(
+                r"\[:(?:DECIMAL|TIMESTAMP-TZ|TIMESTAMP-LOCAL|DATE|TIME)[^\]]*\]"
+                r"|:(?:I8|I16|I32|I64|F32|F64|UTF8|BOOL|BOOLEAN)\b",
+                normalized,
+            )
+        )
+        if not members and ":NULL" in normalized:
+            return "NULL"
+        if len(members) != 1:
+            return "UNION"
+        normalized = members.pop()
+
+    if normalized == ":NULL":
+        return "NULL"
+    if normalized.startswith("[:DECIMAL") or normalized.startswith(
+        ("DECIMAL", "NUMERIC")
+    ):
+        return "DECIMAL"
+    if normalized.startswith("[:TIMESTAMP-TZ"):
+        return "TIMESTAMP WITH TIME ZONE"
+    if normalized.startswith("[:TIMESTAMP-LOCAL"):
+        return "TIMESTAMP"
+    if normalized.startswith("[:DATE"):
+        return "DATE"
+    if normalized.startswith("[:TIME"):
+        return "TIME"
+    return _xtdb_cast_type(_xtdb_type_to_config_type(normalized))
+
+
+def _xtdb_configured_type_family(data_type: str) -> str:
+    cast_type = _xtdb_cast_type(data_type)
+    if cast_type.startswith(("DECIMAL", "NUMERIC")):
+        return "DECIMAL"
+    return cast_type
+
+
+def _validate_xtdb_physical_types(
+    metadata: pl.DataFrame,
+    table_config: TableConfig,
+) -> None:
+    physical_columns = _xtdb_physical_column_map(table_config)
+    expected = {
+        physical_columns[column.name]: _xtdb_configured_type_family(column.data_type)
+        for column in table_config.columns
+        if column.name not in _XTDB_SYSTEM_COLUMNS
+    }
+    document_id_columns = _xtdb_document_id_columns(table_config)
+    if document_id_columns != ["_id"]:
+        expected["_id"] = (
+            "TEXT"
+            if len(document_id_columns) > 1
+            else _xtdb_configured_type_family(
+                next(
+                    column.data_type
+                    for column in table_config.columns
+                    if column.name == document_id_columns[0]
+                )
+            )
+        )
+
+    for row in metadata.iter_rows(named=True):
+        column = str(row["column_name"])
+        if column in _XTDB_SYSTEM_COLUMNS:
+            continue
+        expected_type = expected.get(column)
+        actual_type = _xtdb_physical_type_family(str(row["data_type"]))
+        if expected_type is not None and actual_type in {expected_type, "NULL"}:
+            continue
+
+        record_database_type_contract(
+            backend="xtdb",
+            operation="schema_reflection",
+            expected_type=expected_type or "DECLARED_COLUMN",
+            actual_type=actual_type,
+            forced=False,
+            outcome="rejected",
+        )
+        message = (
+            f"XTDB physical schema does not satisfy the configured type contract "
+            f"for {table_config.schema}.{table_config.name}.{column}: expected "
+            f"{expected_type or 'a declared column'}, received {row['data_type']}"
+        )
+        LOGGER.error(message)
+        raise TypeContractError(message)
 
 
 def _is_nullable(value: object) -> bool:
@@ -980,6 +1072,7 @@ class XtdbTableConfigOps:
             table_name,
         )
         if configured_table is not None:
+            _validate_xtdb_physical_types(metadata, configured_table)
             return configured_table
 
         columns = []

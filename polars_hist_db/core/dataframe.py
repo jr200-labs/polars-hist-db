@@ -205,6 +205,7 @@ class DataframeOps:
         uniqueness_col_set: Iterable[str],
         prefill_nulls_with_default: bool,
         clear_table_first: bool = False,
+        force_type_coercion: bool = False,
     ) -> int:
         tbo = TableOps(table_schema, table_name, self.connection)
         tbl = tbo.get_table_metadata()
@@ -244,6 +245,13 @@ class DataframeOps:
                     )
 
         df = _remove_duplicate_rows(df, uniqueness_col_set)
+        df = PolarsType.enforce_database_schema(
+            df,
+            PolarsType._get_polars_dtypes_from_table(tbl),
+            backend=getattr(getattr(self.connection, "dialect", None), "name", "sql"),
+            operation="table_insert",
+            force_type_coercion=force_type_coercion,
+        )
         _prevalidate_insert_from_dataframe(df, tbl, disable_check=False)
 
         LOGGER.debug(

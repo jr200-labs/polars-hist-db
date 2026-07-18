@@ -209,11 +209,20 @@ def _xtdb_cast_type_from_polars(dtype: pl.DataType) -> str:
         return "BOOLEAN"
     if dtype == pl.Date:
         return "DATE"
+    if dtype == pl.Time:
+        return "TIME"
     if isinstance(dtype, pl.Datetime):
         return (
             "TIMESTAMP WITH TIME ZONE" if dtype.time_zone is not None else "TIMESTAMP"
         )
-    return "TEXT"
+    if isinstance(dtype, pl.Decimal):
+        return f"DECIMAL({dtype.precision},{dtype.scale})"
+    if dtype in {pl.String, pl.Utf8, pl.Categorical}:
+        return "TEXT"
+    raise ValueError(
+        f"Unsupported XTDB Polars type {dtype}; provide a supported typed "
+        "DataFrame or an explicit TableConfig"
+    )
 
 
 def _xtdb_insert_casts(
@@ -235,7 +244,11 @@ def _xtdb_insert_casts(
 
     casts = []
     for name, dtype in df.schema.items():
-        casts.append(configured_types.get(name, _xtdb_cast_type_from_polars(dtype)))
+        casts.append(
+            configured_types[name]
+            if name in configured_types
+            else _xtdb_cast_type_from_polars(dtype)
+        )
     return casts
 
 
@@ -273,24 +286,19 @@ def _xtdb_physical_configured_column_dtypes(
 def _apply_xtdb_configured_column_dtypes(
     df: pl.DataFrame,
     table_config: Optional[TableConfig],
+    *,
+    force_type_coercion: bool = False,
 ) -> pl.DataFrame:
     if table_config is None:
         return df
 
-    configured_dtypes = _xtdb_configured_column_dtypes(table_config)
-    casts = []
-    for column, dtype in configured_dtypes.items():
-        if column not in df.columns:
-            continue
-
-        source_expr = pl.col(column)
-        if df.schema[column] == pl.Categorical and dtype not in {pl.String, pl.Utf8}:
-            source_expr = source_expr.cast(pl.String)
-        casts.append(source_expr.cast(dtype, strict=False))
-
-    if not casts:
-        return df
-    return df.with_columns(casts)
+    return PolarsType.enforce_database_schema(
+        df,
+        _xtdb_configured_column_dtypes(table_config),
+        backend="xtdb",
+        operation="table_insert",
+        force_type_coercion=force_type_coercion,
+    )
 
 
 def _iter_xtdb_insert_chunks(
@@ -823,11 +831,16 @@ class XtdbDataframeOps:
         table_name: str,
         table_config: Optional[TableConfig] = None,
         update_time: Optional[datetime] = None,
+        force_type_coercion: bool = False,
     ) -> int:
         if table_config is not None:
             _xtdb_physical_column_map(table_config)
         df = _prepare_xtdb_insert_dataframe(df, table_config)
-        df = _apply_xtdb_configured_column_dtypes(df, table_config)
+        df = _apply_xtdb_configured_column_dtypes(
+            df,
+            table_config,
+            force_type_coercion=force_type_coercion,
+        )
         if df.is_empty():
             return 0
 
@@ -940,6 +953,7 @@ class XtdbAdbcDataframeOps:
         table_name: str,
         table_config: Optional[TableConfig] = None,
         update_time: Optional[datetime] = None,
+        force_type_coercion: bool = False,
     ) -> int:
         if update_time is not None:
             raise NotImplementedError(
@@ -953,7 +967,11 @@ class XtdbAdbcDataframeOps:
             return 0
 
         df = _prepare_xtdb_insert_dataframe(df, table_config)
-        df = _apply_xtdb_configured_column_dtypes(df, table_config)
+        df = _apply_xtdb_configured_column_dtypes(
+            df,
+            table_config,
+            force_type_coercion=force_type_coercion,
+        )
         for chunk in _iter_xtdb_insert_chunks(df, self.max_rows_per_insert):
             arrow_table = _normalize_xtdb_ingest_arrow(chunk.to_arrow())
             with self.connection.cursor() as cursor:

@@ -87,3 +87,42 @@ def record_uploader_batch(
             dropped_c.add(max(0, received - written), attributes=attrs)
     except Exception:  # noqa: BLE001, S110 - metrics are best-effort
         pass
+
+
+def record_database_type_contract(
+    *,
+    backend: str,
+    operation: str,
+    expected_type: str,
+    actual_type: str,
+    forced: bool,
+    outcome: str,
+) -> None:
+    """Record a database-boundary type violation or forced conversion."""
+    attrs = {
+        "backend": backend,
+        "operation": operation,
+        "expected_type": expected_type,
+        "actual_type": actual_type,
+        "forced": forced,
+        "outcome": outcome,
+    }
+    counter_name = (
+        "database_type_coercions_total"
+        if forced
+        else "database_type_contract_violations_total"
+    )
+    counter = _get_counter(
+        counter_name,
+        "Database-boundary type contract outcomes.",
+    )
+    try:
+        if counter is not None:
+            counter.add(1, attributes=attrs)
+        from opentelemetry import trace
+
+        span = trace.get_current_span()
+        if span is not None:
+            span.add_event("database.type_contract", attrs)
+    except Exception:  # noqa: BLE001, S110 - telemetry is best-effort
+        pass
