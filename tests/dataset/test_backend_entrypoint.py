@@ -26,8 +26,6 @@ class _FakeAdbcConnection:
 
 
 class _FakeXtdbBackend:
-    name = "xtdb"
-
     def __init__(self):
         self.created_engine_with = None
         self.created_adbc_with = None
@@ -41,6 +39,12 @@ class _FakeXtdbBackend:
     def create_adbc_connection(self, config):
         self.created_adbc_with = config
         return self.adbc_connection
+
+    def open_ingest_connection(self, config):
+        return self.create_adbc_connection(config)
+
+    def close_ingest_connection(self, connection):
+        connection.close()
 
 
 class _ContextManager:
@@ -98,6 +102,12 @@ class _FakeBackendWithTableConfigOps:
     def connection_scope(self, engine):
         return get_backend(self.name).connection_scope(engine)
 
+    def open_ingest_connection(self, config):
+        return None
+
+    def close_ingest_connection(self, connection):
+        return None
+
 
 class _FailingInputSource:
     cleaned = False
@@ -152,11 +162,11 @@ async def test_run_datasets_creates_xtdb_adbc_connection(monkeypatch):
         debug_capture_output,
         backend,
         *,
-        adbc_connection=None,
+        ingest_connection=None,
         js=None,
         raise_on_error=False,
     ):
-        observed["adbc_connection"] = adbc_connection
+        observed["ingest_connection"] = ingest_connection
 
     monkeypatch.setattr(
         "polars_hist_db.dataset.entrypoint.backend_from_config",
@@ -174,7 +184,7 @@ async def test_run_datasets_creates_xtdb_adbc_connection(monkeypatch):
 
     assert fake_backend.created_engine_with == config.db_config
     assert fake_backend.created_adbc_with == config.db_config
-    assert observed["adbc_connection"] is fake_backend.adbc_connection
+    assert observed["ingest_connection"] is fake_backend.adbc_connection
     assert fake_backend.adbc_connection.closed is True
 
 

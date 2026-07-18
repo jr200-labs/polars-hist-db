@@ -87,23 +87,18 @@ def _run_pipeline_as_transaction(
     finalizer: BatchFinalizer,
     delta_table_config: Optional[TableConfig] = None,
     backend: Any = None,
-    adbc_connection: Any = None,
+    ingest_connection: Any = None,
 ):
     main_table_config: TableConfig = tables[dataset.pipeline.get_main_table_name()[1]]
     tbl_to_header_map = dataset.pipeline.get_header_map(main_table_config.name)
     header_keys = [tbl_to_header_map.get(k, k) for k in main_table_config.primary_keys]
-    is_xtdb = getattr(backend, "name", None) == "xtdb"
 
     with backend.connection_scope(engine) as connection:
-        staging = (
-            backend.staging(
-                connection,
-                adbc_connection=adbc_connection,
-            )
-            if is_xtdb
-            else None
+        staging = backend.staging(
+            connection,
+            ingest_connection=ingest_connection,
         )
-        if delta_table_config is not None and not is_xtdb:
+        if delta_table_config is not None and staging is None:
             _ensure_delta_table(
                 connection,
                 delta_table_config,
@@ -121,7 +116,7 @@ def _run_pipeline_as_transaction(
                 len(partition_df),
             )
 
-            if not is_xtdb:
+            if staging is None:
                 DataframeOps(connection).table_insert(
                     partition_df,
                     dataset.delta_table_schema,
@@ -133,8 +128,6 @@ def _run_pipeline_as_transaction(
             else:
                 if delta_table_config is None:
                     raise ValueError("XTDB ingest requires delta table config")
-                if staging is None:
-                    raise ValueError("XTDB ingest requires staging ops")
                 stage_run_id = f"{dataset.name}:{uuid4()}"
                 staging.insert_partition(
                     partition_df,
@@ -168,7 +161,7 @@ def _run_pipeline_as_transaction(
                         modified_item = (target_schema, target_table)
                         modified_tables.add(modified_item)
             finally:
-                if is_xtdb and stage_run_id is not None and staging is not None:
+                if stage_run_id is not None:
                     staging.cleanup_run(stage_run_id)
 
         if delta_table_config is not None:
@@ -190,7 +183,7 @@ async def try_run_pipeline_as_transaction(
     retry_jitter: float = 0.1,
     delta_table_config: Optional[TableConfig] = None,
     backend: Any = None,
-    adbc_connection: Any = None,
+    ingest_connection: Any = None,
 ):
     if num_retries < 1:
         raise ValueError("num_retries must be at least 1")
@@ -207,7 +200,7 @@ async def try_run_pipeline_as_transaction(
                 finalizer,
                 delta_table_config,
                 backend,
-                adbc_connection,
+                ingest_connection,
             )
             break
         except NonRetryableException:

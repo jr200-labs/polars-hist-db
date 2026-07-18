@@ -71,7 +71,7 @@ def scrape_primary_item(
     main_table_config = tables[pipeline.get_main_table_name()[1]]
     LOGGER.debug("(item %d) scraping item %s", pipeline_id, main_table_config.name)
 
-    if getattr(backend, "name", None) == "xtdb":
+    if staging is not None:
         return scrape_xtdb_pipeline_item(
             pipeline_id,
             dataset,

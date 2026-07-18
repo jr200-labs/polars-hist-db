@@ -2461,6 +2461,13 @@ class XtdbBackend:
     def create_adbc_connection(self, config: DbEngineConfig) -> Any:
         return _load_flight_sql().connect(self.adbc_uri(config), autocommit=True)
 
+    def open_ingest_connection(self, config: DbEngineConfig) -> Any:
+        return self.create_adbc_connection(config)
+
+    def close_ingest_connection(self, connection: Any | None) -> None:
+        if connection is not None:
+            connection.close()
+
     def dataframes(self, connection: Any) -> XtdbDataframeOps:
         return XtdbDataframeOps(
             connection,
@@ -2524,12 +2531,12 @@ class XtdbBackend:
         self,
         connection: Any,
         *,
-        adbc_connection: Any | None = None,
+        ingest_connection: Any | None = None,
     ) -> XtdbStagingOps:
         return XtdbStagingOps(
             connection,
             max_rows_per_insert=self.max_rows_per_insert,
-            adbc_connection=adbc_connection,
+            adbc_connection=ingest_connection,
         )
 
     def time_hint_clause(self, time_hint: TimeHint) -> str | None:

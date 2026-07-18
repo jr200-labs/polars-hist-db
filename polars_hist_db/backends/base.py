@@ -73,6 +73,19 @@ class HistoricalDbBackend(Protocol):
         """Open a backend-correct connection and commit successful work."""
         ...
 
+    def open_ingest_connection(self, config: DbEngineConfig) -> Any | None:
+        """Open an optional backend-specific bulk-ingest connection."""
+        ...
+
+    def close_ingest_connection(self, connection: Any | None) -> None: ...
+
+    def staging(
+        self,
+        connection: Any,
+        *,
+        ingest_connection: Any | None = None,
+    ) -> Any | None: ...
+
     def dataframes(self, connection: Any) -> Any: ...
 
     def table_configs(self, connection: Any) -> Any: ...

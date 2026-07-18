@@ -19,6 +19,13 @@ def _dataset(name: str, table: str):
     )
 
 
+def _backend():
+    return SimpleNamespace(
+        open_ingest_connection=lambda config: None,
+        close_ingest_connection=lambda connection: None,
+    )
+
+
 def test_ingestion_worker_config_is_bounded():
     assert IngestionConfig() == IngestionConfig(max_workers=1, queue_size=1)
     with pytest.raises(ValueError, match="max_workers"):
@@ -100,7 +107,7 @@ async def test_independent_datasets_run_concurrently(monkeypatch):
             datasets,
             SimpleNamespace(db_config=object(), tables=object()),
             object(),
-            SimpleNamespace(name="mariadb"),
+            _backend(),
             IngestionConfig(max_workers=2, queue_size=1),
             [None, None],
             None,
@@ -137,7 +144,7 @@ async def test_datasets_writing_the_same_table_remain_ordered(monkeypatch):
         datasets,
         SimpleNamespace(db_config=object(), tables=object()),
         object(),
-        SimpleNamespace(name="mariadb"),
+        _backend(),
         IngestionConfig(max_workers=2, queue_size=1),
         [None, None],
         None,
@@ -177,7 +184,7 @@ async def test_worker_failure_cancels_sibling_dataset(monkeypatch):
             datasets,
             SimpleNamespace(db_config=object(), tables=object()),
             object(),
-            SimpleNamespace(name="mariadb"),
+            _backend(),
             IngestionConfig(max_workers=2, queue_size=1),
             [None, None],
             None,
