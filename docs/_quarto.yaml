@@ -1,6 +1,9 @@
 project:
   type: website
   output-dir: _site
+  resources:
+  - benchmark-history.json
+  - benchmark-history.js
 
 website:
   title: "Polars Hist DB"
@@ -16,6 +19,8 @@ website:
       text: Configuration
     - href: api.qmd
       text: API Reference
+    - href: benchmarks.qmd
+      text: Benchmarks
     right:
     - text: GitHub
       icon: github
@@ -31,6 +36,7 @@ website:
       - replicated-overrides.qmd
       - api.qmd
       - backend-contract.qmd
+      - benchmarks.qmd
       - examples.qmd
 
   page-footer:
