@@ -124,6 +124,91 @@ def _unwrap_xtdb_optional_type(data_type: str) -> str:
     return normalized
 
 
+_XTDB_PHYSICAL_TYPE_FAMILIES = {
+    ":NULL": "NULL",
+    ":NOTHING": "NOTHING",
+    ":BOOL": "BOOLEAN",
+    ":I8": "INTEGER",
+    ":I16": "INTEGER",
+    ":I32": "INTEGER",
+    ":I64": "BIGINT",
+    ":F32": "FLOAT",
+    ":F64": "DOUBLE PRECISION",
+    ":UTF8": "TEXT",
+    ":VARBINARY": "VARBINARY",
+    ":FIXED-SIZE-BINARY": "FIXED-SIZE-BINARY",
+    ":DECIMAL": "DECIMAL",
+    ":INSTANT": "TIMESTAMP WITH TIME ZONE",
+    ":TIMESTAMP-TZ": "TIMESTAMP WITH TIME ZONE",
+    ":TIMESTAMP-LOCAL": "TIMESTAMP",
+    ":DATE": "DATE",
+    ":TIME-LOCAL": "TIME",
+    ":DURATION": "DURATION",
+    ":INTERVAL": "INTERVAL",
+    ":TSTZ-RANGE": "TSTZ-RANGE",
+    ":KEYWORD": "KEYWORD",
+    ":OID": "OID",
+    ":REGCLASS": "REGCLASS",
+    ":REGPROC": "REGPROC",
+    ":UUID": "UUID",
+    ":URI": "URI",
+    ":TRANSIT": "TRANSIT",
+    ":LIST": "LIST",
+    ":FIXED-SIZE-LIST": "FIXED-SIZE-LIST",
+    ":SET": "SET",
+    ":MAP": "MAP",
+    ":STRUCT": "STRUCT",
+}
+
+
+def _xtdb_type_head(data_type: str) -> str:
+    match = re.match(r"^\[?\s*(:[A-Z0-9?-]+)", data_type)
+    if match is None:
+        raise ValueError(f"Unsupported XTDB column type: {data_type}")
+    return match.group(1)
+
+
+def _split_xtdb_set_members(data_type: str) -> list[str]:
+    body = data_type[2:-1].strip()
+    members: list[str] = []
+    start = 0
+    depth = 0
+    quoted = False
+    escaped = False
+    for idx, char in enumerate(body):
+        if quoted:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                quoted = False
+        elif char == '"':
+            quoted = True
+        elif char in "[{(":
+            depth += 1
+        elif char in "]})":
+            depth -= 1
+        elif char.isspace() and depth == 0:
+            if member := body[start:idx].strip():
+                members.append(member)
+            start = idx + 1
+    if member := body[start:].strip():
+        members.append(member)
+    return members
+
+
+def _xtdb_union_members(data_type: str) -> Optional[list[str]]:
+    if data_type.startswith("#{") and data_type.endswith("}"):
+        return _split_xtdb_set_members(data_type)
+    if _xtdb_type_head(data_type) not in {":UNION", ":SPARSE-UNION"}:
+        return None
+    start = data_type.find("#{")
+    if start < 0:
+        raise ValueError(f"Unsupported XTDB union type: {data_type}")
+    return _split_xtdb_set_members(data_type[start : data_type.rfind("}") + 1])
+
+
 def _xtdb_type_to_config_type(data_type: str) -> str:
     normalized = _unwrap_xtdb_optional_type(data_type)
     xtdb_types = {
@@ -136,51 +221,57 @@ def _xtdb_type_to_config_type(data_type: str) -> str:
         ":UTF8": "VARCHAR(255)",
         ":BOOL": "BOOLEAN",
         ":BOOLEAN": "BOOLEAN",
-        ":DATE": "DATE",
         ":TIMESTAMP": "TIMESTAMP",
     }
-    if normalized.startswith("[:TIMESTAMP-TZ"):
-        return "TIMESTAMP WITH TIME ZONE"
-    if normalized.startswith("[:TIMESTAMP-LOCAL"):
-        return "TIMESTAMP"
-    if normalized.startswith("[:DATE"):
-        return "DATE"
-    if normalized.startswith("[:TIME"):
-        return "TIME"
-    return xtdb_types.get(normalized, normalized)
+    if normalized in xtdb_types:
+        return xtdb_types[normalized]
+    if normalized.startswith(("DECIMAL", "NUMERIC")):
+        return normalized
+
+    family = _xtdb_physical_type_family(normalized)
+    if family == "DECIMAL":
+        precision_and_scale = re.search(r":DECIMAL\s+(\d+)\s+(-?\d+)", normalized)
+        if precision_and_scale:
+            return f"DECIMAL({precision_and_scale[1]},{precision_and_scale[2]})"
+    config_types = {
+        "TEXT": "VARCHAR(255)",
+        "BOOLEAN": "BOOLEAN",
+        "INTEGER": "INT",
+        "BIGINT": "BIGINT",
+        "FLOAT": "FLOAT",
+        "DOUBLE PRECISION": "DOUBLE",
+        "DATE": "DATE",
+        "TIME": "TIME",
+        "TIMESTAMP": "TIMESTAMP",
+        "TIMESTAMP WITH TIME ZONE": "TIMESTAMP WITH TIME ZONE",
+    }
+    if family in config_types:
+        return config_types[family]
+    raise ValueError(f"Unsupported XTDB column type: {data_type}")
 
 
 def _xtdb_physical_type_family(data_type: str) -> str:
     normalized = _unwrap_xtdb_optional_type(data_type)
-    if normalized.startswith("[:UNION"):
-        members = set(
-            re.findall(
-                r"\[:(?:DECIMAL|TIMESTAMP-TZ|TIMESTAMP-LOCAL|DATE|TIME)[^\]]*\]"
-                r"|:(?:I8|I16|I32|I64|F32|F64|UTF8|BOOL|BOOLEAN)\b",
-                normalized,
-            )
-        )
-        if not members and ":NULL" in normalized:
+    if (members := _xtdb_union_members(normalized)) is not None:
+        families = {
+            family
+            for member in members
+            if (family := _xtdb_physical_type_family(member)) != "NULL"
+        }
+        if not families:
             return "NULL"
-        if len(members) != 1:
+        if len(families) != 1:
             return "UNION"
-        normalized = members.pop()
-
-    if normalized == ":NULL":
-        return "NULL"
-    if normalized.startswith("[:DECIMAL") or normalized.startswith(
-        ("DECIMAL", "NUMERIC")
-    ):
+        return families.pop()
+    if normalized.startswith(("DECIMAL", "NUMERIC")):
         return "DECIMAL"
-    if normalized.startswith("[:TIMESTAMP-TZ"):
-        return "TIMESTAMP WITH TIME ZONE"
-    if normalized.startswith("[:TIMESTAMP-LOCAL"):
-        return "TIMESTAMP"
-    if normalized.startswith("[:DATE"):
-        return "DATE"
-    if normalized.startswith("[:TIME"):
-        return "TIME"
-    return _xtdb_cast_type(_xtdb_type_to_config_type(normalized))
+    if normalized[:1].isalpha():
+        return _xtdb_configured_type_family(normalized)
+    head = _xtdb_type_head(normalized)
+    try:
+        return _XTDB_PHYSICAL_TYPE_FAMILIES[head]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported XTDB column type: {data_type}") from exc
 
 
 def _xtdb_configured_type_family(data_type: str) -> str:
@@ -196,37 +287,49 @@ def _validate_xtdb_physical_types(
 ) -> None:
     physical_columns = _xtdb_physical_column_map(table_config)
     expected = {
-        physical_columns[column.name]: _xtdb_configured_type_family(column.data_type)
+        physical_columns[column.name]: (
+            _xtdb_configured_type_family(column.data_type),
+            column.nullable,
+        )
         for column in table_config.columns
         if column.name not in _XTDB_SYSTEM_COLUMNS
     }
     document_id_columns = _xtdb_document_id_columns(table_config)
     if document_id_columns != ["_id"]:
         expected["_id"] = (
-            "TEXT"
-            if len(document_id_columns) > 1
-            else _xtdb_configured_type_family(
-                next(
-                    column.data_type
-                    for column in table_config.columns
-                    if column.name == document_id_columns[0]
+            (
+                "TEXT"
+                if len(document_id_columns) > 1
+                else _xtdb_configured_type_family(
+                    next(
+                        column.data_type
+                        for column in table_config.columns
+                        if column.name == document_id_columns[0]
+                    )
                 )
-            )
+            ),
+            False,
         )
 
-    for row in metadata.iter_rows(named=True):
-        column = str(row["column_name"])
-        if column in _XTDB_SYSTEM_COLUMNS:
-            continue
-        expected_type = expected.get(column)
-        actual_type = _xtdb_physical_type_family(str(row["data_type"]))
-        if expected_type is not None and actual_type in {expected_type, "NULL"}:
+    actual = {
+        str(row["column_name"]): (
+            _xtdb_physical_type_family(str(row["data_type"])),
+            str(row["data_type"]),
+        )
+        for row in metadata.iter_rows(named=True)
+        if str(row["column_name"]) not in _XTDB_SYSTEM_COLUMNS
+    }
+    for column, (expected_type, nullable) in expected.items():
+        actual_type, physical_type = actual.get(column, ("MISSING", "MISSING"))
+        if actual_type == expected_type or (
+            nullable and actual_type in {"NULL", "MISSING"}
+        ):
             continue
 
         record_database_type_contract(
             backend="xtdb",
             operation="schema_reflection",
-            expected_type=expected_type or "DECLARED_COLUMN",
+            expected_type=expected_type,
             actual_type=actual_type,
             forced=False,
             outcome="rejected",
@@ -234,7 +337,7 @@ def _validate_xtdb_physical_types(
         message = (
             f"XTDB physical schema does not satisfy the configured type contract "
             f"for {table_config.schema}.{table_config.name}.{column}: expected "
-            f"{expected_type or 'a declared column'}, received {row['data_type']}"
+            f"{expected_type}, received {physical_type}"
         )
         LOGGER.error(message)
         raise TypeContractError(message)
@@ -392,7 +495,12 @@ def _xtdb_table_config_from_metadata(
         columns=columns,
         foreign_keys=foreign_keys,
         primary_keys=primary_keys or [],
-        is_temporal=True,
+        is_temporal=(
+            bool(metadata[0, "is_temporal"])
+            if "is_temporal" in metadata.columns
+            and metadata[0, "is_temporal"] is not None
+            else True
+        ),
     )
 
 
@@ -820,8 +928,11 @@ def _fill_xtdb_staging_defaults(
     return _fill_xtdb_defaults(df, table_config)
 
 
-def _materialize_xtdb_missing_staging_columns(
-    df: pl.DataFrame, table_config: TableConfig
+def _materialize_xtdb_missing_columns(
+    df: pl.DataFrame,
+    table_config: TableConfig,
+    *,
+    use_defaults: bool,
 ) -> pl.DataFrame:
     missing_columns = [
         column for column in table_config.columns if column.name not in df.columns
@@ -829,11 +940,36 @@ def _materialize_xtdb_missing_staging_columns(
     if not missing_columns:
         return df
 
-    return df.with_columns(
-        pl.lit(_xtdb_default_value(column.default_value, column.data_type))
+    materialized = df.with_columns(
+        pl.lit(
+            _xtdb_default_value(column.default_value, column.data_type)
+            if use_defaults
+            else None
+        )
         .cast(PolarsType.from_sql(column.data_type))
         .alias(column.name)
         for column in missing_columns
+    )
+    configured_columns = [column.name for column in table_config.columns]
+    extra_columns = [
+        column for column in materialized.columns if column not in configured_columns
+    ]
+    return materialized.select([*configured_columns, *extra_columns])
+
+
+def _cast_xtdb_configured_columns(
+    df: pl.DataFrame,
+    table_config: TableConfig,
+    column_names: Iterable[str],
+) -> pl.DataFrame:
+    configured_types = {
+        column.name: PolarsType.from_sql(column.data_type)
+        for column in table_config.columns
+    }
+    return df.with_columns(
+        pl.col(column_name).cast(configured_types[column_name])
+        for column_name in column_names
+        if column_name in df.columns and column_name in configured_types
     )
 
 
@@ -1053,12 +1189,15 @@ class XtdbTableConfigOps:
             _xtdb_foreign_keys_json(table_config),
         ]
         values_sql = ", ".join(_xtdb_sql_literal(value, "TEXT") for value in values)
+        values_sql = (
+            f"{values_sql}, {_xtdb_sql_literal(table_config.is_temporal, 'BOOLEAN')}"
+        )
         metadata_table = _xtdb_table_config_metadata_table(table_config.schema)
         _execute_xtdb_dml(
             self.connection,
             f"INSERT INTO {metadata_table} "
             "(_id, table_schema, table_name, primary_keys_json, "
-            "id_policy, columns_json, foreign_keys_json) "
+            "id_policy, columns_json, foreign_keys_json, is_temporal) "
             f"VALUES ({values_sql})",
         )
 
@@ -1078,11 +1217,6 @@ class XtdbTableConfigOps:
         """,
             self.connection,
         )
-        if metadata.is_empty():
-            raise ValueError(
-                f"XTDB table metadata not found for {table_schema}.{table_name}"
-            )
-
         config_metadata = _xtdb_table_config_metadata(
             self.connection,
             table_schema,
@@ -1094,8 +1228,14 @@ class XtdbTableConfigOps:
             table_name,
         )
         if configured_table is not None:
-            _validate_xtdb_physical_types(metadata, configured_table)
+            if not metadata.is_empty():
+                _validate_xtdb_physical_types(metadata, configured_table)
             return configured_table
+
+        if metadata.is_empty():
+            raise ValueError(
+                f"XTDB table metadata not found for {table_schema}.{table_name}"
+            )
 
         columns = []
         primary_keys = []
@@ -1258,7 +1398,11 @@ class XtdbStagingOps:
         if prefill_nulls_with_default:
             df = _fill_xtdb_staging_defaults(df, delta_table_config)
         df = _dedupe_xtdb_staging_dataframe(df, uniqueness_col_set)
-        df = _materialize_xtdb_missing_staging_columns(df, delta_table_config)
+        df = _materialize_xtdb_missing_columns(
+            df,
+            delta_table_config,
+            use_defaults=prefill_nulls_with_default,
+        )
         df = df.with_row_index(_XTDB_STAGE_ROW_INDEX_COLUMN).with_columns(
             pl.lit(stage_run_id).alias(_XTDB_STAGE_RUN_ID_COLUMN),
             pl.lit(partition_time).alias(_XTDB_STAGE_PARTITION_TIME_COLUMN),
@@ -1493,6 +1637,13 @@ class XtdbStagingOps:
                 table_config, value_targets, generated.schema
             )
             if _xtdb_is_integer_config_column(table_config, target_column):
+                target_dtype = PolarsType.from_sql(
+                    next(
+                        column.data_type
+                        for column in table_config.columns
+                        if column.name == target_column
+                    )
+                )
                 bits = (
                     63
                     if any(
@@ -1502,10 +1653,14 @@ class XtdbStagingOps:
                     )
                     else 31
                 )
-                generated_value = generated_payload.map_batches(
-                    partial(_xtdb_deduced_numeric_foreign_key_ids, bits=bits),
-                    return_dtype=pl.Int64,
-                ).alias(target_column)
+                generated_value = (
+                    generated_payload.map_batches(
+                        partial(_xtdb_deduced_numeric_foreign_key_ids, bits=bits),
+                        return_dtype=pl.Int64,
+                    )
+                    .cast(target_dtype)
+                    .alias(target_column)
+                )
             else:
                 generated_value = generated_payload.alias(target_column)
             if source_column not in candidates.columns:
@@ -1563,6 +1718,11 @@ class XtdbStagingOps:
             table_config,
             fk_targets,
         )
+        missing_parent_rows = _cast_xtdb_configured_columns(
+            missing_parent_rows,
+            table_config,
+            fk_targets,
+        )
         resolved_keys = missing_parent_rows.select(
             [*value_targets, *fk_targets]
         ).unique(maintain_order=True)
@@ -1578,6 +1738,7 @@ class XtdbStagingOps:
                 joined = joined.with_columns(
                     pl.coalesce(resolved_column, target_column).alias(target_column)
                 ).drop(resolved_column)
+        joined = _cast_xtdb_configured_columns(joined, table_config, fk_targets)
 
         parent_rows_to_insert = missing_parent_rows.select(
             [*fk_targets, *value_targets]
@@ -1616,9 +1777,22 @@ class XtdbStagingOps:
                 **{target: source for source, target in fk_map.items()},
             }
         )
-        return stage_df.drop(
+        resolved_stage = stage_df.drop(
             [column for column in fk_sources if column in stage_df.columns]
         ).join(resolver, on=value_sources, how="left")
+        target_dtypes = {
+            source: PolarsType.from_sql(
+                next(
+                    column.data_type
+                    for column in table_config.columns
+                    if column.name == target
+                )
+            )
+            for source, target in fk_map.items()
+        }
+        return resolved_stage.with_columns(
+            pl.col(source).cast(dtype) for source, dtype in target_dtypes.items()
+        )
 
     def cleanup_run(self, stage_run_id: str) -> None:
         self._stage_run_cache.pop(stage_run_id, None)
@@ -1787,6 +1961,11 @@ class XtdbBackend:
                 )
             if table_config is None:
                 raise ValueError("XTDB delta upsert requires table_config")
+            df = _materialize_xtdb_missing_columns(
+                df,
+                table_config,
+                use_defaults=delta_config.prefill_nulls_with_default,
+            )
             if delta_config.prefill_nulls_with_default:
                 df = _fill_xtdb_defaults(df, table_config)
             df = _apply_xtdb_duplicate_policy(df, table_config, delta_config)

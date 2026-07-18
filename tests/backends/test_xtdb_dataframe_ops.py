@@ -614,6 +614,7 @@ def test_xtdb_dataframe_ops_uses_native_casts_for_mysql_compatibility_types():
             TableColumnConfig("compat_types", "tinyint_col", "TINYINT"),
             TableColumnConfig("compat_types", "smallint_col", "SMALLINT"),
             TableColumnConfig("compat_types", "mediumint_col", "MEDIUMINT"),
+            TableColumnConfig("compat_types", "real_col", "REAL"),
             TableColumnConfig("compat_types", "datetime_col", "DATETIME"),
             TableColumnConfig("compat_types", "time_col", "TIME"),
         ],
@@ -628,6 +629,7 @@ def test_xtdb_dataframe_ops_uses_native_casts_for_mysql_compatibility_types():
                 "tinyint_col": [2],
                 "smallint_col": [738221],
                 "mediumint_col": [4],
+                "real_col": [78.9],
                 "datetime_col": [datetime(2030, 1, 1, 12, 0)],
                 "time_col": [datetime(2030, 1, 1, 12, 30).time()],
             }
@@ -643,6 +645,7 @@ def test_xtdb_dataframe_ops_uses_native_casts_for_mysql_compatibility_types():
     assert "INSERT INTO test.compat_types" in insert_sql
     assert "%s::BOOLEAN" in insert_sql
     assert insert_sql.count("%s::INTEGER") == 6
+    assert "%s::DOUBLE PRECISION" in insert_sql
     assert "%s::TIMESTAMP WITH TIME ZONE" in insert_sql
     assert "%s::TIME" in insert_sql
     assert insert_call.args[1] == [
@@ -654,6 +657,7 @@ def test_xtdb_dataframe_ops_uses_native_casts_for_mysql_compatibility_types():
             2,
             738221,
             4,
+            78.9,
             datetime(2030, 1, 1, 12, 0, tzinfo=timezone.utc),
             datetime(2030, 1, 1, 12, 30).time(),
         )

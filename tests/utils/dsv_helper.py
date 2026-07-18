@@ -84,20 +84,30 @@ def _docker(args: list[str]) -> str:
     return subprocess.check_output(["docker", *args], text=True).strip()
 
 
-def _published_port(container_id: str) -> int:
-    output = _docker(["port", container_id, "5432/tcp"])
+def _published_port(container_id: str, container_port: str) -> int:
+    output = _docker(["port", container_id, container_port])
     first_binding = output.splitlines()[0]
     return int(first_binding.rsplit(":", 1)[1])
 
 
-def xtdb_engine_test() -> tuple[Engine, str]:
+def xtdb_engine_test() -> tuple[Engine, str, DbEngineConfig]:
     container_id = _docker(
-        ["run", "--rm", "-d", "-p", "5432", "ghcr.io/xtdb/xtdb:nightly"]
+        [
+            "run",
+            "--rm",
+            "-d",
+            "-p",
+            "5432",
+            "-p",
+            "9832",
+            "ghcr.io/xtdb/xtdb:nightly",
+        ]
     )
     config = DbEngineConfig(
         backend="xtdb",
         hostname="127.0.0.1",
-        port=_published_port(container_id),
+        port=_published_port(container_id, "5432/tcp"),
+        adbc_port=_published_port(container_id, "9832/tcp"),
     )
     engine = XtdbBackend().create_engine(config)
     deadline = time.monotonic() + 60
@@ -113,7 +123,7 @@ def xtdb_engine_test() -> tuple[Engine, str]:
                 raise
             time.sleep(1)
 
-    return engine, container_id
+    return engine, container_id, config
 
 
 def _backend_from_engine(engine: Engine):
@@ -247,12 +257,14 @@ def setup_fixture_dataset(test_file: str, backend_name: str = "mariadb"):
     container_id = None
     if backend_name == "mariadb":
         engine = mariadb_engine_test()
-        backend = backend_from_config(DbEngineConfig(backend="mariadb"))
+        backend_config = DbEngineConfig(backend="mariadb")
+        backend = backend_from_config(backend_config)
     elif backend_name == "xtdb":
-        engine, container_id = xtdb_engine_test()
-        backend = backend_from_config(DbEngineConfig(backend="xtdb"))
+        engine, container_id, backend_config = xtdb_engine_test()
+        backend = backend_from_config(backend_config)
     else:
         raise ValueError(f"unsupported test backend {backend_name!r}")
+    config.db_config = backend_config
     engine._polars_hist_db_backend = backend  # type: ignore[attr-defined]
 
     table_schema = config.tables.schemas()[0]
@@ -457,6 +469,20 @@ def dataframe_ops_for_engine(engine: Engine, connection):
     return _backend_from_engine(engine).dataframes(connection)
 
 
+def normalise_query_result_for_backend(
+    df: pl.DataFrame,
+    engine: Engine,
+    table_config: TableConfig,
+) -> pl.DataFrame:
+    if _backend_from_engine(engine).name != "xtdb":
+        return df
+    return _normalise_xtdb_dataframe(
+        df,
+        table_config,
+        include_temporal_columns=table_config.is_temporal,
+    )
+
+
 def table_config_ops_for_engine(engine: Engine, connection):
     return _backend_from_engine(engine).table_configs(connection)
 
@@ -478,6 +504,26 @@ def modify_and_read(
     return_view: bool = False,
 ) -> Tuple[pl.DataFrame, Optional[pl.DataFrame]]:
     backend = _backend_from_engine(engine)
+    schema = {
+        column.name: PolarsType.from_sql(column.data_type)
+        for column in table_config.columns
+        if column.name in df.columns
+    }
+    df = PolarsType.apply_schema_to_dataframe(df, **schema)
+    if backend.name == "xtdb":
+        datetime_columns = [
+            column.name
+            for column in table_config.columns
+            if column.name in df.columns
+            and isinstance(df.schema[column.name], pl.Datetime)
+            and getattr(df.schema[column.name], "time_zone", None) is None
+            and column.data_type.upper() in {"DATETIME", "TIMESTAMPTZ"}
+        ]
+        if datetime_columns:
+            df = df.with_columns(
+                pl.col(column).dt.replace_time_zone("UTC")
+                for column in datetime_columns
+            )
     connection_context = engine.connect if backend.name == "xtdb" else engine.begin
     with connection_context() as connection:
         # config = (
@@ -490,7 +536,7 @@ def modify_and_read(
             assert dataset.delta_config is not None
             if app_time is not None and "_valid_from" not in df.columns:
                 df = df.with_columns(
-                    pl.lit(app_time.replace(tzinfo=None)).alias("_valid_from")
+                    pl.lit(app_time.astimezone(timezone.utc)).alias("_valid_from")
                 )
             backend.temporal_upsert(
                 df,
@@ -501,7 +547,7 @@ def modify_and_read(
                 delta_config=dataset.delta_config,
                 valid_time=dataset.valid_time_for_table(table_schema, config.name),
                 dropout_close_time=(
-                    app_time.replace(tzinfo=None) if app_time is not None else None
+                    app_time.astimezone(timezone.utc) if app_time is not None else None
                 ),
             )
         elif operation == "delete":

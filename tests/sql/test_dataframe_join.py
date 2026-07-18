@@ -15,6 +15,7 @@ from ..utils.dsv_helper import (
     setup_fixture_dataset,
     connection_context_for_engine,
     dataframe_ops_for_engine,
+    normalise_query_result_for_backend,
 )
 
 pytestmark = pytest.mark.integration
@@ -69,6 +70,7 @@ def test_time_hints(temp_table):
                 query_df,
                 column_selection=None,
             )
+            .pipe(normalise_query_result_for_backend, engine, table_config)
             .sort("id")
         )
 
@@ -87,6 +89,7 @@ def test_time_hints(temp_table):
                 column_selection=None,
                 time_hint=TimeHint(mode="asof", asof_utc=asof_utc),
             )
+            .pipe(normalise_query_result_for_backend, engine, table_config)
             .sort("id")
         )
 
@@ -107,6 +110,7 @@ def test_time_hints(temp_table):
                     mode="span", asof_utc=asof_utc, history_span=timedelta(days=0)
                 ),
             )
+            .pipe(normalise_query_result_for_backend, engine, table_config)
             .sort("id")
         )
 
@@ -127,6 +131,7 @@ def test_time_hints(temp_table):
                     mode="span", asof_utc=asof_utc, history_span=timedelta(days=2)
                 ),
             )
+            .pipe(normalise_query_result_for_backend, engine, table_config)
             .sort("__valid_from")
         )
 

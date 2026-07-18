@@ -4,6 +4,7 @@ import pytest
 
 from polars_hist_db.loaders.input_source import BatchFinalizer
 from polars_hist_db.dataset.scrape import try_run_pipeline_as_transaction
+from polars_hist_db.types import TypeContractError
 
 
 @pytest.mark.asyncio
@@ -55,3 +56,29 @@ async def test_pipeline_raises_final_retry_error(monkeypatch):
         )
 
     assert attempts == 3
+
+
+@pytest.mark.asyncio
+async def test_pipeline_does_not_retry_type_contract_errors(monkeypatch):
+    attempts = 0
+
+    def fail(*args):
+        nonlocal attempts
+        attempts += 1
+        raise TypeContractError("invalid schema")
+
+    monkeypatch.setattr(
+        "polars_hist_db.dataset.scrape._run_pipeline_as_transaction", fail
+    )
+
+    with pytest.raises(TypeContractError, match="invalid schema"):
+        await try_run_pipeline_as_transaction(
+            [],
+            SimpleNamespace(),
+            object(),
+            object(),
+            BatchFinalizer(),
+            num_retries=3,
+        )
+
+    assert attempts == 1

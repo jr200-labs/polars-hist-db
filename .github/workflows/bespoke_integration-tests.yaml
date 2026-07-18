@@ -41,6 +41,7 @@ jobs:
     env:
       MARIADB_PORT: "13307"
       NATS_PORT: "14222"
+      POLARS_HIST_DB_XTDB_LIVE: "1"
 
     steps:
       - uses: actions/checkout@v7
