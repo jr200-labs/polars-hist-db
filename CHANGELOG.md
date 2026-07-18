@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.59](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.58...v0.12.59) (2026-07-18)
+
+
+### Features
+
+* publish tracked benchmark history ([#239](https://github.com/jr200-labs/polars-hist-db/issues/239)) ([5695a06](https://github.com/jr200-labs/polars-hist-db/commit/5695a06f72a2b1327a5382336ad426d6f1d98d15))
+
 ## [0.12.58](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.57...v0.12.58) (2026-07-18)
 
 
