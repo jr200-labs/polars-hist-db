@@ -1,4 +1,5 @@
 from .config import (
+    IngestionConfig,
     ParityConfig,
     ParitySemanticForeignKeyConfig,
     PolarsHistDbConfig,
@@ -23,6 +24,7 @@ from .input.ingest_fn_registry import IngestFnRegistry, IngestFnSignature
 
 __all__ = [
     "PolarsHistDbConfig",
+    "IngestionConfig",
     "ParityConfig",
     "ParitySemanticForeignKeyConfig",
     "DbEngineConfig",

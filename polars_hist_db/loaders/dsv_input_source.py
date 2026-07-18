@@ -1,3 +1,4 @@
+import asyncio
 from hashlib import sha256
 from datetime import datetime
 import logging
@@ -121,12 +122,19 @@ class DsvCrawlerInputSource(InputSource[DsvCrawlerInputConfig]):
                         "__created_at": [self.config.payload_time],
                     }
                 )
-                if self._search_and_filter_files(
-                    candidates, table_schema, table_name, engine
-                ).is_empty():
+                filtered = await asyncio.to_thread(
+                    self._search_and_filter_files,
+                    candidates,
+                    table_schema,
+                    table_name,
+                    engine,
+                )
+                if filtered.is_empty():
                     return
                 yield (
-                    self._process_payload(payload, self.config.payload_time),
+                    await asyncio.to_thread(
+                        self._process_payload, payload, self.config.payload_time
+                    ),
                     (_make_dsv_finalizer(data_source, self.config.payload_time)),
                 )
                 return
@@ -135,8 +143,13 @@ class DsvCrawlerInputSource(InputSource[DsvCrawlerInputConfig]):
             if self.config.search_paths is None:
                 raise ValueError("Either payload or search_paths must be provided")
 
-            csv_files_df = self._search_and_filter_files(
-                self.files(), table_schema, table_name, engine
+            csv_files_df = await asyncio.to_thread(self.files)
+            csv_files_df = await asyncio.to_thread(
+                self._search_and_filter_files,
+                csv_files_df,
+                table_schema,
+                table_name,
+                engine,
             )
 
             timings = Clock()
@@ -151,7 +164,9 @@ class DsvCrawlerInputSource(InputSource[DsvCrawlerInputConfig]):
 
                 start_time = time.perf_counter()
 
-                partitions = self._process_payload(Path(csv_file), file_time)
+                partitions = await asyncio.to_thread(
+                    self._process_payload, Path(csv_file), file_time
+                )
 
                 yield partitions, _make_dsv_file_finalizer(csv_file, file_time)
 

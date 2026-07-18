@@ -38,6 +38,20 @@ deduplication, transforms, foreign-key handling, and unchanged-row filtering
 have already run. Lower this value for smaller XTDB nodes or raise it only after
 load testing retained/replay workloads.
 
+## ingestion
+
+Dataset execution is bounded and preserves ordering for datasets that write to
+the same tables. Independent datasets can run concurrently:
+
+```yaml
+ingestion:
+  max_workers: 2
+  queue_size: 2
+```
+
+Both values default to `1`. Increase `max_workers` only after confirming the
+database pool and target database can sustain the additional concurrent writes.
+
 ## table_configs
 
 A collection of tables that will be managed by this configuration.

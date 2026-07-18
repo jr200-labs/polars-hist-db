@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 import logging
@@ -14,6 +15,7 @@ from ..loaders.input_source_factory import InputSourceFactory
 from ..utils.clock import Clock
 
 from ..config import PolarsHistDbConfig, DatasetConfig, TableConfig, TableConfigs
+from ..config.config import IngestionConfig
 from ..config.input.input_source import InputConfig
 from .scrape import try_run_pipeline_as_transaction
 
@@ -46,46 +48,122 @@ async def run_datasets(
     if engine is None:
         engine = backend.create_engine(config.db_config)
 
-    num_datasets_processed = 0
-    errors: list[Exception] = []
-    adbc_connection = None
-    try:
-        selected_datasets = [
-            dataset
-            for dataset in config.datasets.datasets
-            if dataset_name is None or dataset.name == dataset_name
-        ]
-        if selected_datasets:
-            _create_config_tables(engine, config.tables, backend)
-        for dataset in selected_datasets:
-            if getattr(backend, "name", None) == "xtdb" and adbc_connection is None:
-                adbc_connection = backend.create_adbc_connection(config.db_config)
-
-            num_datasets_processed += 1
-            LOGGER.info("scraping dataset %s", dataset.name)
-            error = await _run_dataset(
-                dataset.input_config,
-                dataset,
-                config.tables,
-                engine,
-                debug_capture_output,
-                backend,
-                adbc_connection=adbc_connection,
-                js=js,
-                raise_on_error=raise_on_error,
-            )
-            if error is not None:
-                errors.append(error)
-    finally:
-        if adbc_connection is not None:
-            adbc_connection.close()
-        if owns_engine:
-            engine.dispose()
-
-    if num_datasets_processed == 0:
+    selected_datasets = [
+        dataset
+        for dataset in config.datasets.datasets
+        if dataset_name is None or dataset.name == dataset_name
+    ]
+    if not selected_datasets:
         LOGGER.error("no datasets processed for %s", dataset_name)
+        if owns_engine:
+            await asyncio.to_thread(engine.dispose)
+        return RunResult(0, 0, ())
 
-    return RunResult(num_datasets_processed, len(errors), tuple(errors))
+    ingestion = getattr(config, "ingestion", IngestionConfig())
+    errors: list[Optional[Exception]] = [None] * len(selected_datasets)
+    try:
+        await asyncio.to_thread(_create_config_tables, engine, config.tables, backend)
+        await _run_dataset_workers(
+            selected_datasets,
+            config,
+            engine,
+            backend,
+            ingestion,
+            errors,
+            debug_capture_output,
+            js,
+            raise_on_error,
+        )
+    finally:
+        if owns_engine:
+            await asyncio.to_thread(engine.dispose)
+
+    failures = tuple(error for error in errors if error is not None)
+    return RunResult(len(selected_datasets), len(failures), failures)
+
+
+def _dataset_table_keys(dataset: DatasetConfig) -> tuple[tuple[str, str], ...]:
+    pipeline = getattr(dataset, "pipeline", None)
+    if pipeline is None:
+        return ()
+    return tuple(sorted(set(pipeline.get_pipeline_items().values())))
+
+
+async def _run_dataset_workers(
+    datasets: list[DatasetConfig],
+    config: PolarsHistDbConfig,
+    engine: Engine,
+    backend,
+    ingestion: IngestionConfig,
+    errors: list[Optional[Exception]],
+    debug_capture_output: Optional[List[Tuple[datetime, pl.DataFrame]]],
+    js: Optional[JetStreamContext],
+    raise_on_error: bool,
+) -> None:
+    worker_count = min(ingestion.max_workers, len(datasets))
+    queue: asyncio.Queue[Optional[tuple[int, DatasetConfig]]] = asyncio.Queue(
+        maxsize=ingestion.queue_size
+    )
+    table_locks = {
+        key: asyncio.Lock()
+        for dataset in datasets
+        for key in _dataset_table_keys(dataset)
+    }
+
+    async def producer() -> None:
+        for item in enumerate(datasets):
+            await queue.put(item)
+        for _ in range(worker_count):
+            await queue.put(None)
+
+    async def worker() -> None:
+        while True:
+            item = await queue.get()
+            try:
+                if item is None:
+                    return
+                index, dataset = item
+                locks = [table_locks[key] for key in _dataset_table_keys(dataset)]
+                acquired_locks: list[asyncio.Lock] = []
+                adbc_connection = None
+                try:
+                    for lock in locks:
+                        await lock.acquire()
+                        acquired_locks.append(lock)
+                    if getattr(backend, "name", None) == "xtdb":
+                        adbc_connection = await asyncio.to_thread(
+                            backend.create_adbc_connection, config.db_config
+                        )
+                    LOGGER.info("scraping dataset %s", dataset.name)
+                    errors[index] = await _run_dataset(
+                        dataset.input_config,
+                        dataset,
+                        config.tables,
+                        engine,
+                        debug_capture_output,
+                        backend,
+                        adbc_connection=adbc_connection,
+                        js=js,
+                        raise_on_error=raise_on_error,
+                    )
+                finally:
+                    if adbc_connection is not None:
+                        await asyncio.to_thread(adbc_connection.close)
+                    for lock in reversed(acquired_locks):
+                        lock.release()
+            finally:
+                queue.task_done()
+
+    tasks = [asyncio.create_task(producer())] + [
+        asyncio.create_task(worker()) for _ in range(worker_count)
+    ]
+    try:
+        await asyncio.gather(*tasks)
+    except BaseException:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
 
 
 def _create_config_tables(engine: Engine, tables: TableConfigs, backend):
