@@ -104,16 +104,18 @@ def test_pipeline_builds_normalized_table_metadata_without_dataframes():
     )
 
     definitions = {
-        (column.table, column.source): column
+        (column.schema, column.source or column.target): column
         for column in pipeline.build_ingestion_column_definitions(tables)
     }
     delta_columns = pipeline.build_delta_table_column_configs(tables, "upload")
 
-    assert definitions[("countries", "country_id")].deduce_foreign_key is True
-    assert definitions[("countries", "country")].target_data_type == "VARCHAR(64)"
-    assert definitions[("events", "id")].required is True
-    assert definitions[("events", "raw_date")].column_type == "dsv_only"
-    assert definitions[("events", None)].transforms == {"parse_date": []}
+    assert definitions[("ref", "country_id")].deduce_foreign_key is True
+    assert definitions[("ref", "country")].target_data_type == "VARCHAR(64)"
+    assert definitions[("sample", "id")].required is True
+    assert definitions[("sample", "raw_date")].column_type == "dsv_only"
+    assert definitions[("sample", "raw_date")].table is None
+    assert definitions[("sample", "event_date")].transforms == {"parse_date": []}
+    assert definitions[("sample", "event_date")].table is None
     assert [(column.name, column.data_type) for column in delta_columns] == [
         ("country", "VARCHAR(64)"),
         ("id", "INT"),

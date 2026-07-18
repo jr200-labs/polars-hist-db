@@ -222,7 +222,7 @@ class Pipeline:
                     IngestionColumnConfig(
                         column_type=column.column_type,
                         schema=column.schema,
-                        table=column.table,
+                        table=(column.table if table_column is not None else None),
                         ingestion_data_type=ingestion_type,
                         target_data_type=target_type,
                         source=column.source,
@@ -231,11 +231,7 @@ class Pipeline:
                         aggregation=column.aggregation,
                         deduce_foreign_key=column.deduce_foreign_key,
                         value_if_missing=column.value_if_missing,
-                        nullable=(
-                            table_column.nullable
-                            if table_column is not None
-                            else column.nullable
-                        ),
+                        nullable=(table_column.nullable if table_column else None),
                         required=column.required,
                     )
                 )

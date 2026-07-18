@@ -64,7 +64,7 @@ class JetStreamInputSource(InputSource[JetStreamInputConfig]):
         received_items_ts = (
             df.select(
                 pl.concat_list(pl.min("__created_at"), pl.max("__created_at"))
-                .explode()
+                .explode(empty_as_null=True)
                 .sort()
                 .unique()
                 .dt.strftime("%Y-%m-%d %H:%M:%S")

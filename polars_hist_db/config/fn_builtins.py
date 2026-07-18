@@ -42,7 +42,12 @@ def apply_type_casts(
 
     for polars_dtype_str in dtypes:
         polars_dtype = getattr(sys.modules["polars"], polars_dtype_str)
-        df = df.with_columns(pl.col(result_col).cast(polars_dtype))
+        expression = pl.col(result_col)
+        if polars_dtype == pl.Date and df.schema[result_col] == pl.String:
+            expression = expression.str.to_date()
+        else:
+            expression = expression.cast(polars_dtype)
+        df = df.with_columns(expression)
 
     return df
 

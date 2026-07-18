@@ -14,7 +14,7 @@ LOGGER = logging.getLogger(__name__)
 class IngestionColumnConfig:
     column_type: Literal["data", "computed", "dsv_only", "time_partition_only"]
     schema: str
-    table: str
+    table: Optional[str]
     ingestion_data_type: str
     target_data_type: str
     source: Optional[str] = None
@@ -23,7 +23,7 @@ class IngestionColumnConfig:
     aggregation: Optional[str] = None
     deduce_foreign_key: bool = False
     value_if_missing: Optional[str] = None
-    nullable: bool = True
+    nullable: Optional[bool] = True
     required: bool = False
 
     def __post_init__(self):

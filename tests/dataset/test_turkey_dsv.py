@@ -32,7 +32,11 @@ async def test_load_file(fixture_with_config):
 
     uploaded_dfs = []
     await run_datasets(
-        base_config, engine, "turkey_food_prices_dsv", debug_capture_output=uploaded_dfs
+        base_config,
+        engine,
+        "turkey_food_prices_dsv",
+        debug_capture_output=uploaded_dfs,
+        raise_on_error=True,
     )
 
     uploaded_df = pl.concat([df for _, df in uploaded_dfs]).rename(
