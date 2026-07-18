@@ -13,8 +13,6 @@ from polars_hist_db.dataset.primary_item import scrape_primary_item
 
 
 class _FakeXtdbBackend:
-    name = "xtdb"
-
     def __init__(self):
         self.temporal_upsert_calls = []
 

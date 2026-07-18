@@ -32,7 +32,7 @@ def scrape_extract_item(
     delta_table_name = dataset.name
 
     target_table_config: TableConfig = tables[target_table]
-    if getattr(backend, "name", None) == "xtdb":
+    if staging is not None:
         return scrape_xtdb_pipeline_item(
             pipeline_id,
             dataset,

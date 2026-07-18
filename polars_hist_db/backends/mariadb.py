@@ -52,6 +52,20 @@ class MariaDbBackend:
         """Open one atomic MariaDB unit of work."""
         return engine.begin()
 
+    def open_ingest_connection(self, config: DbEngineConfig) -> None:
+        return None
+
+    def close_ingest_connection(self, connection: Any | None) -> None:
+        return None
+
+    def staging(
+        self,
+        connection: Any,
+        *,
+        ingest_connection: Any | None = None,
+    ) -> None:
+        return None
+
     def dataframes(self, connection: Any) -> DataframeOps:
         return DataframeOps(connection)
 

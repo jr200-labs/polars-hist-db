@@ -125,15 +125,14 @@ async def _run_dataset_workers(
                 index, dataset = item
                 locks = [table_locks[key] for key in _dataset_table_keys(dataset)]
                 acquired_locks: list[asyncio.Lock] = []
-                adbc_connection = None
+                ingest_connection = None
                 try:
                     for lock in locks:
                         await lock.acquire()
                         acquired_locks.append(lock)
-                    if getattr(backend, "name", None) == "xtdb":
-                        adbc_connection = await asyncio.to_thread(
-                            backend.create_adbc_connection, config.db_config
-                        )
+                    ingest_connection = await asyncio.to_thread(
+                        backend.open_ingest_connection, config.db_config
+                    )
                     LOGGER.info("scraping dataset %s", dataset.name)
                     errors[index] = await _run_dataset(
                         dataset.input_config,
@@ -142,13 +141,14 @@ async def _run_dataset_workers(
                         engine,
                         debug_capture_output,
                         backend,
-                        adbc_connection=adbc_connection,
+                        ingest_connection=ingest_connection,
                         js=js,
                         raise_on_error=raise_on_error,
                     )
                 finally:
-                    if adbc_connection is not None:
-                        await asyncio.to_thread(adbc_connection.close)
+                    await asyncio.to_thread(
+                        backend.close_ingest_connection, ingest_connection
+                    )
                     for lock in reversed(acquired_locks):
                         lock.release()
             finally:
@@ -193,7 +193,7 @@ async def _run_dataset(
     engine: Engine,
     debug_capture_output: Optional[List[Tuple[datetime, pl.DataFrame]]],
     backend,
-    adbc_connection=None,
+    ingest_connection=None,
     js: Optional[JetStreamContext] = None,
     raise_on_error: bool = False,
 ):
@@ -220,7 +220,7 @@ async def _run_dataset(
                 finalizer,
                 delta_table_config=delta_table_config,
                 backend=backend,
-                adbc_connection=adbc_connection,
+                ingest_connection=ingest_connection,
             )
 
     except Exception as e:
