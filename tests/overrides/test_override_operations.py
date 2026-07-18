@@ -85,8 +85,57 @@ def test_query_composition_correction_and_purge_contract() -> None:
         now=_utc(13),
     )
     assert result.generation == 2
+    remaining = store.query(OperationQuery(layer_id="root", view="history"))
+    assert all(
+        operation.operation_id != root.operation_id
+        for operation in remaining.operations
+    )
     with pytest.raises(ValueError, match="generation_changed"):
         store.require_generation("document-root", 1)
+
+
+def test_query_uses_filtered_cursor_pagination() -> None:
+    store = InMemoryOverrideOperationsStore()
+    store.create_layer("root", "analysts")
+    store.create_layer("child", "analysts")
+    older = _operation("root", "Loading", hour=9)
+    newer = _operation("root", "Delivered", hour=10)
+    unrelated = replace(
+        _operation("child", "High", hour=11),
+        entity_id="record-2",
+        field_path="priority",
+    )
+    for operation in (newer, unrelated, older):
+        store.append(operation)
+
+    first = store.operations_for_layer("root", limit=1)
+    second = store.operations_for_layer("root", cursor=first.next_cursor, limit=1)
+
+    assert [operation.operation_id for operation in first.operations] == [
+        newer.operation_id
+    ]
+    assert first.next_cursor is not None
+    assert [operation.operation_id for operation in second.operations] == [
+        older.operation_id
+    ]
+    assert second.next_cursor is None
+    filtered = store.query(
+        OperationQuery(entity_id="record-2", field_path="priority", view="history")
+    )
+    assert [operation.operation_id for operation in filtered.operations] == [
+        unrelated.operation_id
+    ]
+    bounded = store.query(
+        OperationQuery(
+            layer_id="root",
+            view="history",
+            recorded_from=_utc(10),
+            recorded_to=_utc(11),
+        )
+    )
+    assert [operation.operation_id for operation in bounded.operations] == [
+        older.operation_id
+    ]
 
 
 def test_composition_rejects_cross_group_cycles_and_duplicate_reachability() -> None:

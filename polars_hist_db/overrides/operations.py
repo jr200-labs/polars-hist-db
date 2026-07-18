@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from bisect import bisect_left, bisect_right, insort
+from collections import defaultdict
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
@@ -130,6 +132,10 @@ class InMemoryOverrideOperationsStore:
 
     def __init__(self) -> None:
         self._operations: dict[str, ReplicatedOverrideOperation] = {}
+        self._by_layer: dict[str, set[str]] = defaultdict(set)
+        self._by_entity: dict[str, set[str]] = defaultdict(set)
+        self._by_field: dict[str, set[str]] = defaultdict(set)
+        self._by_recorded: list[tuple[datetime, str]] = []
         self._layers: dict[str, OverrideLayer] = {}
         self._compositions: list[CompositionRevision] = []
         self._purge_metadata: list[dict[str, object]] = []
@@ -163,23 +169,46 @@ class InMemoryOverrideOperationsStore:
                 raise ValueError("operation ID was reused with different content")
             return
         self._operations[operation.operation_id] = finalized
+        self._by_layer[finalized.layer_id].add(finalized.operation_id)
+        self._by_entity[finalized.entity_id].add(finalized.operation_id)
+        self._by_field[finalized.field_path].add(finalized.operation_id)
+        insort(self._by_recorded, _sort_key(finalized))
 
     def query(self, query: OperationQuery) -> OperationPage:
         if query.limit < 1 or query.limit > 500:
             raise ValueError("limit must be between 1 and 500")
         now = query.valid_at or datetime.now(timezone.utc)
-        rows = sorted(
-            (
-                operation
-                for operation in self._operations.values()
-                if self._matches(operation, query, now)
-            ),
-            key=lambda operation: (operation.recorded_at, operation.operation_id),
-            reverse=True,
+        candidate_ids = self._candidate_ids(
+            layer_id=query.layer_id,
+            entity_id=query.entity_id,
+            field_path=query.field_path,
         )
-        if query.cursor:
-            cursor = _decode_cursor(query.cursor)
-            rows = [row for row in rows if _sort_key(row) < cursor]
+        cursor = _decode_cursor(query.cursor) if query.cursor else None
+        end = len(self._by_recorded)
+        if cursor:
+            end = min(end, bisect_left(self._by_recorded, cursor))
+        if query.known_at:
+            end = min(
+                end,
+                bisect_right(self._by_recorded, (query.known_at, "\U0010ffff")),
+            )
+        if query.recorded_to:
+            end = min(
+                end,
+                bisect_left(self._by_recorded, (query.recorded_to, "")),
+            )
+        rows = []
+        for index in range(end - 1, -1, -1):
+            recorded_at, operation_id = self._by_recorded[index]
+            if query.recorded_from and recorded_at < query.recorded_from:
+                break
+            if candidate_ids is not None and operation_id not in candidate_ids:
+                continue
+            operation = self._operations[operation_id]
+            if self._matches(operation, query, now):
+                rows.append(operation)
+                if len(rows) > query.limit:
+                    break
         page = rows[: query.limit]
         next_cursor = (
             _encode_cursor(_sort_key(page[-1])) if len(rows) > len(page) else None
@@ -247,20 +276,19 @@ class InMemoryOverrideOperationsStore:
         entity_id: str | None = None,
     ) -> dict[str, EffectiveFieldProjection]:
         order = self._composition_order(layer_id, valid_at, known_at)
-        per_layer = {
-            current: project_replicated_override_operations(
+        per_layer = {}
+        for current in order:
+            per_layer[current] = project_replicated_override_operations(
                 (
                     operation
-                    for operation in self._operations.values()
-                    if operation.layer_id == current
-                    and operation.recorded_at <= known_at
+                    for operation in self._candidate_operations(
+                        layer_id=current, entity_id=entity_id
+                    )
+                    if operation.recorded_at <= known_at
                     and (feed_id is None or operation.feed_id == feed_id)
-                    and (entity_id is None or operation.entity_id == entity_id)
                 ),
                 valid_at,
             )
-            for current in order
-        }
         fields = {field for frontiers in per_layer.values() for field in frontiers}
         result: dict[str, EffectiveFieldProjection] = {}
         for field in fields:
@@ -291,11 +319,19 @@ class InMemoryOverrideOperationsStore:
     ) -> CorrectionPreview:
         clock = now or datetime.now(timezone.utc)
         target = self._require_operation(proposal.target_operation_id)
+        field_operations = tuple(
+            operation
+            for operation in self._candidate_operations(
+                layer_id=target.layer_id,
+                entity_id=target.entity_id,
+                field_path=target.field_path,
+            )
+            if operation.feed_id == target.feed_id
+        )
         overlaps = tuple(
             operation.operation_id
-            for operation in self._operations.values()
-            if _same_field(operation, target)
-            and operation.operation_type == "set"
+            for operation in field_operations
+            if operation.operation_type == "set"
             and _overlaps(
                 operation.valid_from,
                 operation.valid_to,
@@ -304,11 +340,7 @@ class InMemoryOverrideOperationsStore:
             )
         )
         before = project_replicated_override_operations(
-            (
-                operation
-                for operation in self._operations.values()
-                if _same_field(operation, target)
-            ),
+            field_operations,
             proposal.valid_from,
         ).get(target.field_path, OverrideFrontier(target.field_path, "none", ()))
         preview_operation = self._correction_operation(
@@ -316,11 +348,7 @@ class InMemoryOverrideOperationsStore:
         )
         after = project_replicated_override_operations(
             [
-                *(
-                    operation
-                    for operation in self._operations.values()
-                    if _same_field(operation, target)
-                ),
+                *field_operations,
                 preview_operation,
             ],
             proposal.valid_from,
@@ -431,11 +459,7 @@ class InMemoryOverrideOperationsStore:
         )
         if layer.generation != preview.generation:
             raise ValueError("generation_changed")
-        old = [
-            operation
-            for operation in self._operations.values()
-            if operation.layer_id == layer.layer_id
-        ]
+        old = list(self._candidate_operations(layer_id=layer.layer_id))
         survivors = [
             operation for operation in old if operation.operation_id not in targets
         ]
@@ -501,7 +525,7 @@ class InMemoryOverrideOperationsStore:
             )
         ]
         for operation in old:
-            self._operations.pop(operation.operation_id, None)
+            self._remove(operation)
         self._layers[layer.layer_id] = replace(layer, generation=layer.generation + 1)
         for operation in [*rebuilt, *tombstones]:
             self.append(operation)
@@ -533,13 +557,64 @@ class InMemoryOverrideOperationsStore:
             raise ValueError("generation_changed")
 
     def operations_for_layer(
-        self, layer_id: str
-    ) -> tuple[ReplicatedOverrideOperation, ...]:
-        return tuple(
-            operation
-            for operation in self._operations.values()
-            if operation.layer_id == layer_id
+        self, layer_id: str, *, cursor: str | None = None, limit: int = 100
+    ) -> OperationPage:
+        return self.query(
+            OperationQuery(
+                layer_id=layer_id, view="history", cursor=cursor, limit=limit
+            )
         )
+
+    def _candidate_ids(
+        self,
+        *,
+        layer_id: str | None = None,
+        entity_id: str | None = None,
+        field_path: str | None = None,
+    ) -> set[str] | None:
+        candidates = None
+        for value, index in (
+            (layer_id, self._by_layer),
+            (entity_id, self._by_entity),
+            (field_path, self._by_field),
+        ):
+            if value:
+                candidates = (
+                    set(index.get(value, ()))
+                    if candidates is None
+                    else candidates.intersection(index.get(value, ()))
+                )
+        return candidates
+
+    def _candidate_operations(
+        self,
+        *,
+        layer_id: str | None = None,
+        entity_id: str | None = None,
+        field_path: str | None = None,
+    ) -> Iterable[ReplicatedOverrideOperation]:
+        return (
+            self._operations[operation_id]
+            for operation_id in self._candidate_ids(
+                layer_id=layer_id,
+                entity_id=entity_id,
+                field_path=field_path,
+            )
+            or ()
+        )
+
+    def _remove(self, operation: ReplicatedOverrideOperation) -> None:
+        self._operations.pop(operation.operation_id)
+        for value, index in (
+            (operation.layer_id, self._by_layer),
+            (operation.entity_id, self._by_entity),
+            (operation.field_path, self._by_field),
+        ):
+            operation_ids = index[value]
+            operation_ids.remove(operation.operation_id)
+            if not operation_ids:
+                del index[value]
+        self._by_recorded.pop(bisect_left(self._by_recorded, _sort_key(operation)))
 
     def _composition_order(
         self,
@@ -658,17 +733,6 @@ class InMemoryOverrideOperationsStore:
             return self._operations[operation_id]
         except KeyError as exc:
             raise ValueError("operation not found") from exc
-
-
-def _same_field(
-    left: ReplicatedOverrideOperation, right: ReplicatedOverrideOperation
-) -> bool:
-    return (left.layer_id, left.feed_id, left.entity_id, left.field_path) == (
-        right.layer_id,
-        right.feed_id,
-        right.entity_id,
-        right.field_path,
-    )
 
 
 def _effective_compositions(
