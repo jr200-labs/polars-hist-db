@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.12.60](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.59...v0.12.60) (2026-07-18)
+
+
+### Features
+
+* **types:** enforce database type contracts ([#248](https://github.com/jr200-labs/polars-hist-db/issues/248)) ([b5313cd](https://github.com/jr200-labs/polars-hist-db/commit/b5313cdf074ecd1e059ecb2fec3c748378b5a201))
+
+
+### Bug Fixes
+
+* automate benchmark history through pull requests ([#241](https://github.com/jr200-labs/polars-hist-db/issues/241)) ([03ee883](https://github.com/jr200-labs/polars-hist-db/commit/03ee883507eb4705c9637bd99e794406b2988e67))
+
+
+### Performance Improvements
+
+* index in-memory override operations ([#246](https://github.com/jr200-labs/polars-hist-db/issues/246)) ([c6d92ca](https://github.com/jr200-labs/polars-hist-db/commit/c6d92ca97a074c875abd50d40e3881aecf6a2e67))
+
+
+### Code Refactoring
+
+* extract xtdb transport ([#247](https://github.com/jr200-labs/polars-hist-db/issues/247)) ([cb4063c](https://github.com/jr200-labs/polars-hist-db/commit/cb4063ce04bbf25801c5e68ea1887c622ee7cb66))
+* replace pipeline metadata dataframes ([#244](https://github.com/jr200-labs/polars-hist-db/issues/244)) ([3acefdc](https://github.com/jr200-labs/polars-hist-db/commit/3acefdcb0a67b04f4b8fcc8509e497e5e3c8ab89))
+
 ## [0.12.59](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.58...v0.12.59) (2026-07-18)
 
 
