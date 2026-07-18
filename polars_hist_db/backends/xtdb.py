@@ -928,8 +928,11 @@ def _fill_xtdb_staging_defaults(
     return _fill_xtdb_defaults(df, table_config)
 
 
-def _materialize_xtdb_missing_staging_columns(
-    df: pl.DataFrame, table_config: TableConfig
+def _materialize_xtdb_missing_columns(
+    df: pl.DataFrame,
+    table_config: TableConfig,
+    *,
+    use_defaults: bool,
 ) -> pl.DataFrame:
     missing_columns = [
         column for column in table_config.columns if column.name not in df.columns
@@ -937,12 +940,21 @@ def _materialize_xtdb_missing_staging_columns(
     if not missing_columns:
         return df
 
-    return df.with_columns(
-        pl.lit(_xtdb_default_value(column.default_value, column.data_type))
+    materialized = df.with_columns(
+        pl.lit(
+            _xtdb_default_value(column.default_value, column.data_type)
+            if use_defaults
+            else None
+        )
         .cast(PolarsType.from_sql(column.data_type))
         .alias(column.name)
         for column in missing_columns
     )
+    configured_columns = [column.name for column in table_config.columns]
+    extra_columns = [
+        column for column in materialized.columns if column not in configured_columns
+    ]
+    return materialized.select([*configured_columns, *extra_columns])
 
 
 def _dedupe_xtdb_staging_dataframe(
@@ -1370,7 +1382,11 @@ class XtdbStagingOps:
         if prefill_nulls_with_default:
             df = _fill_xtdb_staging_defaults(df, delta_table_config)
         df = _dedupe_xtdb_staging_dataframe(df, uniqueness_col_set)
-        df = _materialize_xtdb_missing_staging_columns(df, delta_table_config)
+        df = _materialize_xtdb_missing_columns(
+            df,
+            delta_table_config,
+            use_defaults=prefill_nulls_with_default,
+        )
         df = df.with_row_index(_XTDB_STAGE_ROW_INDEX_COLUMN).with_columns(
             pl.lit(stage_run_id).alias(_XTDB_STAGE_RUN_ID_COLUMN),
             pl.lit(partition_time).alias(_XTDB_STAGE_PARTITION_TIME_COLUMN),
@@ -1728,9 +1744,22 @@ class XtdbStagingOps:
                 **{target: source for source, target in fk_map.items()},
             }
         )
-        return stage_df.drop(
+        resolved_stage = stage_df.drop(
             [column for column in fk_sources if column in stage_df.columns]
         ).join(resolver, on=value_sources, how="left")
+        target_dtypes = {
+            source: PolarsType.from_sql(
+                next(
+                    column.data_type
+                    for column in table_config.columns
+                    if column.name == target
+                )
+            )
+            for source, target in fk_map.items()
+        }
+        return resolved_stage.with_columns(
+            pl.col(source).cast(dtype) for source, dtype in target_dtypes.items()
+        )
 
     def cleanup_run(self, stage_run_id: str) -> None:
         self._stage_run_cache.pop(stage_run_id, None)
@@ -1899,6 +1928,11 @@ class XtdbBackend:
                 )
             if table_config is None:
                 raise ValueError("XTDB delta upsert requires table_config")
+            df = _materialize_xtdb_missing_columns(
+                df,
+                table_config,
+                use_defaults=delta_config.prefill_nulls_with_default,
+            )
             if delta_config.prefill_nulls_with_default:
                 df = _fill_xtdb_defaults(df, table_config)
             df = _apply_xtdb_duplicate_policy(df, table_config, delta_config)

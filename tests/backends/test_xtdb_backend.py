@@ -656,6 +656,52 @@ def test_xtdb_temporal_upsert_prefills_configured_defaults_before_insert():
     }
 
 
+def test_xtdb_temporal_upsert_materializes_missing_configured_columns():
+    backend = XtdbBackend()
+    ops = Mock()
+    ops.table_insert.return_value = 1
+    table_config = TableConfig(
+        schema="test",
+        name="records",
+        primary_keys=["id"],
+        columns=[
+            TableColumnConfig("records", "id", "INT", nullable=False),
+            TableColumnConfig("records", "description", "VARCHAR(255)"),
+            TableColumnConfig("records", "amount", "DECIMAL(10,2)"),
+            TableColumnConfig("records", "observed_at", "DATETIME"),
+        ],
+    )
+
+    result = backend.temporal_upsert(
+        pl.DataFrame({"id": pl.Series([1], dtype=pl.Int32)}),
+        "test",
+        "records",
+        dataframe_ops=ops,
+        table_config=table_config,
+        delta_config=DeltaConfig(prefill_nulls_with_default=False),
+    )
+
+    assert result == 1
+    written_df = ops.table_insert.call_args.args[0]
+    assert written_df.columns == [
+        "id",
+        "description",
+        "amount",
+        "observed_at",
+        "_valid_from",
+    ]
+    assert written_df.schema == {
+        "id": pl.Int32,
+        "description": pl.String,
+        "amount": pl.Decimal(10, 2),
+        "observed_at": pl.Datetime("us"),
+        "_valid_from": pl.Datetime("us", "UTC"),
+    }
+    assert written_df.select("description", "amount", "observed_at").null_count().row(
+        0
+    ) == (1, 1, 1)
+
+
 def test_xtdb_temporal_upsert_treats_null_to_value_as_changed():
     backend = XtdbBackend()
     ops = Mock()
@@ -1244,7 +1290,7 @@ def test_xtdb_table_reflection_prefers_configured_column_metadata(monkeypatch):
             pl.DataFrame(
                 {
                     "column_name": ["_id", "id", "decimal_col", "real_col"],
-                    "data_type": [":i32", ":i32", "[:DECIMAL 38 2]", ":f32"],
+                    "data_type": [":i32", ":i32", "[:DECIMAL 38 2]", ":f64"],
                     "is_nullable": ["NO", "NO", "YES", "YES"],
                 }
             ),

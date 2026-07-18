@@ -1090,6 +1090,8 @@ def test_xtdb_staging_reuses_deduced_foreign_key_for_later_primary_item(
     )
 
     generated_id = location_df[0, "id"]
+    assert location_df.schema["id"] == pl.Int32
+    assert trades_df.schema["destination_location_id"] == pl.Int32
     assert trades_df.to_dict(as_series=False) == {
         "id": [308327],
         "destination_location_id": [generated_id],

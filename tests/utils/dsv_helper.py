@@ -90,7 +90,7 @@ def _published_port(container_id: str) -> int:
     return int(first_binding.rsplit(":", 1)[1])
 
 
-def xtdb_engine_test() -> tuple[Engine, str]:
+def xtdb_engine_test() -> tuple[Engine, str, DbEngineConfig]:
     container_id = _docker(
         ["run", "--rm", "-d", "-p", "5432", "ghcr.io/xtdb/xtdb:nightly"]
     )
@@ -113,7 +113,7 @@ def xtdb_engine_test() -> tuple[Engine, str]:
                 raise
             time.sleep(1)
 
-    return engine, container_id
+    return engine, container_id, config
 
 
 def _backend_from_engine(engine: Engine):
@@ -250,8 +250,7 @@ def setup_fixture_dataset(test_file: str, backend_name: str = "mariadb"):
         backend_config = DbEngineConfig(backend="mariadb")
         backend = backend_from_config(backend_config)
     elif backend_name == "xtdb":
-        engine, container_id = xtdb_engine_test()
-        backend_config = DbEngineConfig(backend="xtdb")
+        engine, container_id, backend_config = xtdb_engine_test()
         backend = backend_from_config(backend_config)
     else:
         raise ValueError(f"unsupported test backend {backend_name!r}")
@@ -458,6 +457,20 @@ def connection_context_for_engine(engine: Engine):
 
 def dataframe_ops_for_engine(engine: Engine, connection):
     return _backend_from_engine(engine).dataframes(connection)
+
+
+def normalise_query_result_for_backend(
+    df: pl.DataFrame,
+    engine: Engine,
+    table_config: TableConfig,
+) -> pl.DataFrame:
+    if _backend_from_engine(engine).name != "xtdb":
+        return df
+    return _normalise_xtdb_dataframe(
+        df,
+        table_config,
+        include_temporal_columns=table_config.is_temporal,
+    )
 
 
 def table_config_ops_for_engine(engine: Engine, connection):

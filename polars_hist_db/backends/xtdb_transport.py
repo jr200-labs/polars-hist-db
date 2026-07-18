@@ -175,8 +175,12 @@ def _xtdb_cast_type(data_type: str) -> str:
         return "TEXT"
     if normalized in {"DOUBLE", "DOUBLE PRECISION"}:
         return "DOUBLE PRECISION"
-    if normalized in {"FLOAT", "REAL"}:
+    if normalized == "FLOAT":
         return "FLOAT"
+    if normalized == "REAL":
+        # MariaDB REAL is DOUBLE PRECISION unless REAL_AS_FLOAT is enabled.
+        # The package contract likewise exposes REAL as Polars Float64.
+        return "DOUBLE PRECISION"
     if normalized in {"INT", "INTEGER"}:
         return "INTEGER"
     if normalized in {"BOOL", "BOOLEAN"}:
