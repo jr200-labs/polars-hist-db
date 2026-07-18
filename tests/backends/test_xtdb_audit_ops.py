@@ -123,6 +123,68 @@ def test_xtdb_audit_filter_items_returns_all_items_before_audit_data_table_exist
     assert filtered_items.equals(source_items)
 
 
+def test_xtdb_audit_filter_items_queries_only_candidate_sources(monkeypatch):
+    queried_candidates = []
+
+    class _TableConfigOps:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def table_exists(self, table_schema, table_name):
+            return True
+
+        def from_table(self, table_schema, table_name):
+            return AuditOps(table_schema)._table_config()
+
+    class _DataframeOps:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def from_raw_sql(self, query, schema_overrides=None):
+            assert "MAX(data_source_ts)" in query
+            assert "GROUP BY data_source" not in query
+            return pl.DataFrame(
+                {"data_source_ts": [datetime(2026, 1, 2, tzinfo=timezone.utc)]}
+            )
+
+        def table_query(
+            self,
+            table_schema,
+            table_name,
+            query_df,
+            column_selection,
+            table_config=None,
+        ):
+            queried_candidates.extend(query_df["data_source"].to_list())
+            return pl.DataFrame({"data_source": ["processed.csv"]})
+
+    monkeypatch.setattr(
+        "polars_hist_db.core.audit._xtdb_table_config_ops",
+        _TableConfigOps,
+    )
+    monkeypatch.setattr("polars_hist_db.core.audit._xtdb_dataframe_ops", _DataframeOps)
+
+    filtered_items = AuditOps("sample").filter_items(
+        pl.DataFrame(
+            {
+                "__path": ["processed.csv", "historic.csv", "new.csv"],
+                "__created_at": [
+                    datetime(2026, 1, 3, tzinfo=timezone.utc),
+                    datetime(2026, 1, 1, tzinfo=timezone.utc),
+                    datetime(2026, 1, 3, tzinfo=timezone.utc),
+                ],
+            }
+        ),
+        "__path",
+        "__created_at",
+        "trades",
+        _XtdbConnection(),
+    )
+
+    assert queried_candidates == ["processed.csv", "historic.csv", "new.csv"]
+    assert filtered_items["__path"].to_list() == ["new.csv"]
+
+
 def test_xtdb_audit_latest_entry_is_empty_before_audit_data_table_exists(
     monkeypatch,
 ):
