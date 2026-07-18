@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import AsyncGenerator, Awaitable, Callable, List, Tuple, TypeVar, Generic
 from datetime import datetime
 import logging
@@ -15,6 +16,18 @@ from ..config.input.input_source import InputConfig
 LOGGER = logging.getLogger(__name__)
 
 TConfig = TypeVar("TConfig", bound=InputConfig)
+
+
+async def _noop_after_commit() -> None:
+    pass
+
+
+@dataclass
+class BatchFinalizer:
+    write_audit_before_commit: Callable[[Connection, List[Tuple[str, str]]], bool] = (
+        lambda connection, modified_tables: True
+    )
+    ack_after_commit: Callable[[], Awaitable[None]] = _noop_after_commit
 
 
 def _file_filter_connection_context(engine: Engine):
@@ -45,7 +58,7 @@ class InputSource(ABC, Generic[TConfig]):
     ) -> AsyncGenerator[
         Tuple[
             List[Tuple[datetime, pl.DataFrame]],
-            Callable[[Connection, List[Tuple[str, str]]], Awaitable[bool]],
+            BatchFinalizer,
         ],
         None,
     ]:

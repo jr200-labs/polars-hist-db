@@ -85,60 +85,29 @@ def _find_files_with_timestamps(
         max_depth=max_depth,
     )
 
-    entries = list(sd)
-
-    df = pl.DataFrame({"root_path": root_path, "entry": entries}).filter(
-        pl.col("entry").map_elements(
-            lambda x: x.is_file, skip_nulls=True, return_dtype=pl.Boolean
-        )
-    )
-
-    if df.is_empty():
-        return pl.DataFrame(schema=return_schema)
-
-    df = df.with_columns(
-        __path=pl.concat_str(
-            [
-                pl.lit(root_path),
-                pl.col("entry").map_elements(lambda x: x.path, return_dtype=pl.Utf8),
-            ],
-            separator=os.sep,
-        ),
-        mtime=pl.col("entry").map_elements(
-            lambda x: (
-                x.st_mtime
-                if isinstance(x.st_mtime, datetime)
-                else source_tz.localize(datetime.fromtimestamp(x.st_mtime))
-            ).astimezone(target_tz),
-            skip_nulls=True,
-            return_dtype=pl.Datetime("us", "UTC"),
-        ),
-    ).with_columns(
-        __path=pl.col("__path").map_elements(
-            lambda x: os.path.normpath(str(x)), skip_nulls=True, return_dtype=pl.Utf8
-        )
-    )
-
-    if tz_method == "regex":
-        datetime_regex = timestamp["datetime_regex"]
-        df = df.with_columns(
-            __created_at=pl.col("__path").map_elements(
-                lambda x: _parse_time(x, datetime_regex, source_tz, target_tz),
-                skip_nulls=True,
-                return_dtype=pl.Datetime("us", "UTC"),
-            )
-        )
-
-    elif tz_method == "manual":
-        dt_value = source_tz.localize(timestamp["datetime"]).astimezone(target_tz)
-        df = df.with_columns(__created_at=pl.lit(dt_value))
-
-    elif tz_method == "mtime":
-        df = df.with_columns(__created_at=pl.col("mtime"))
-
-    else:
+    if tz_method not in {"regex", "manual", "mtime"}:
         raise ValueError(f"unknown tz_method: '{tz_method}'")
 
-    df = df.select(return_schema.keys()).sort("__created_at")
+    manual_time = (
+        source_tz.localize(timestamp["datetime"]).astimezone(target_tz)
+        if tz_method == "manual"
+        else None
+    )
+    rows = []
+    for entry in sd:
+        if not entry.is_file:
+            continue
+        path = os.path.normpath(os.path.join(root_path, entry.path))
+        mtime = (
+            entry.st_mtime
+            if isinstance(entry.st_mtime, datetime)
+            else source_tz.localize(datetime.fromtimestamp(entry.st_mtime))
+        ).astimezone(target_tz)
+        created_at = (
+            _parse_time(path, timestamp["datetime_regex"], source_tz, target_tz)
+            if tz_method == "regex"
+            else manual_time or mtime
+        )
+        rows.append({"__path": path, "__created_at": created_at})
 
-    return df
+    return pl.DataFrame(rows, schema=return_schema).sort("__created_at")

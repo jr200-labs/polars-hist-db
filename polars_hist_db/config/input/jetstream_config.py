@@ -28,6 +28,13 @@ class JetStreamFetchConfig:
     # timeout for a single fetch call in seconds
     batch_timeout: float = 5.0
 
+    # interval between in-progress heartbeats; 0 disables them
+    heartbeat_interval: float = 30.0
+
+    def __post_init__(self):
+        if self.heartbeat_interval < 0:
+            raise ValueError("heartbeat_interval cannot be negative")
+
 
 @dataclass
 class JetStreamConfig:

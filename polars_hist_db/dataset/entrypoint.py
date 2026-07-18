@@ -1,6 +1,8 @@
+from dataclasses import dataclass
 from datetime import datetime
 import logging
 import time
+import warnings
 from typing import List, Optional, Tuple
 
 from nats.js.client import JetStreamContext
@@ -18,6 +20,13 @@ from .scrape import try_run_pipeline_as_transaction
 LOGGER = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class RunResult:
+    datasets_processed: int
+    datasets_failed: int
+    errors: tuple[Exception, ...]
+
+
 async def run_datasets(
     config: PolarsHistDbConfig,
     engine: Optional[Engine] = None,
@@ -26,37 +35,57 @@ async def run_datasets(
     js: Optional[JetStreamContext] = None,
     raise_on_error: bool = False,
 ):
+    if not raise_on_error:
+        warnings.warn(
+            "raise_on_error=False is deprecated; inspect the returned RunResult",
+            DeprecationWarning,
+            stacklevel=2,
+        )
     backend = backend_from_config(config.db_config)
+    owns_engine = engine is None
     if engine is None:
         engine = backend.create_engine(config.db_config)
 
     num_datasets_processed = 0
+    errors: list[Exception] = []
     adbc_connection = None
     try:
-        for dataset in config.datasets.datasets:
-            if dataset_name is None or dataset.name == dataset_name:
-                if getattr(backend, "name", None) == "xtdb" and adbc_connection is None:
-                    adbc_connection = backend.create_adbc_connection(config.db_config)
+        selected_datasets = [
+            dataset
+            for dataset in config.datasets.datasets
+            if dataset_name is None or dataset.name == dataset_name
+        ]
+        if selected_datasets:
+            _create_config_tables(engine, config.tables, backend)
+        for dataset in selected_datasets:
+            if getattr(backend, "name", None) == "xtdb" and adbc_connection is None:
+                adbc_connection = backend.create_adbc_connection(config.db_config)
 
-                num_datasets_processed += 1
-                LOGGER.info("scraping dataset %s", dataset.name)
-                await _run_dataset(
-                    dataset.input_config,
-                    dataset,
-                    config.tables,
-                    engine,
-                    debug_capture_output,
-                    backend,
-                    adbc_connection=adbc_connection,
-                    js=js,
-                    raise_on_error=raise_on_error,
-                )
+            num_datasets_processed += 1
+            LOGGER.info("scraping dataset %s", dataset.name)
+            error = await _run_dataset(
+                dataset.input_config,
+                dataset,
+                config.tables,
+                engine,
+                debug_capture_output,
+                backend,
+                adbc_connection=adbc_connection,
+                js=js,
+                raise_on_error=raise_on_error,
+            )
+            if error is not None:
+                errors.append(error)
     finally:
         if adbc_connection is not None:
             adbc_connection.close()
+        if owns_engine:
+            engine.dispose()
 
     if num_datasets_processed == 0:
         LOGGER.error("no datasets processed for %s", dataset_name)
+
+    return RunResult(num_datasets_processed, len(errors), tuple(errors))
 
 
 def _create_config_tables(engine: Engine, tables: TableConfigs, backend):
@@ -98,7 +127,6 @@ async def _run_dataset(
 ):
     LOGGER.info("starting %s ingest for %s", input_config.type, dataset.name)
 
-    _create_config_tables(engine, tables, backend)
     delta_table_config = _build_delta_table_config(tables, dataset)
 
     start_time = time.perf_counter()
@@ -106,8 +134,9 @@ async def _run_dataset(
     input_source = InputSourceFactory.create_input_source(
         tables, dataset, input_config, js=js
     )
+    error = None
     try:
-        async for partitions, commit_fn in await input_source.next_df(engine):
+        async for partitions, finalizer in await input_source.next_df(engine):
             if debug_capture_output is not None:
                 debug_capture_output.extend(partitions)
 
@@ -116,7 +145,7 @@ async def _run_dataset(
                 dataset,
                 tables,
                 engine,
-                commit_fn,
+                finalizer,
                 delta_table_config=delta_table_config,
                 backend=backend,
                 adbc_connection=adbc_connection,
@@ -126,9 +155,11 @@ async def _run_dataset(
         LOGGER.error("error while processing InputSource: %s", e, exc_info=e)
         if raise_on_error:
             raise
+        error = e
     finally:
         await input_source.cleanup()
 
     Clock().add_timing("dataset", time.perf_counter() - start_time)
 
     LOGGER.info("stopped scrape - %s", dataset.name)
+    return error

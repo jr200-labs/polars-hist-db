@@ -1,36 +1,19 @@
+from collections import defaultdict, deque
 from datetime import timedelta
-from typing import Any, Dict
-import polars as pl
+from typing import ClassVar
 
 
 class Clock:
-    _borg: Dict[str, Any] = {"_df": None}
-
-    def __init__(self) -> None:
-        self.__dict__ = self._borg
-        self._df: pl.DataFrame = self._getdf()
-
-    def _getdf(self) -> pl.DataFrame:
-        if self._df is None:
-            self._df = pl.DataFrame(schema={"name": pl.Utf8, "time": pl.Float64})
-
-        return self._df
+    _timings: ClassVar[dict[str, deque[float]]] = defaultdict(
+        lambda: deque(maxlen=1000)
+    )
 
     def add_timing(self, name: str, timing: float) -> None:
-        self._df = pl.concat(
-            [self._getdf(), pl.from_dict({"name": [name], "time": [timing]})]
-        )
+        self._timings[name].append(timing)
 
     def get_avg(self, name: str, window_size: int = 5) -> float:
-        avg_seconds: float = (
-            self._getdf()
-            .filter(pl.col("name") == name)
-            .get_column("time")
-            .rolling_mean(window_size=window_size, min_samples=1)
-            .tail(1)[0]
-        )
-
-        return avg_seconds
+        values = list(self._timings[name])[-window_size:]
+        return sum(values) / len(values)
 
     def eta(self, name: str, count_remaining: int, window_size: int = 5) -> timedelta:
         avg_seconds = self.get_avg(name, window_size)

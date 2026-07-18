@@ -1,4 +1,5 @@
 from datetime import datetime, time
+from itertools import batched
 import logging
 from types import MappingProxyType
 from typing import Dict, Iterable, List, Literal, Mapping, Optional, Union
@@ -105,8 +106,8 @@ class DataframeOps:
             if col in default_values.keys():
                 col_polars_dtype = df[col].dtype
                 if col_polars_dtype == pl.Boolean:
-                    default_value = pl.lit(bool(default_values[col])).cast(
-                        col_polars_dtype
+                    default_value = PolarsType.convert_str_value(
+                        default_values[col], col_polars_dtype
                     )
                 elif col_polars_dtype == pl.Time:
                     default_value = pl.lit(
@@ -251,22 +252,13 @@ class DataframeOps:
             "inserting dataframe %s into %s.%s", df.shape, table_schema, table_name
         )
 
-        cols_to_upload = {c.name for c in tbl.columns}.intersection(df.columns)
-        num_rows_changed: int = (
-            df.select(cols_to_upload)
-            .to_pandas()
-            .to_sql(
-                name=table_name,
-                con=self.connection,
-                schema=table_schema,
-                if_exists="append",
-                index=False,
-                chunksize=1000,
+        cols_to_upload = [c.name for c in tbl.columns if c.name in df.columns]
+        num_rows_changed = 0
+        for rows in batched(df.select(cols_to_upload).iter_rows(named=True), 1000):
+            result = DbOps(self.connection).execute_sqlalchemy(
+                f"sql.dataframe.insert.{len(rows)}", tbl.insert(), list(rows)
             )
-        )
-
-        if num_rows_changed is None:
-            num_rows_changed = 0
+            num_rows_changed += max(result.rowcount, 0)
 
         LOGGER.debug("insert dataframe affected %d/%d rows", num_rows_changed, len(df))
 
@@ -307,11 +299,10 @@ class DataframeOps:
             .where(and_(*[tbl.c[k] == bindparam(f"_{k}") for k in primary_keys]))
         )
 
-        update_data = (
-            df.rename({col: f"_{col}" for col in common_cols})
-            .to_pandas()
-            .to_dict(orient="records")
-        )
+        update_data = [
+            {f"_{col}": value for col, value in row.items()}
+            for row in df.select(common_cols).iter_rows(named=True)
+        ]
 
         result = DbOps(self.connection).execute_sqlalchemy(
             f"sql.dataframe.update.{len(update_data)}",
@@ -383,14 +374,14 @@ class DataframeOps:
         update_time: Optional[datetime] = None,
     ) -> int:
         DbOps(self.connection).set_system_versioning_time(update_time)
-
-        num_deletions = 0
-        if not df.is_empty():
-            num_deletions = self.table_delete_rows(df, table_schema, table_name)
-
-        DbOps(self.connection).set_system_versioning_time(None)
-
-        return num_deletions
+        try:
+            return (
+                self.table_delete_rows(df, table_schema, table_name)
+                if not df.is_empty()
+                else 0
+            )
+        finally:
+            DbOps(self.connection).set_system_versioning_time(None)
 
     def table_delete_rows(
         self, df: pl.DataFrame, table_schema: str, table_name: str
@@ -409,34 +400,29 @@ class DataframeOps:
         tbl = tbo.get_table_metadata()
 
         primary_keys = [c.name for c in tbl.primary_key]
-        if len(set(df.columns).difference(primary_keys)) > 0:
-            raise ValueError("missing primary keys in dataframe: %s", primary_keys)
+        missing_primary_keys = set(primary_keys).difference(df.columns)
+        if missing_primary_keys:
+            raise ValueError(
+                f"missing primary keys in dataframe: {missing_primary_keys}"
+            )
 
         delete_sql = delete(tbl).where(
-            and_(*[tbl.c[col] == bindparam(f"_{col}") for col in df.columns])
+            and_(*[tbl.c[col] == bindparam(f"_{col}") for col in primary_keys])
         )
 
-        delete_data = (
-            df.rename({col: f"_{col}" for col in df.columns})
-            .to_pandas()
-            .to_dict(orient="records")
-        )
-
-        count_before = tbo.row_count()
-        _result = DbOps(self.connection).execute_sqlalchemy(
+        delete_data = [
+            {f"_{col}": value for col, value in zip(primary_keys, row, strict=True)}
+            for row in df.select(primary_keys).iter_rows()
+        ]
+        result = DbOps(self.connection).execute_sqlalchemy(
             f"sql.dataframe.delete.{len(delete_data)}",
             delete_sql,
             delete_data,
         )
-
-        count_after = tbo.row_count()
-
-        num_deleted_rows = count_after - count_before
         LOGGER.debug(
-            "deleted %d rows from %s.%s", num_deleted_rows, table_schema, table_name
+            "deleted %d rows from %s.%s", result.rowcount, table_schema, table_name
         )
-
-        return num_deleted_rows
+        return result.rowcount
 
 
 def _remove_duplicate_rows(
@@ -469,29 +455,14 @@ def _prevalidate_insert_from_dataframe(
         if col not in df.columns:
             continue
 
-        if is_text_col(str(col.type)):
-            df_col = df.select(col.name).drop_nulls()
-            if df_col.is_empty():
-                continue
-
-        try:
-            max_col_len = col.type.length  # type: ignore[attr-defined]
-            truncated_data = (
-                df_col.select(
-                    col.name,
-                    length=(
-                        pl.col(col.name)
-                        .cast(pl.Utf8)
-                        .map_elements(len, skip_nulls=True)
-                    ),
-                )
-                .sort(pl.col("length"), descending=True)
-                .filter(pl.col("length") >= pl.lit(max_col_len))
-            )
-
-            if not truncated_data.is_empty():
-                LOGGER.error("data truncation in column %s", col.name)
-                LOGGER.error(truncated_data)
-
-        except Exception as e:
-            LOGGER.error("failed to check column %s", col, exc_info=e)
+        if not is_text_col(str(col.type)):
+            continue
+        max_col_len = col.type.length  # type: ignore[attr-defined]
+        if max_col_len is None:
+            continue
+        truncated_data = df.filter(
+            pl.col(col.name).str.len_chars() > pl.lit(max_col_len)
+        )
+        if not truncated_data.is_empty():
+            LOGGER.error("data truncation in column %s", col.name)
+            LOGGER.error(truncated_data)

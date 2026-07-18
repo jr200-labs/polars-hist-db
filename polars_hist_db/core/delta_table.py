@@ -53,44 +53,43 @@ class DeltaTableOps:
         src_tgt_colname_map: Mapping[str, str] = MappingProxyType({}),
     ) -> Tuple[int, int, int]:
         DbOps(self.connection).set_system_versioning_time(update_time)
+        try:
+            tgt_to_src_map = {v: k for k, v in src_tgt_colname_map.items()}
 
-        tgt_to_src_map = {v: k for k, v in src_tgt_colname_map.items()}
+            if self.delta_config.row_finality == "dropout":
+                deleted_keys = self._drop_missing_rows(
+                    self.table_schema, target_table, self.table_name, tgt_to_src_map
+                )
+                num_deletions = len(deleted_keys)
+            else:
+                num_deletions = 0
 
-        if self.delta_config.row_finality == "dropout":
-            deleted_keys = self._drop_missing_rows(
-                self.table_schema, target_table, self.table_name, tgt_to_src_map
-            )
-            num_deletions = len(deleted_keys)
-        else:
-            num_deletions = 0
+            tbo = TableOps(self.table_schema, self.table_name, self.connection)
+            if source_columns is None:
+                source_tbl = tbo.get_table_metadata()
+                source_columns = [c.name for c in source_tbl.columns]
 
-        tbo = TableOps(self.table_schema, self.table_name, self.connection)
-        if source_columns is None:
-            source_tbl = tbo.get_table_metadata()
-            source_columns = [c.name for c in source_tbl.columns]
+            if is_main_table and self.delta_config.drop_unchanged_rows:
+                ref_columns = [src_tgt_colname_map.get(c, c) for c in source_columns]
+                num_deletions += self._drop_unchanged_rows(
+                    self.table_schema,
+                    target_table=self.table_name,
+                    ref_table=target_table,
+                    ref_cmp_columns=ref_columns,
+                    ref_tgt_colname_map=tgt_to_src_map,
+                )
 
-        if is_main_table and self.delta_config.drop_unchanged_rows:
-            ref_columns = [src_tgt_colname_map.get(c, c) for c in source_columns]
-            num_deletions += self._drop_unchanged_rows(
+            num_inserts, num_updates = self._table_upsert_nontemporal(
                 self.table_schema,
-                target_table=self.table_name,
-                ref_table=target_table,
-                ref_cmp_columns=ref_columns,
-                ref_tgt_colname_map=tgt_to_src_map,
+                self.table_name,
+                target_table,
+                source_columns,
+                src_tgt_colname_map,
+                on_duplicate_key=self.delta_config.on_duplicate_key,
             )
-
-        num_inserts, num_updates = self._table_upsert_nontemporal(
-            self.table_schema,
-            self.table_name,
-            target_table,
-            source_columns,
-            src_tgt_colname_map,
-            on_duplicate_key=self.delta_config.on_duplicate_key,
-        )
-
-        DbOps(self.connection).set_system_versioning_time(None)
-
-        return num_inserts, num_updates, num_deletions
+            return num_inserts, num_updates, num_deletions
+        finally:
+            DbOps(self.connection).set_system_versioning_time(None)
 
     def _table_upsert_nontemporal(
         self,
@@ -445,5 +444,5 @@ def _prevalidate_upsert_from_table(
                 check_failed = True
                 continue
 
-        if check_failed:
-            raise ValueError("column type mismatches. check logs")
+    if check_failed:
+        raise ValueError("column type mismatches. check logs")
