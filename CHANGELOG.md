@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.58](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.57...v0.12.58) (2026-07-18)
+
+
+### Features
+
+* **backends:** own connection lifecycle ([#236](https://github.com/jr200-labs/polars-hist-db/issues/236)) ([e461eaf](https://github.com/jr200-labs/polars-hist-db/commit/e461eafbfaeb6747c694550fad9126979e9cebb8))
+
+
+### Performance Improvements
+
+* cache pipeline configuration lookups ([#237](https://github.com/jr200-labs/polars-hist-db/issues/237)) ([8926420](https://github.com/jr200-labs/polars-hist-db/commit/8926420aff7e13deebca02530ce5c6e1bca64f13))
+
 ## [0.12.57](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.56...v0.12.57) (2026-07-18)
 
 
