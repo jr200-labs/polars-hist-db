@@ -12,24 +12,11 @@ from polars_hist_db.dataset.extract_item import scrape_extract_item
 from polars_hist_db.dataset.primary_item import scrape_primary_item
 
 
-class _FakeTableConfigOps:
-    def __init__(self):
-        self.created = []
-
-    def create(self, table_config):
-        self.created.append(table_config)
-        return table_config
-
-
 class _FakeXtdbBackend:
     name = "xtdb"
 
     def __init__(self):
-        self.table_config_ops = _FakeTableConfigOps()
         self.temporal_upsert_calls = []
-
-    def table_configs(self, connection):
-        return self.table_config_ops
 
     def temporal_upsert(self, *args, **kwargs):
         self.temporal_upsert_calls.append((args, kwargs))
@@ -113,7 +100,6 @@ def test_xtdb_primary_ingest_uses_staged_dataframe_for_temporal_upsert():
     )
 
     assert did_modify is True
-    assert backend.table_config_ops.created == [record_table]
     assert staging.prepare_calls == [
         (
             ("stage-1", dataset, 0, record_table),
@@ -275,7 +261,6 @@ def test_xtdb_extract_ingest_uses_bulk_dataframe_ops_for_non_temporal_table():
     )
 
     assert did_modify is True
-    assert backend.table_config_ops.created == [entity_info]
     assert staging.prepare_calls == [
         (("stage-1", dataset, 1, entity_info), {"valid_time": None})
     ]

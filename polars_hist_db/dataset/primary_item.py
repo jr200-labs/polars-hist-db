@@ -148,7 +148,6 @@ def scrape_xtdb_pipeline_item(
         valid_time=valid_time,
     )
 
-    backend.table_configs(connection).create(table_config)
     temporal_write_kwargs = _xtdb_temporal_write_kwargs(
         table_config,
         valid_time,

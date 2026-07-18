@@ -18,7 +18,10 @@ from polars_hist_db.config import (
     TableConfig,
     TableConfigs,
 )
-from polars_hist_db.dataset.entrypoint import _build_delta_table_config
+from polars_hist_db.dataset.entrypoint import (
+    _build_delta_table_config,
+    _create_config_tables,
+)
 from polars_hist_db.dataset.scrape import _run_pipeline_as_transaction
 from polars_hist_db.loaders.input_source import BatchFinalizer
 
@@ -282,8 +285,8 @@ def test_xtdb_live_normalizes_foreign_keys_end_to_end():
 
     with _xtdb_engine() as engine:
         backend = XtdbBackend()
+        _create_config_tables(engine, tables, backend)
         with engine.connect() as connection:
-            backend.table_configs(connection).create(tables["live_countries"])
             backend.dataframes(connection).table_insert(
                 pl.DataFrame({"country_id": [7], "name": ["Japan"]}),
                 "public",
