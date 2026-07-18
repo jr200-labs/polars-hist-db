@@ -1162,7 +1162,7 @@ class XtdbTableConfigOps:
         ]
         values_sql = ", ".join(_xtdb_sql_literal(value, "TEXT") for value in values)
         values_sql = (
-            f"{values_sql}, {_xtdb_sql_literal(table_config.is_temporal, 'BOOL')}"
+            f"{values_sql}, {_xtdb_sql_literal(table_config.is_temporal, 'BOOLEAN')}"
         )
         metadata_table = _xtdb_table_config_metadata_table(table_config.schema)
         _execute_xtdb_dml(

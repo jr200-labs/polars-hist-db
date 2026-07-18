@@ -861,7 +861,7 @@ def test_xtdb_table_creation_maps_mysql_compatibility_types(monkeypatch):
         '"autoincrement":false,"nullable":true,"unique_constraint":[]},'
         '{"table":"compat_types","name":"time_col","data_type":"TIME",'
         '"default_value":null,"autoincrement":false,"nullable":true,'
-        "\"unique_constraint\":[]}]'::TEXT, '[]'::TEXT, FALSE::BOOL)",
+        "\"unique_constraint\":[]}]'::TEXT, '[]'::TEXT, FALSE::BOOLEAN)",
     ]
     assert _xtdb_declared_columns(table_config) == [
         "_id",
@@ -1053,7 +1053,7 @@ def test_xtdb_table_creation_records_configured_columns_without_ddl(monkeypatch)
         '"nullable":true,"unique_constraint":[]},{"table":"records",'
         '"name":"amount_value","data_type":"DECIMAL(20,6)","default_value":null,'
         '"autoincrement":false,"nullable":true,"unique_constraint":[]}]'
-        "'::TEXT, '[]'::TEXT, FALSE::BOOL)",
+        "'::TEXT, '[]'::TEXT, FALSE::BOOLEAN)",
     ]
 
 
@@ -1113,7 +1113,7 @@ def test_xtdb_table_creation_records_composite_primary_key_columns(monkeypatch):
         '"nullable":false,"unique_constraint":[]},{"table":"records",'
         '"name":"destination","data_type":"VARCHAR(255)","default_value":null,'
         '"autoincrement":false,"nullable":true,"unique_constraint":[]}]'
-        "'::TEXT, '[]'::TEXT, FALSE::BOOL)",
+        "'::TEXT, '[]'::TEXT, FALSE::BOOLEAN)",
     ]
 
 
@@ -1147,7 +1147,7 @@ def test_xtdb_table_creation_records_primary_key_metadata(monkeypatch):
         '"unique_constraint":[]},{"table":"records","name":"record_id",'
         '"data_type":"VARCHAR(255)","default_value":null,"autoincrement":false,'
         '"nullable":false,"unique_constraint":[]}]\'::TEXT, \'[]\'::TEXT, '
-        "FALSE::BOOL)",
+        "FALSE::BOOLEAN)",
     ]
 
 
