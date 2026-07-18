@@ -1,8 +1,6 @@
 from os import getenv
 import polars as pl
 
-pl.enable_string_cache()
-
 
 def enable_debug_mode() -> None:
     pl.Config.set_tbl_cols(-1)

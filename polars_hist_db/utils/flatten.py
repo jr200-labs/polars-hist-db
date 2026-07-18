@@ -25,7 +25,7 @@ def flatten(df: pl.DataFrame) -> pl.DataFrame:
     ]
 
     if len(list_cols) > 0:
-        df = df.explode(list_cols)
+        df = df.explode(list_cols, empty_as_null=True)
 
     if len(struct_cols) > 0:
         df = df.with_columns(*map(prefix_field, struct_cols)).unnest(*struct_cols)

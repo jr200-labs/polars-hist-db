@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import polars as pl
 import pytest
@@ -21,6 +21,17 @@ def test_boolean_string_defaults_are_parsed():
     result = DataframeOps.fill_nulls_with_defaults(df, {"enabled": "false"})
 
     assert result["enabled"].to_list() == [False]
+
+
+def test_date_string_defaults_are_parsed_without_deprecation_warning(recwarn):
+    df = pl.DataFrame({"as_of": [None]}, schema={"as_of": pl.Date})
+
+    result = DataframeOps.fill_nulls_with_defaults(df, {"as_of": "1985-10-26"})
+
+    assert not [
+        warning for warning in recwarn if warning.category is DeprecationWarning
+    ]
+    assert result["as_of"].to_list() == [date(1985, 10, 26)]
 
 
 def test_missing_dsv_columns_are_added_to_rows():

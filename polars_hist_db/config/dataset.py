@@ -39,7 +39,7 @@ class Pipeline:
         items = (
             pl.from_records(self.items)
             .with_row_index(name="id")
-            .explode("columns")
+            .explode("columns", empty_as_null=True)
             .unnest("columns")
         )
 

@@ -105,16 +105,14 @@ class DataframeOps:
         for col in df.columns:
             if col in default_values.keys():
                 col_polars_dtype = df[col].dtype
-                if col_polars_dtype == pl.Boolean:
-                    default_value = PolarsType.convert_str_value(
-                        default_values[col], col_polars_dtype
-                    )
-                elif col_polars_dtype == pl.Time:
+                if col_polars_dtype == pl.Time:
                     default_value = pl.lit(
                         time.fromisoformat(default_values[col])
                     ).cast(col_polars_dtype)
                 else:
-                    default_value = pl.lit(default_values[col]).cast(col_polars_dtype)
+                    default_value = PolarsType.convert_str_value(
+                        default_values[col], col_polars_dtype
+                    )
 
                 df = df.with_columns(pl.col(col).fill_null(default_value))
 
