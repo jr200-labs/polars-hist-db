@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, time as datetime_time, timezone
 from decimal import Decimal
 import os
 import subprocess
@@ -170,6 +170,57 @@ def test_xtdb_live_reflection_preserves_caller_transaction_without_metadata():
         "label": "VARCHAR(255)",
         "seen_at": "TIMESTAMP WITH TIME ZONE",
     }
+
+
+def test_xtdb_live_validates_supported_physical_type_families():
+    table_name = f"live_types_{int(time.time())}"
+    table_config = TableConfig(
+        schema="public",
+        name=table_name,
+        primary_keys=["id"],
+        columns=[
+            TableColumnConfig(table_name, "id", "BIGINT", nullable=False),
+            TableColumnConfig(table_name, "enabled", "BOOL", nullable=False),
+            TableColumnConfig(table_name, "count", "INT", nullable=False),
+            TableColumnConfig(table_name, "ratio", "FLOAT", nullable=False),
+            TableColumnConfig(table_name, "measurement", "DOUBLE", nullable=False),
+            TableColumnConfig(table_name, "label", "VARCHAR(64)", nullable=False),
+            TableColumnConfig(table_name, "amount", "DECIMAL(15,3)", nullable=False),
+            TableColumnConfig(table_name, "event_date", "DATE", nullable=False),
+            TableColumnConfig(table_name, "event_time", "TIME", nullable=False),
+            TableColumnConfig(table_name, "seen_at_local", "TIMESTAMP", nullable=False),
+            TableColumnConfig(table_name, "seen_at_utc", "DATETIME", nullable=False),
+        ],
+    )
+    data = pl.DataFrame(
+        {
+            "id": [1],
+            "enabled": [True],
+            "count": pl.Series([2], dtype=pl.Int32),
+            "ratio": pl.Series([1.5], dtype=pl.Float32),
+            "measurement": [2.5],
+            "label": ["value"],
+            "amount": pl.Series([Decimal("3.125")], dtype=pl.Decimal(15, 3)),
+            "event_date": [date(2026, 7, 18)],
+            "event_time": [datetime_time(12, 34, 56)],
+            "seen_at_local": [datetime(2026, 7, 18, 12, 34, 56)],
+            "seen_at_utc": [datetime(2026, 7, 18, 12, 34, 56, tzinfo=timezone.utc)],
+        }
+    )
+
+    with _xtdb_engine() as engine:
+        backend = XtdbBackend()
+        with backend.connection_scope(engine) as connection:
+            backend.table_configs(connection).create(table_config)
+            backend.dataframes(connection).table_insert(
+                data,
+                table_config.schema,
+                table_config.name,
+                table_config=table_config,
+            )
+            assert (
+                backend.table_configs(connection).create(table_config) == table_config
+            )
 
 
 def test_xtdb_live_insert_non_public_table_with_reserved_column_name():

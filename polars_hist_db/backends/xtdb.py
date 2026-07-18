@@ -124,6 +124,91 @@ def _unwrap_xtdb_optional_type(data_type: str) -> str:
     return normalized
 
 
+_XTDB_PHYSICAL_TYPE_FAMILIES = {
+    ":NULL": "NULL",
+    ":NOTHING": "NOTHING",
+    ":BOOL": "BOOLEAN",
+    ":I8": "INTEGER",
+    ":I16": "INTEGER",
+    ":I32": "INTEGER",
+    ":I64": "BIGINT",
+    ":F32": "FLOAT",
+    ":F64": "DOUBLE PRECISION",
+    ":UTF8": "TEXT",
+    ":VARBINARY": "VARBINARY",
+    ":FIXED-SIZE-BINARY": "FIXED-SIZE-BINARY",
+    ":DECIMAL": "DECIMAL",
+    ":INSTANT": "TIMESTAMP WITH TIME ZONE",
+    ":TIMESTAMP-TZ": "TIMESTAMP WITH TIME ZONE",
+    ":TIMESTAMP-LOCAL": "TIMESTAMP",
+    ":DATE": "DATE",
+    ":TIME-LOCAL": "TIME",
+    ":DURATION": "DURATION",
+    ":INTERVAL": "INTERVAL",
+    ":TSTZ-RANGE": "TSTZ-RANGE",
+    ":KEYWORD": "KEYWORD",
+    ":OID": "OID",
+    ":REGCLASS": "REGCLASS",
+    ":REGPROC": "REGPROC",
+    ":UUID": "UUID",
+    ":URI": "URI",
+    ":TRANSIT": "TRANSIT",
+    ":LIST": "LIST",
+    ":FIXED-SIZE-LIST": "FIXED-SIZE-LIST",
+    ":SET": "SET",
+    ":MAP": "MAP",
+    ":STRUCT": "STRUCT",
+}
+
+
+def _xtdb_type_head(data_type: str) -> str:
+    match = re.match(r"^\[?\s*(:[A-Z0-9?-]+)", data_type)
+    if match is None:
+        raise ValueError(f"Unsupported XTDB column type: {data_type}")
+    return match.group(1)
+
+
+def _split_xtdb_set_members(data_type: str) -> list[str]:
+    body = data_type[2:-1].strip()
+    members: list[str] = []
+    start = 0
+    depth = 0
+    quoted = False
+    escaped = False
+    for idx, char in enumerate(body):
+        if quoted:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                quoted = False
+        elif char == '"':
+            quoted = True
+        elif char in "[{(":
+            depth += 1
+        elif char in "]})":
+            depth -= 1
+        elif char.isspace() and depth == 0:
+            if member := body[start:idx].strip():
+                members.append(member)
+            start = idx + 1
+    if member := body[start:].strip():
+        members.append(member)
+    return members
+
+
+def _xtdb_union_members(data_type: str) -> Optional[list[str]]:
+    if data_type.startswith("#{") and data_type.endswith("}"):
+        return _split_xtdb_set_members(data_type)
+    if _xtdb_type_head(data_type) not in {":UNION", ":SPARSE-UNION"}:
+        return None
+    start = data_type.find("#{")
+    if start < 0:
+        raise ValueError(f"Unsupported XTDB union type: {data_type}")
+    return _split_xtdb_set_members(data_type[start : data_type.rfind("}") + 1])
+
+
 def _xtdb_type_to_config_type(data_type: str) -> str:
     normalized = _unwrap_xtdb_optional_type(data_type)
     xtdb_types = {
@@ -136,51 +221,57 @@ def _xtdb_type_to_config_type(data_type: str) -> str:
         ":UTF8": "VARCHAR(255)",
         ":BOOL": "BOOLEAN",
         ":BOOLEAN": "BOOLEAN",
-        ":DATE": "DATE",
         ":TIMESTAMP": "TIMESTAMP",
     }
-    if normalized.startswith("[:TIMESTAMP-TZ"):
-        return "TIMESTAMP WITH TIME ZONE"
-    if normalized.startswith("[:TIMESTAMP-LOCAL"):
-        return "TIMESTAMP"
-    if normalized.startswith("[:DATE"):
-        return "DATE"
-    if normalized.startswith("[:TIME"):
-        return "TIME"
-    return xtdb_types.get(normalized, normalized)
+    if normalized in xtdb_types:
+        return xtdb_types[normalized]
+    if normalized.startswith(("DECIMAL", "NUMERIC")):
+        return normalized
+
+    family = _xtdb_physical_type_family(normalized)
+    if family == "DECIMAL":
+        precision_and_scale = re.search(r":DECIMAL\s+(\d+)\s+(-?\d+)", normalized)
+        if precision_and_scale:
+            return f"DECIMAL({precision_and_scale[1]},{precision_and_scale[2]})"
+    config_types = {
+        "TEXT": "VARCHAR(255)",
+        "BOOLEAN": "BOOLEAN",
+        "INTEGER": "INT",
+        "BIGINT": "BIGINT",
+        "FLOAT": "FLOAT",
+        "DOUBLE PRECISION": "DOUBLE",
+        "DATE": "DATE",
+        "TIME": "TIME",
+        "TIMESTAMP": "TIMESTAMP",
+        "TIMESTAMP WITH TIME ZONE": "TIMESTAMP WITH TIME ZONE",
+    }
+    if family in config_types:
+        return config_types[family]
+    raise ValueError(f"Unsupported XTDB column type: {data_type}")
 
 
 def _xtdb_physical_type_family(data_type: str) -> str:
     normalized = _unwrap_xtdb_optional_type(data_type)
-    if normalized.startswith("[:UNION"):
-        members = set(
-            re.findall(
-                r"\[:(?:DECIMAL|TIMESTAMP-TZ|TIMESTAMP-LOCAL|DATE|TIME)[^\]]*\]"
-                r"|:(?:I8|I16|I32|I64|F32|F64|UTF8|BOOL|BOOLEAN)\b",
-                normalized,
-            )
-        )
-        if not members and ":NULL" in normalized:
+    if (members := _xtdb_union_members(normalized)) is not None:
+        families = {
+            family
+            for member in members
+            if (family := _xtdb_physical_type_family(member)) != "NULL"
+        }
+        if not families:
             return "NULL"
-        if len(members) != 1:
+        if len(families) != 1:
             return "UNION"
-        normalized = members.pop()
-
-    if normalized == ":NULL":
-        return "NULL"
-    if normalized.startswith("[:DECIMAL") or normalized.startswith(
-        ("DECIMAL", "NUMERIC")
-    ):
+        return families.pop()
+    if normalized.startswith(("DECIMAL", "NUMERIC")):
         return "DECIMAL"
-    if normalized.startswith("[:TIMESTAMP-TZ"):
-        return "TIMESTAMP WITH TIME ZONE"
-    if normalized.startswith("[:TIMESTAMP-LOCAL"):
-        return "TIMESTAMP"
-    if normalized.startswith("[:DATE"):
-        return "DATE"
-    if normalized.startswith("[:TIME"):
-        return "TIME"
-    return _xtdb_cast_type(_xtdb_type_to_config_type(normalized))
+    if normalized[:1].isalpha():
+        return _xtdb_configured_type_family(normalized)
+    head = _xtdb_type_head(normalized)
+    try:
+        return _XTDB_PHYSICAL_TYPE_FAMILIES[head]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported XTDB column type: {data_type}") from exc
 
 
 def _xtdb_configured_type_family(data_type: str) -> str:
@@ -196,37 +287,49 @@ def _validate_xtdb_physical_types(
 ) -> None:
     physical_columns = _xtdb_physical_column_map(table_config)
     expected = {
-        physical_columns[column.name]: _xtdb_configured_type_family(column.data_type)
+        physical_columns[column.name]: (
+            _xtdb_configured_type_family(column.data_type),
+            column.nullable,
+        )
         for column in table_config.columns
         if column.name not in _XTDB_SYSTEM_COLUMNS
     }
     document_id_columns = _xtdb_document_id_columns(table_config)
     if document_id_columns != ["_id"]:
         expected["_id"] = (
-            "TEXT"
-            if len(document_id_columns) > 1
-            else _xtdb_configured_type_family(
-                next(
-                    column.data_type
-                    for column in table_config.columns
-                    if column.name == document_id_columns[0]
+            (
+                "TEXT"
+                if len(document_id_columns) > 1
+                else _xtdb_configured_type_family(
+                    next(
+                        column.data_type
+                        for column in table_config.columns
+                        if column.name == document_id_columns[0]
+                    )
                 )
-            )
+            ),
+            False,
         )
 
-    for row in metadata.iter_rows(named=True):
-        column = str(row["column_name"])
-        if column in _XTDB_SYSTEM_COLUMNS:
-            continue
-        expected_type = expected.get(column)
-        actual_type = _xtdb_physical_type_family(str(row["data_type"]))
-        if expected_type is not None and actual_type in {expected_type, "NULL"}:
+    actual = {
+        str(row["column_name"]): (
+            _xtdb_physical_type_family(str(row["data_type"])),
+            str(row["data_type"]),
+        )
+        for row in metadata.iter_rows(named=True)
+        if str(row["column_name"]) not in _XTDB_SYSTEM_COLUMNS
+    }
+    for column, (expected_type, nullable) in expected.items():
+        actual_type, physical_type = actual.get(column, ("MISSING", "MISSING"))
+        if actual_type == expected_type or (
+            nullable and actual_type in {"NULL", "MISSING"}
+        ):
             continue
 
         record_database_type_contract(
             backend="xtdb",
             operation="schema_reflection",
-            expected_type=expected_type or "DECLARED_COLUMN",
+            expected_type=expected_type,
             actual_type=actual_type,
             forced=False,
             outcome="rejected",
@@ -234,7 +337,7 @@ def _validate_xtdb_physical_types(
         message = (
             f"XTDB physical schema does not satisfy the configured type contract "
             f"for {table_config.schema}.{table_config.name}.{column}: expected "
-            f"{expected_type or 'a declared column'}, received {row['data_type']}"
+            f"{expected_type}, received {physical_type}"
         )
         LOGGER.error(message)
         raise TypeContractError(message)

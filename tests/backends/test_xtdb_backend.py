@@ -16,6 +16,8 @@ from polars_hist_db.backends.xtdb import (
     _execute_xtdb_transaction,
     _xtdb_cast_type,
     _xtdb_declared_columns,
+    _xtdb_physical_type_family,
+    _xtdb_type_to_config_type,
     _validate_xtdb_physical_types,
 )
 from polars_hist_db.config import (
@@ -1240,9 +1242,9 @@ def test_xtdb_table_reflection_prefers_configured_column_metadata(monkeypatch):
         side_effect=[
             pl.DataFrame(
                 {
-                    "column_name": ["_id", "decimal_col", "real_col"],
-                    "data_type": [":i32", "[:DECIMAL 38 2]", ":f32"],
-                    "is_nullable": ["NO", "YES", "YES"],
+                    "column_name": ["_id", "id", "decimal_col", "real_col"],
+                    "data_type": [":i32", ":i32", "[:DECIMAL 38 2]", ":f32"],
+                    "is_nullable": ["NO", "NO", "YES", "YES"],
                 }
             ),
             pl.DataFrame({"table_name": ["__polars_hist_db_xtdb_table_configs"]}),
@@ -1290,9 +1292,9 @@ def test_xtdb_table_reflection_restores_foreign_key_metadata(monkeypatch):
         side_effect=[
             pl.DataFrame(
                 {
-                    "column_name": ["_id", "exchange_id"],
-                    "data_type": [":i32", ":i32"],
-                    "is_nullable": ["NO", "NO"],
+                    "column_name": ["_id", "id", "exchange_id"],
+                    "data_type": [":i32", ":i32", ":i32"],
+                    "is_nullable": ["NO", "NO", "NO"],
                 }
             ),
             pl.DataFrame({"table_name": ["__polars_hist_db_xtdb_table_configs"]}),
@@ -1422,6 +1424,117 @@ def test_xtdb_physical_schema_accepts_nullable_type_shorthand():
     )
 
     _validate_xtdb_physical_types(metadata, table_config)
+
+
+def test_xtdb_physical_schema_validates_configured_columns_not_unrelated_columns():
+    table_config = TableConfig(
+        schema="test",
+        name="records",
+        primary_keys=["id"],
+        columns=[
+            TableColumnConfig("records", "id", "BIGINT", nullable=False),
+            TableColumnConfig("records", "optional_note", "TEXT", nullable=True),
+        ],
+    )
+    metadata = pl.DataFrame(
+        {
+            "column_name": ["_id", "id", "legacy_event_time"],
+            "data_type": [":i64", ":i64", "[:? :instant]"],
+        }
+    )
+
+    _validate_xtdb_physical_types(metadata, table_config)
+
+
+def test_xtdb_physical_schema_rejects_missing_configured_column():
+    table_config = TableConfig(
+        schema="test",
+        name="records",
+        primary_keys=["id"],
+        columns=[TableColumnConfig("records", "id", "BIGINT", nullable=False)],
+    )
+
+    with pytest.raises(TypeError, match="expected BIGINT, received MISSING"):
+        _validate_xtdb_physical_types(
+            pl.DataFrame({"column_name": ["other"], "data_type": [":utf8"]}),
+            table_config,
+        )
+
+
+@pytest.mark.parametrize(
+    ("data_type", "family"),
+    [
+        (":null", "NULL"),
+        (":nothing", "NOTHING"),
+        (":bool", "BOOLEAN"),
+        (":i8", "INTEGER"),
+        (":i16", "INTEGER"),
+        (":i32", "INTEGER"),
+        (":i64", "BIGINT"),
+        (":f32", "FLOAT"),
+        (":f64", "DOUBLE PRECISION"),
+        (":utf8", "TEXT"),
+        (":varbinary", "VARBINARY"),
+        ("[:fixed-size-binary 16]", "FIXED-SIZE-BINARY"),
+        ("[:decimal 15 3 128]", "DECIMAL"),
+        (":instant", "TIMESTAMP WITH TIME ZONE"),
+        ('[:timestamp-tz :micro "GMT"]', "TIMESTAMP WITH TIME ZONE"),
+        ("[:timestamp-local :nano]", "TIMESTAMP"),
+        ("[:date :day]", "DATE"),
+        ("[:time-local :micro]", "TIME"),
+        ("[:duration :nano]", "DURATION"),
+        ("[:interval :month-day-nano]", "INTERVAL"),
+        (":tstz-range", "TSTZ-RANGE"),
+        (":keyword", "KEYWORD"),
+        (":oid", "OID"),
+        (":regclass", "REGCLASS"),
+        (":regproc", "REGPROC"),
+        (":uuid", "UUID"),
+        (":uri", "URI"),
+        (":transit", "TRANSIT"),
+        ("[:list :utf8]", "LIST"),
+        ("[:fixed-size-list 3 :utf8]", "FIXED-SIZE-LIST"),
+        ("[:set :utf8]", "SET"),
+        ("[:map {:sorted? false} [:struct {key :utf8 value :i64}]]", "MAP"),
+        ("[:struct {name :utf8}]", "STRUCT"),
+    ],
+)
+def test_xtdb_physical_type_family_covers_render_type_grammar(data_type, family):
+    assert _xtdb_physical_type_family(data_type) == family
+
+
+@pytest.mark.parametrize(
+    ("data_type", "family"),
+    [
+        ("[:? :utf8]", "TEXT"),
+        ("[:? :date :day]", "DATE"),
+        ("[:? :decimal 15 3 128]", "DECIMAL"),
+        ('[:? :timestamp-tz :micro "UTC"]', "TIMESTAMP WITH TIME ZONE"),
+        ("#{:null :i8 :i32}", "INTEGER"),
+        ('#{:null [:timestamp-tz :micro "UTC"]}', "TIMESTAMP WITH TIME ZONE"),
+        ("#{:null [:list :utf8]}", "LIST"),
+        ("#{:i64 :utf8}", "UNION"),
+    ],
+)
+def test_xtdb_physical_type_family_handles_nullable_and_polymorphic_types(
+    data_type, family
+):
+    assert _xtdb_physical_type_family(data_type) == family
+
+
+@pytest.mark.parametrize(
+    ("data_type", "config_type"),
+    [
+        ("[:? :date :day]", "DATE"),
+        ("[:? :decimal 15 3 128]", "DECIMAL(15,3)"),
+        (":instant", "TIMESTAMP WITH TIME ZONE"),
+        ('[:? :timestamp-tz :micro "GMT"]', "TIMESTAMP WITH TIME ZONE"),
+        ("[:timestamp-local :micro]", "TIMESTAMP"),
+        ("[:time-local :micro]", "TIME"),
+    ],
+)
+def test_xtdb_reflection_maps_parameterized_scalar_types(data_type, config_type):
+    assert _xtdb_type_to_config_type(data_type) == config_type
 
 
 def test_xtdb_declared_columns_quotes_non_identifier_column_names():
