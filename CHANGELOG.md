@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.12.57](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.56...v0.12.57) (2026-07-18)
+
+
+### Performance Improvements
+
+* avoid copying DSV time partitions ([#233](https://github.com/jr200-labs/polars-hist-db/issues/233)) ([2f8c39c](https://github.com/jr200-labs/polars-hist-db/commit/2f8c39c3bb8f729136d0f5f4a9370f9880e47e4e))
+* batch XTDB numeric key collision checks ([#232](https://github.com/jr200-labs/polars-hist-db/issues/232)) ([6491f8a](https://github.com/jr200-labs/polars-hist-db/commit/6491f8a4749d6260156ca69a58a1d856b83cbf07))
+* prepare XTDB tables once per run ([#231](https://github.com/jr200-labs/polars-hist-db/issues/231)) ([c68a7d6](https://github.com/jr200-labs/polars-hist-db/commit/c68a7d69b3dc13d21808d8c418bb786c963588b1))
+* remove duplicate XTDB parent join ([#229](https://github.com/jr200-labs/polars-hist-db/issues/229)) ([1cd7db6](https://github.com/jr200-labs/polars-hist-db/commit/1cd7db60fddc99ea221d2fffcf70170aa43ba381))
+* vectorize XTDB foreign key payloads ([#234](https://github.com/jr200-labs/polars-hist-db/issues/234)) ([31556f4](https://github.com/jr200-labs/polars-hist-db/commit/31556f4e4da57e3620a9f314401db5ec8f9f93b2))
+
 ## [0.12.56](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.55...v0.12.56) (2026-07-18)
 
 
