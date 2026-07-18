@@ -129,7 +129,7 @@ class InputSource(ABC, Generic[TConfig]):
                     .dt.offset_by(bucket_offset)
                     .cast(pl.dtype_of(time_col))
                 )
-                .sort(time_col)
+                .sort(["__bucket", time_col])
                 .unique(
                     [*header_keys, "__bucket"],
                     keep=unique_strategy,
@@ -142,11 +142,16 @@ class InputSource(ABC, Generic[TConfig]):
                     prepared_df, time_col, "__bucket", bucket_offset
                 )
 
-            partitions = prepared_df.partition_by(
-                "__bucket", include_key=False, as_dict=True, maintain_order=True
+            partition_sizes = (
+                prepared_df.group_by("__bucket", maintain_order=True).len().rows()
             )
-
-            result = [(k[0], v) for k, v in partitions.items()]
+            result = []
+            offset = 0
+            for bucket, size in partition_sizes:
+                result.append(
+                    (bucket, prepared_df.slice(offset, size).drop("__bucket"))
+                )
+                offset += size
 
         else:
             result = [(payload_time, df)]
