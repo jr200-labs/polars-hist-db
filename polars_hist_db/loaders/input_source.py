@@ -129,7 +129,7 @@ class InputSource(ABC, Generic[TConfig]):
                     .dt.offset_by(bucket_offset)
                     .cast(pl.dtype_of(time_col))
                 )
-                .sort(["__bucket", time_col])
+                .sort(time_col)
                 .unique(
                     [*header_keys, "__bucket"],
                     keep=unique_strategy,
