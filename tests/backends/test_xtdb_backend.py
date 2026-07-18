@@ -191,14 +191,7 @@ def test_xtdb_temporal_upsert_dropout_deletes_missing_current_keys():
     connection.connection.driver_connection = driver_connection
     connection.in_transaction.return_value = False
     ops = XtdbDataframeOps(connection)
-    ops.from_raw_sql = Mock(
-        return_value=pl.DataFrame(
-            {
-                "_id": [1, 2],
-                "destination": ["Alpha", "Beta"],
-            }
-        )
-    )
+    ops.from_raw_sql = Mock(return_value=pl.DataFrame({"missing_count": [1]}))
     table_config = TableConfig(
         schema="test",
         name="records",
@@ -219,11 +212,15 @@ def test_xtdb_temporal_upsert_dropout_deletes_missing_current_keys():
     )
 
     assert result == 2
+    assert ops.from_raw_sql.call_args.args[0] == (
+        "SELECT COUNT(*) AS missing_count FROM test.records "
+        "WHERE _id NOT IN (1::BIGINT)"
+    )
     executed_sql = [call.args[0] for call in driver_connection.execute.call_args_list]
     assert executed_sql[1] == (
         "DELETE FROM test.records FOR PORTION OF VALID_TIME FROM "
         "TIMESTAMP WITH TIME ZONE '1970-01-01T00:00:00+00:00' TO NULL "
-        "WHERE _id IN (2::BIGINT)"
+        "WHERE _id NOT IN (1::BIGINT)"
     )
     insert_call = driver_connection.cursor.return_value.executemany.call_args
     assert insert_call.args[0] == (
@@ -241,7 +238,7 @@ def test_xtdb_temporal_upsert_dropout_closes_missing_keys_at_valid_time():
     connection.connection.driver_connection = driver_connection
     connection.in_transaction.return_value = False
     ops = XtdbDataframeOps(connection)
-    ops.from_raw_sql = Mock(return_value=pl.DataFrame({"_id": [1, 2]}))
+    ops.from_raw_sql = Mock(return_value=pl.DataFrame({"missing_count": [1]}))
     table_config = TableConfig(
         schema="test",
         name="records",
@@ -272,7 +269,7 @@ def test_xtdb_temporal_upsert_dropout_closes_missing_keys_at_valid_time():
     assert executed_sql[1] == (
         "DELETE FROM test.records FOR PORTION OF VALID_TIME FROM "
         "TIMESTAMP WITH TIME ZONE '2030-01-02T00:00:00+00:00' TO NULL "
-        "WHERE _id IN (2::BIGINT)"
+        "WHERE _id NOT IN (1::BIGINT)"
     )
 
 
@@ -283,7 +280,7 @@ def test_xtdb_temporal_upsert_dropout_uses_explicit_close_time_for_empty_batches
     connection.connection.driver_connection = driver_connection
     connection.in_transaction.return_value = False
     ops = XtdbDataframeOps(connection)
-    ops.from_raw_sql = Mock(return_value=pl.DataFrame({"_id": [1, 2]}))
+    ops.from_raw_sql = Mock(return_value=pl.DataFrame({"missing_count": [2]}))
     table_config = TableConfig(
         schema="test",
         name="records",
@@ -309,7 +306,7 @@ def test_xtdb_temporal_upsert_dropout_uses_explicit_close_time_for_empty_batches
     assert executed_sql[1] == (
         "DELETE FROM test.records FOR PORTION OF VALID_TIME FROM "
         "TIMESTAMP WITH TIME ZONE '2030-01-03T00:00:00+00:00' TO NULL "
-        "WHERE _id IN (1::BIGINT, 2::BIGINT)"
+        "WHERE TRUE"
     )
 
 
