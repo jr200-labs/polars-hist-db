@@ -2,11 +2,12 @@ from datetime import datetime, timezone
 
 import polars as pl
 import pytest
-from sqlalchemy import Column, Integer, MetaData, String, Table
+from sqlalchemy import Column, DateTime, Integer, MetaData, String, Table
 
 from polars_hist_db.config import DeltaConfig
 from polars_hist_db.config.parser_config import IngestionColumnConfig
 from polars_hist_db.core.dataframe import DataframeOps
+from polars_hist_db.core.audit import AuditOps
 from polars_hist_db.core.delta_table import (
     DeltaTableOps,
     _prevalidate_upsert_from_table,
@@ -87,3 +88,36 @@ def test_temporal_upsert_resets_session_timestamp_after_error(monkeypatch):
         ops.upsert("items", update_time)
 
     assert timestamps == [update_time, None]
+
+
+def test_latest_audit_entry_keeps_utc_schema_when_empty(monkeypatch):
+    metadata = MetaData()
+    audit_table = Table(
+        "__audit_log",
+        metadata,
+        Column("audit_id", Integer),
+        Column("table_name", String),
+        Column("data_source_type", String),
+        Column("data_source", String),
+        Column("data_source_ts", DateTime),
+        Column("upload_ts", DateTime),
+    )
+    empty = pl.DataFrame(
+        schema={
+            "audit_id": pl.Int32,
+            "table_name": pl.String,
+            "data_source_type": pl.String,
+            "data_source": pl.String,
+            "data_source_ts": pl.Datetime("us"),
+            "upload_ts": pl.Datetime("us"),
+        }
+    )
+    monkeypatch.setattr(AuditOps, "create", lambda self, connection: audit_table)
+    monkeypatch.setattr(
+        DataframeOps, "from_selectable", lambda self, query: empty.clone()
+    )
+
+    result = AuditOps("sample").get_latest_entry(object())
+
+    assert result.schema["data_source_ts"] == pl.Datetime("us", "UTC")
+    assert result.schema["upload_ts"] == pl.Datetime("us", "UTC")

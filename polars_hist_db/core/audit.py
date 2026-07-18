@@ -508,7 +508,10 @@ class AuditOps:
                     "upload_ts": pl.Datetime("us", "UTC"),
                 },
             )
-            return latest_log
+            return latest_log.with_columns(
+                pl.col("data_source_ts").cast(pl.Datetime("us", "UTC")),
+                pl.col("upload_ts").cast(pl.Datetime("us", "UTC")),
+            )
 
         tbl = self.create(connection)
         assert isinstance(tbl, Table)
@@ -540,6 +543,13 @@ class AuditOps:
             *(ranked.c[column.name] for column in tbl.columns)
         ).where(ranked.c["_rn"] == 1)
 
-        latest_log = DataframeOps(connection).from_selectable(latest_log_sql)
+        latest_log = (
+            DataframeOps(connection)
+            .from_selectable(latest_log_sql)
+            .with_columns(
+                pl.col("data_source_ts").cast(pl.Datetime("us", "UTC")),
+                pl.col("upload_ts").cast(pl.Datetime("us", "UTC")),
+            )
+        )
 
         return latest_log
