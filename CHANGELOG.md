@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.54](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.53...v0.12.54) (2026-07-18)
+
+
+### Bug Fixes
+
+* **deps:** update all non-major dependencies ([#221](https://github.com/jr200-labs/polars-hist-db/issues/221)) ([287ece4](https://github.com/jr200-labs/polars-hist-db/commit/287ece4fd6b056f2c794e61375d3d934e77bcc73))
+* harden ingestion transaction semantics ([#222](https://github.com/jr200-labs/polars-hist-db/issues/222)) ([140bd8d](https://github.com/jr200-labs/polars-hist-db/commit/140bd8d97677d3cdcf68b100cb759745ed31a632))
+
 ## [0.12.53](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.52...v0.12.53) (2026-07-17)
 
 
