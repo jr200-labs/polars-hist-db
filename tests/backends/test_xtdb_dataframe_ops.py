@@ -398,10 +398,10 @@ def test_xtdb_dataframe_ops_chunks_table_query(monkeypatch):
 
     assert result.to_dict(as_series=False) == {"id": [1, 2, 3, 4, 5]}
     assert ops.from_raw_sql.call_count == 3
-    assert all("VALUES" in call.args[0] for call in ops.from_raw_sql.call_args_list)
     assert all(
-        "UNION ALL" not in call.args[0] for call in ops.from_raw_sql.call_args_list
+        "UNION ALL" in call.args[0] for call in ops.from_raw_sql.call_args_list[:2]
     )
+    assert "UNION ALL" not in ops.from_raw_sql.call_args_list[2].args[0]
     assert ops.from_raw_sql.call_args_list[0].args[2] == {
         "parameters": {"q_0_0": 1, "q_1_0": 2}
     }

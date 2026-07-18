@@ -19,6 +19,13 @@ def _staging_with(stage_df, *, adbc_connection=None):
     return staging
 
 
+def _empty_numeric_key_occupancy():
+    return pl.DataFrame(
+        {"id": [None], "__xtdb_minimum_id": [None]},
+        schema={"id": pl.Int64, "__xtdb_minimum_id": pl.Int64},
+    )
+
+
 def test_xtdb_staging_partition_stays_in_memory_without_database_io():
     connection = Mock()
     delta_table_config = TableConfig(
@@ -755,7 +762,7 @@ def test_xtdb_staging_deduces_explicit_numeric_foreign_keys(monkeypatch):
     )
     monkeypatch.setattr(
         "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_raw_sql",
-        Mock(return_value=stage_df),
+        Mock(return_value=_empty_numeric_key_occupancy()),
     )
     monkeypatch.setattr(
         "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_query",
@@ -865,7 +872,7 @@ def test_xtdb_staging_generates_numeric_foreign_key_when_source_key_is_missing(
     )
     monkeypatch.setattr(
         "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_raw_sql",
-        Mock(return_value=stage_df),
+        Mock(return_value=_empty_numeric_key_occupancy()),
     )
     monkeypatch.setattr(
         "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_query",
@@ -977,7 +984,7 @@ def test_xtdb_staging_reuses_deduced_foreign_key_for_later_primary_item(
     )
     monkeypatch.setattr(
         "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_raw_sql",
-        Mock(return_value=stage_df),
+        Mock(return_value=_empty_numeric_key_occupancy()),
     )
     monkeypatch.setattr(
         "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_query",
@@ -1098,7 +1105,7 @@ def test_xtdb_staging_does_not_insert_same_generated_parent_twice(
     )
     monkeypatch.setattr(
         "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_raw_sql",
-        Mock(return_value=stage_df),
+        Mock(return_value=_empty_numeric_key_occupancy()),
     )
     monkeypatch.setattr(
         "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_query",
@@ -1349,10 +1356,15 @@ def test_xtdb_staging_resolves_generated_numeric_key_collisions(monkeypatch):
         primary_keys=["id"],
         columns=[TableColumnConfig("parents", "id", "INT", nullable=False)],
     )
-    table_query = Mock(return_value=pl.DataFrame({"id": []}, schema={"id": pl.Int64}))
+    from_raw_sql = Mock(
+        return_value=pl.DataFrame(
+            {"id": [None], "__xtdb_minimum_id": [None]},
+            schema={"id": pl.Int64, "__xtdb_minimum_id": pl.Int64},
+        )
+    )
     monkeypatch.setattr(
-        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_query",
-        table_query,
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_raw_sql",
+        from_raw_sql,
     )
     rows = pl.DataFrame(
         {
@@ -1368,7 +1380,7 @@ def test_xtdb_staging_resolves_generated_numeric_key_collisions(monkeypatch):
     )
 
     assert result.get_column("id").to_list() == [-42, -43]
-    assert table_query.call_count == 2
+    assert from_raw_sql.call_count == 1
 
 
 def test_xtdb_staging_avoids_existing_generated_numeric_key(monkeypatch):
@@ -1378,15 +1390,12 @@ def test_xtdb_staging_avoids_existing_generated_numeric_key(monkeypatch):
         primary_keys=["id"],
         columns=[TableColumnConfig("parents", "id", "INT", nullable=False)],
     )
-    table_query = Mock(
-        side_effect=[
-            pl.DataFrame({"id": [-42]}),
-            pl.DataFrame({"id": []}, schema={"id": pl.Int64}),
-        ]
+    from_raw_sql = Mock(
+        return_value=pl.DataFrame({"id": [-42], "__xtdb_minimum_id": [-42]})
     )
     monkeypatch.setattr(
-        "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_query",
-        table_query,
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_raw_sql",
+        from_raw_sql,
     )
     rows = pl.DataFrame({"id": [-42], "__xtdb_generated_id": [True]})
 
@@ -1397,3 +1406,30 @@ def test_xtdb_staging_avoids_existing_generated_numeric_key(monkeypatch):
     )
 
     assert result.get_column("id").to_list() == [-43]
+    assert from_raw_sql.call_count == 1
+
+
+def test_xtdb_staging_avoids_an_existing_numeric_key_chain(monkeypatch):
+    table_config = TableConfig(
+        schema="ref",
+        name="parents",
+        primary_keys=["id"],
+        columns=[TableColumnConfig("parents", "id", "INT", nullable=False)],
+    )
+    from_raw_sql = Mock(
+        return_value=pl.DataFrame({"id": [-42], "__xtdb_minimum_id": [-43]})
+    )
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_raw_sql",
+        from_raw_sql,
+    )
+    rows = pl.DataFrame({"id": [-42], "__xtdb_generated_id": [True]})
+
+    result = XtdbStagingOps(object())._resolve_numeric_foreign_key_collisions(
+        rows,
+        table_config,
+        ["id"],
+    )
+
+    assert result.get_column("id").to_list() == [-44]
+    assert from_raw_sql.call_count == 1

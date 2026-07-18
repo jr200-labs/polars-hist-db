@@ -1036,16 +1036,18 @@ def _xtdb_values_cte(name: str, df: pl.DataFrame) -> tuple[str, dict[str, Any]]:
     columns = [_xtdb_column_identifier(column) for column in df.columns]
     casts = [_xtdb_cast_type_from_polars(dtype) for dtype in df.schema.values()]
     parameters = {}
-    value_rows = []
+    row_queries = []
     for row_index, row in enumerate(df.rows()):
-        placeholders = []
+        projections = []
         for column_index, (value, cast_type) in enumerate(zip(row, casts, strict=True)):
             parameter = f"q_{row_index}_{column_index}"
             parameters[parameter] = _xtdb_parameter_value(value, cast_type)
-            placeholders.append(f"CAST(:{parameter} AS {cast_type})")
-        value_rows.append(f"({', '.join(placeholders)})")
+            projections.append(
+                f"CAST(:{parameter} AS {cast_type}) AS {columns[column_index]}"
+            )
+        row_queries.append(f"SELECT {', '.join(projections)}")
     return (
-        f"{cte_name} ({', '.join(columns)}) AS (VALUES {', '.join(value_rows)})",
+        f"{cte_name} AS ({' UNION ALL '.join(row_queries)})",
         parameters,
     )
 
@@ -1401,7 +1403,7 @@ def _xtdb_fk_needs_generated_values(stage_df: pl.DataFrame, source_column: str) 
     )
 
 
-def _cast_null_parent_lookup_columns(
+def _cast_parent_lookup_columns(
     parent_lookup: pl.DataFrame,
     generated: pl.DataFrame,
     lookup_columns: Iterable[str],
@@ -1411,7 +1413,7 @@ def _cast_null_parent_lookup_columns(
         for column in lookup_columns
         if column in parent_lookup.columns
         and column in generated.columns
-        and parent_lookup.schema[column] == pl.Null
+        and parent_lookup.schema[column] != generated.schema[column]
     ]
     if not casts:
         return parent_lookup
@@ -2099,7 +2101,10 @@ class XtdbStagingOps:
                 parent_columns,
                 row,
             )
-            if parent_key in self._projected_parent_row_cache:
+            if (
+                parent_key in self._projected_parent_row_cache
+                or parent_key in new_parent_keys
+            ):
                 continue
             rows_to_return.append(row)
             new_parent_keys.add(parent_key)
@@ -2123,38 +2128,63 @@ class XtdbStagingOps:
             ):
                 continue
 
-            occupied: set[int] = set()
-            while True:
-                existing = self._dataframes().table_query(
-                    table_config.schema,
-                    table_config.name,
-                    resolved.select(target).unique(maintain_order=True),
-                    [target],
-                    table_config=table_config,
-                )
-                occupied.update(existing.get_column(target).drop_nulls().to_list())
+            candidates = resolved.select(target).unique(maintain_order=True)
+            values_cte, parameters = _xtdb_values_cte("candidate_keys", candidates)
+            target_column = _xtdb_column_identifier(target)
+            physical_target = _xtdb_table_query_target_column(target, table_config)
+            table_name = _qualified_table_name(table_config.schema, table_config.name)
+            minimum_column = "__xtdb_minimum_id"
+            existing = self._dataframes().from_raw_sql(
+                f"WITH {values_cte}, "
+                "occupied AS ("
+                f"SELECT t.{physical_target} AS {target_column} "
+                f"FROM {table_name} AS t JOIN candidate_keys AS q "
+                f"ON t.{physical_target} = q.{target_column}"
+                "), bounds AS ("
+                f"SELECT MIN(t.{physical_target}) AS {minimum_column} "
+                f"FROM {table_name} AS t"
+                ") "
+                f"SELECT occupied.{target_column}, bounds.{minimum_column} "
+                "FROM bounds LEFT JOIN occupied ON TRUE",
+                {
+                    target: resolved.schema[target],
+                    minimum_column: resolved.schema[target],
+                },
+                {"parameters": parameters},
+            )
+            occupied = set(existing.get_column(target).drop_nulls().to_list())
+            minimum_values = existing.get_column(minimum_column).drop_nulls()
+            database_minimum = (
+                cast(int, minimum_values.min())
+                if not minimum_values.is_empty()
+                else None
+            )
 
-                used: set[int] = set()
-                values: list[int] = []
-                changed = False
-                minimum = _xtdb_integer_min(table_config, target)
-                for row in resolved.select([target, marker]).iter_rows(named=True):
-                    value = int(row[target])
-                    generated = bool(row[marker])
-                    if not generated and (value in occupied or value in used):
+            used: set[int] = set()
+            values: list[int] = []
+            minimum = _xtdb_integer_min(table_config, target)
+            for row in resolved.select([target, marker]).iter_rows(named=True):
+                value = int(row[target])
+                generated = bool(row[marker])
+                if value in occupied or value in used:
+                    if not generated:
                         raise ValueError(
                             f"Foreign key {table_config.name}.{target} is already in use"
                         )
-                    while value in occupied or value in used:
-                        value = value - 1 if value > minimum else -1
-                        changed = True
-                    used.add(value)
-                    values.append(value)
+                    lower_values = [*used]
+                    if database_minimum is not None:
+                        lower_values.append(database_minimum)
+                    floor = min(lower_values)
+                    if floor <= minimum:
+                        raise ValueError(
+                            f"No generated foreign keys remain for "
+                            f"{table_config.name}.{target}"
+                        )
+                    value = floor - 1
+                used.add(value)
+                values.append(value)
 
-                if changed:
-                    resolved = resolved.with_columns(pl.Series(target, values))
-                    continue
-                break
+            resolved = resolved.with_columns(pl.Series(target, values))
 
         return resolved
 
@@ -2270,7 +2300,7 @@ class XtdbStagingOps:
             [*fk_targets, *value_targets],
             table_config=table_config,
         )
-        parent_lookup = _cast_null_parent_lookup_columns(
+        parent_lookup = _cast_parent_lookup_columns(
             parent_lookup,
             generated,
             [*fk_targets, *value_targets],

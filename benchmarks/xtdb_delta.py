@@ -31,7 +31,15 @@ from polars_hist_db.config import DatasetConfig, TableColumnConfig, TableConfig
 class CurrentRows:
     frame: pl.DataFrame
 
-    def from_raw_sql(self, _sql: str) -> pl.DataFrame:
+    def from_raw_sql(self, sql: str, *_args: Any) -> pl.DataFrame:
+        if "__xtdb_minimum_id" in sql:
+            return pl.DataFrame(
+                {
+                    "id": [None],
+                    "__xtdb_minimum_id": [self.frame["id"].min()],
+                },
+                schema={"id": pl.Int64, "__xtdb_minimum_id": pl.Int64},
+            )
         return self.frame
 
     def from_table(self, _schema: str, _table: str) -> pl.DataFrame:
