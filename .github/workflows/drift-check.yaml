@@ -18,6 +18,8 @@ permissions:
 jobs:
   drift-check:
     runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    env:
+      SYNC_SHARED_BASE_URL: file:///${{ github.workspace }}
     steps:
       - uses: actions/checkout@v7
       - run: ./scripts/sync-shared-drift-check
