@@ -408,8 +408,7 @@ def read_parity_tables(
         ]
 
     tables: dict[str, pl.DataFrame] = {}
-    connection_context = engine.connect if backend.name == "xtdb" else engine.begin
-    with connection_context() as connection:
+    with backend.connection_scope(engine) as connection:
         dataframe_ops = backend.dataframes(connection)
         for table_config in table_configs:
             read_sql = _table_read_sql(
@@ -430,15 +429,12 @@ def read_parity_tables(
 
 def _create_config_tables(config: PolarsHistDbConfig, engine: Engine) -> None:
     backend = backend_from_config(config.db_config)
-    connection_context = engine.connect if backend.name == "xtdb" else engine.begin
-    with connection_context() as connection:
+    with backend.connection_scope(engine) as connection:
         if backend.name == "mariadb":
             for schema in config.tables.schemas():
                 DbOps(connection).db_create(schema)
         backend.table_configs(connection).drop_all(config.tables)
         backend.table_configs(connection).create_all(config.tables)
-        if backend.name == "xtdb":
-            connection.commit()
 
 
 def _should_prepare_backend_tables(backend_name: str) -> bool:

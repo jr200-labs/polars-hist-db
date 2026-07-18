@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from contextlib import contextmanager
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from functools import partial
@@ -8,7 +9,16 @@ import logging
 import math
 import re
 from urllib.parse import quote
-from typing import TYPE_CHECKING, Any, Iterable, Literal, Mapping, Optional, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Iterable,
+    Iterator,
+    Literal,
+    Mapping,
+    Optional,
+    cast,
+)
 
 import polars as pl
 import pyarrow as pa
@@ -2436,6 +2446,13 @@ class XtdbBackend:
             engine.dialect, "_backslash_escapes", False
         )
         return engine
+
+    @contextmanager
+    def connection_scope(self, engine: Engine) -> Iterator[Any]:
+        """Open a scope for XTDB stores, which manage their own transactions."""
+        with engine.connect() as connection:
+            yield connection
+            connection.commit()
 
     def adbc_uri(self, config: DbEngineConfig) -> str:
         adbc_port = config.adbc_port or 9832

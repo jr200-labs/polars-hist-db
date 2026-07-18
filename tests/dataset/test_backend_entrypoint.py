@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from polars_hist_db.backends import DbEngineConfig
+from polars_hist_db.backends import DbEngineConfig, get_backend
 from polars_hist_db.dataset import run_datasets
 from polars_hist_db.dataset.entrypoint import _create_config_tables
 
@@ -94,6 +94,9 @@ class _FakeBackendWithTableConfigOps:
     def table_configs(self, connection):
         self.connection = connection
         return self.ops
+
+    def connection_scope(self, engine):
+        return get_backend(self.name).connection_scope(engine)
 
 
 class _FailingInputSource:

@@ -168,13 +168,7 @@ async def _run_dataset_workers(
 
 def _create_config_tables(engine: Engine, tables: TableConfigs, backend):
     """Create permanent config tables (idempotent)."""
-    if getattr(backend, "name", None) == "xtdb":
-        with engine.connect() as connection:
-            backend.table_configs(connection).create_all(tables)
-            connection.commit()
-        return
-
-    with engine.begin() as connection:
+    with backend.connection_scope(engine) as connection:
         backend.table_configs(connection).create_all(tables)
 
 
