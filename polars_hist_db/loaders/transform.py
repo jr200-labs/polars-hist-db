@@ -9,8 +9,74 @@ from ..config.transform_fn_registry import TransformFnRegistry
 from ..config.parser_config import IngestionColumnConfig
 from ..core.dataframe import DataframeOps
 from ..types import PolarsType
+from ..utils.exceptions import NonRetryableException
 
 LOGGER = logging.getLogger(__name__)
+
+
+class InputSchemaError(TypeError, NonRetryableException):
+    """An input DataFrame does not satisfy its resolved pipeline schema."""
+
+
+def enforce_input_schema(
+    df: pl.DataFrame, column_configs: Sequence[IngestionColumnConfig]
+) -> pl.DataFrame:
+    sources: dict[str, tuple[pl.DataType, bool, bool]] = {}
+    generated: dict[str, pl.DataType] = {}
+    for config in column_configs:
+        if config.source is None:
+            if config.target is not None and config.column_type == "computed":
+                generated[config.target] = PolarsType.from_sql(config.target_data_type)
+            continue
+
+        dtype = PolarsType.from_sql(config.ingestion_data_type)
+        required = config.required
+        nullable = True if config.nullable is None else config.nullable
+        previous = sources.get(config.source)
+        if previous is not None and previous[0] != dtype:
+            raise InputSchemaError(
+                f"conflicting ingestion types for {config.source!r}: "
+                f"{previous[0]} and {dtype}"
+            )
+        sources[config.source] = (
+            dtype,
+            required or (previous[1] if previous else False),
+            nullable and (previous[2] if previous else True),
+        )
+
+    accepted = set(sources).union(generated)
+    unknown = sorted(set(df.columns).difference(accepted))
+    if unknown:
+        raise InputSchemaError("undeclared input columns: " + ", ".join(unknown))
+
+    result = df
+    for name, (dtype, required, nullable) in sources.items():
+        if name not in result.columns:
+            if required or not nullable:
+                raise InputSchemaError(f"missing required input column: {name}")
+            result = result.with_columns(pl.lit(None).cast(dtype).alias(name))
+        else:
+            try:
+                result = PolarsType.apply_dtype_to_column(result, name, dtype)
+            except Exception as exc:
+                raise InputSchemaError(
+                    f"input column {name!r} cannot be converted to {dtype}"
+                ) from exc
+        if not nullable and result[name].null_count() > 0:
+            raise InputSchemaError(f"nulls in required input column: {name}")
+
+    for name, dtype in generated.items():
+        if name in result.columns:
+            try:
+                result = PolarsType.apply_dtype_to_column(result, name, dtype)
+            except Exception as exc:
+                raise InputSchemaError(
+                    f"computed input column {name!r} cannot be converted to {dtype}"
+                ) from exc
+
+    return result.select(
+        [*sources, *(name for name in generated if name in result.columns)]
+    )
 
 
 def header_configs(
@@ -19,7 +85,7 @@ def header_configs(
     return [
         cfg
         for cfg in column_configs
-        if cfg.source and cfg.column_type in ["data", "dsv_only"]
+        if cfg.source and cfg.column_type in ["data", "input_only", "dsv_only"]
     ]
 
 
@@ -43,7 +109,8 @@ def apply_transformations(
         [
             col_cfg.source
             for col_cfg in column_configs
-            if col_cfg.column_type == "dsv_only" and col_cfg.source in dsv_df.columns
+            if col_cfg.column_type in {"input_only", "dsv_only"}
+            and col_cfg.source in dsv_df.columns
         ]
     )
 

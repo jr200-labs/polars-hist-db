@@ -20,7 +20,7 @@ from ..config.dataset import DatasetConfig
 from ..config.input.jetstream_config import JetStreamInputConfig
 from ..config.table import TableConfigs
 from .input_source import BatchFinalizer, InputSource
-from .transform import apply_transformations
+from .transform import apply_transformations, enforce_input_schema
 
 
 LOGGER = logging.getLogger(__name__)
@@ -53,9 +53,17 @@ class JetStreamInputSource(InputSource[JetStreamInputConfig]):
         all_dfs = []
         msg_audits = []
         for msg in msgs:
-            df = load_df_from_msg(msg, msg_ts, self.config.payload_ingest)
+            raw_df = load_df_from_msg(msg, msg_ts, self.config.payload_ingest)
             msg_audits.extend(
-                list(df.select("__path", "__created_at").unique().iter_rows())
+                list(raw_df.select("__path", "__created_at").unique().iter_rows())
+            )
+            metadata = raw_df.select("__path", "__created_at")
+            df = raw_df.drop("__path", "__created_at").pipe(
+                enforce_input_schema, self.column_definitions
+            )
+            df = df.with_columns(
+                metadata.get_column("__path"),
+                metadata.get_column("__created_at"),
             )
             all_dfs.append(df)
 

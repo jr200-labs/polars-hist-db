@@ -95,12 +95,12 @@ async def test_turkey_stream(nats_js, fixture_with_config):
     diff_df, missing_cols = compare_dataframes(
         uploaded_df,
         test_data,
-        on=["UmId", "ProductId", "Price", "Place"],
+        on=["UmId", "ProductId", "Price"],
     )
     assert len(diff_df) == 0
-    assert len(missing_cols) == 4
     assert missing_cols == [
         "missing:Month_lhs",
+        "missing:Place_lhs",
         "missing:Year_lhs",
         "missing:price_usd_rhs",
         "missing:time_rhs",
@@ -134,7 +134,6 @@ async def test_turkey_stream(nats_js, fixture_with_config):
 
     assert len(diff_df) == 0
     assert missing_cols == [
-        "missing:Place_lhs",
         "missing:ProductName_lhs",
         "missing:UmName_lhs",
         "missing:time_lhs",

@@ -145,6 +145,29 @@ The `search_paths` section defines where to find the data. The example above use
 
 The `pipeline` section contains a sequence of tasks that are run in order. The example above demonstrates two tasks:
 
+For flattened payloads, the pipeline is also the authoritative input schema.
+Every source column must be declared. Its input type is resolved from
+`ingestion_data_type`, falling back to `target_data_type` and then the target
+table column type. Declare `ingestion_data_type` only when the raw type differs
+from the target type. Undeclared columns, incompatible values, missing required
+columns, conflicting declarations, and nulls in non-nullable columns fail
+before payloads are combined or staged.
+
+Use `column_type: input_only` for a declared, typed source field that must be
+accepted but not staged or persisted:
+
+```yaml
+columns:
+- {source: record.id, target: id}
+- {source: record.measurement, target: measurement, ingestion_data_type: DOUBLE}
+- {source: record.unused_note, column_type: input_only, ingestion_data_type: VARCHAR(64)}
+```
+
+Transformation results and staging types continue to come from
+`target_data_type` or the target table schema, so a separate output schema is
+not required. The older `dsv_only` spelling remains supported for existing
+DSV configurations.
+
 **Task 1: Unit Info Table**
 
 This task populates the `unit_info` table:
