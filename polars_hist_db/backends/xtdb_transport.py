@@ -416,15 +416,20 @@ def _normalize_xtdb_timestamp_columns(
     df: pl.DataFrame,
     table_config: Optional[TableConfig],
 ) -> pl.DataFrame:
-    casts = _xtdb_insert_casts(df, table_config)
+    configured_casts = (
+        {
+            column.name: _xtdb_cast_type(column.data_type)
+            for column in table_config.columns
+        }
+        if table_config is not None
+        else {}
+    )
     expressions = []
-    for column, cast_type in zip(df.columns, casts, strict=True):
-        dtype = df.schema[column]
-        if (
-            isinstance(dtype, pl.Datetime)
-            and dtype.time_zone is not None
-            and cast_type.upper().startswith("TIMESTAMP")
-        ):
+    for column, dtype in df.schema.items():
+        if not isinstance(dtype, pl.Datetime):
+            continue
+        cast_type = configured_casts.get(column) or _xtdb_cast_type_from_polars(dtype)
+        if dtype.time_zone is not None and cast_type.upper().startswith("TIMESTAMP"):
             expression = pl.col(column).dt.convert_time_zone("UTC")
             if "WITH TIME ZONE" not in cast_type.upper():
                 expression = expression.dt.replace_time_zone(None)

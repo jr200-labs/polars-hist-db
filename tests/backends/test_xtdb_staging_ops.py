@@ -116,6 +116,30 @@ def test_xtdb_staging_903_rows_avoids_database_io():
     staging._bulk_table_insert.assert_not_called()
 
 
+def test_xtdb_staging_ignores_unconfigured_all_null_columns():
+    config = TableConfig(
+        schema="fakedata",
+        name="record_stream",
+        columns=[TableColumnConfig("record_stream", "record_id", "INT")],
+    )
+    staging = XtdbStagingOps(object())
+
+    inserted = staging.insert_partition(
+        pl.DataFrame(
+            {"record_id": [1], "unused": [None]},
+            schema={"record_id": pl.Int64, "unused": pl.Null},
+        ),
+        config,
+        "stage-1",
+        datetime(2030, 1, 1, tzinfo=timezone.utc),
+        uniqueness_col_set=["record_id"],
+        prefill_nulls_with_default=True,
+    )
+
+    assert inserted == 1
+    assert staging._stage_run_cache["stage-1"].schema["unused"] == pl.Null
+
+
 def test_xtdb_backend_staging_preserves_insert_row_limit():
     staging = XtdbBackend(max_rows_per_insert=2500).staging(object())
 
