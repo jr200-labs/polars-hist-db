@@ -10,10 +10,11 @@ from polars_hist_db.dataset.entrypoint import _create_config_tables
 class _FakeBackend:
     def __init__(self):
         self.created_with = None
+        self.engine = SimpleNamespace(dispose=lambda: None)
 
     def create_engine(self, config):
         self.created_with = config
-        return object()
+        return self.engine
 
 
 class _FakeAdbcConnection:
@@ -31,10 +32,11 @@ class _FakeXtdbBackend:
         self.created_engine_with = None
         self.created_adbc_with = None
         self.adbc_connection = _FakeAdbcConnection()
+        self.engine = SimpleNamespace(dispose=lambda: None)
 
     def create_engine(self, config):
         self.created_engine_with = config
-        return object()
+        return self.engine
 
     def create_adbc_connection(self, config):
         self.created_adbc_with = config
@@ -160,6 +162,10 @@ async def test_run_datasets_creates_xtdb_adbc_connection(monkeypatch):
     monkeypatch.setattr(
         "polars_hist_db.dataset.entrypoint._run_dataset", fake_run_dataset
     )
+    monkeypatch.setattr(
+        "polars_hist_db.dataset.entrypoint._create_config_tables",
+        lambda *args: None,
+    )
 
     await run_datasets(config)
 
@@ -201,6 +207,38 @@ async def test_run_datasets_can_raise_input_source_errors(monkeypatch):
         await run_datasets(config, engine, raise_on_error=True)
 
     assert _FailingInputSource.cleaned is True
+
+
+@pytest.mark.asyncio
+async def test_run_datasets_reports_swallowed_input_source_errors(monkeypatch):
+    backend = _FakeBackendWithTableConfigOps()
+    engine = _FakeEngine()
+    dataset = SimpleNamespace(
+        name="bad_dataset",
+        input_config=SimpleNamespace(type="dsv"),
+    )
+    config = SimpleNamespace(
+        db_config=DbEngineConfig(backend="mariadb"),
+        datasets=SimpleNamespace(datasets=[dataset]),
+        tables=object(),
+    )
+    monkeypatch.setattr(
+        "polars_hist_db.dataset.entrypoint.backend_from_config", lambda config: backend
+    )
+    monkeypatch.setattr(
+        "polars_hist_db.dataset.entrypoint._build_delta_table_config",
+        lambda tables, dataset: object(),
+    )
+    monkeypatch.setattr(
+        "polars_hist_db.dataset.entrypoint.InputSourceFactory.create_input_source",
+        lambda *args, **kwargs: _FailingInputSource(),
+    )
+
+    result = await run_datasets(config, engine)
+
+    assert result.datasets_processed == 1
+    assert result.datasets_failed == 1
+    assert isinstance(result.errors[0], RuntimeError)
 
 
 def test_create_config_tables_uses_selected_backend_table_config_ops():

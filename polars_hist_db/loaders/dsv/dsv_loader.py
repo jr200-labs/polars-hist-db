@@ -133,11 +133,6 @@ def _validate_expected_columns(
         .difference(schema_overrides.keys())
     )
 
-    if len(headers_no_config) > 0:
-        headers_no_config_str = "],[".join(headers_no_config)
-        LOGGER.warning("dsv-headers skipped/unknown [%s]", headers_no_config_str)
-        dsv_df = dsv_df.drop(headers_no_config)
-
     defined_but_missing_headers = list(set(expected_headers).difference(dsv_df.columns))
 
     if len(defined_but_missing_headers) > 0:
@@ -148,14 +143,16 @@ def _validate_expected_columns(
             ",".join(defined_but_missing_headers),
         )
 
-        missing_columns_df = pl.DataFrame()
-        missing_columns_df = missing_columns_df.with_columns(
+        dsv_df = dsv_df.with_columns(
             [
                 pl.lit(None).cast(_get_column_target_dtype(h, header_cfgs)).alias(h)
                 for h in defined_but_missing_headers
             ]
-        ).clear()
+        )
 
-        LOGGER.debug(missing_columns_df)
+    if len(headers_no_config) > 0:
+        headers_no_config_str = "],[".join(headers_no_config)
+        LOGGER.warning("dsv-headers skipped/unknown [%s]", headers_no_config_str)
+        dsv_df = dsv_df.drop(headers_no_config)
 
     return dsv_df

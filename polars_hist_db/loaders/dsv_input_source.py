@@ -1,8 +1,9 @@
+from hashlib import sha256
 from datetime import datetime
 import logging
 from pathlib import Path
 import time
-from typing import Any, AsyncGenerator, Awaitable, Callable, List, Tuple, Union
+from typing import Any, AsyncGenerator, List, Tuple, Union
 
 import polars as pl
 from sqlalchemy import Connection, Engine
@@ -17,27 +18,26 @@ from ..config.table import TableConfigs
 from ..core.audit import AuditOps
 from .dsv.dsv_loader import load_typed_dsv
 from .dsv.file_search import find_files
-from .input_source import InputSource
+from .input_source import BatchFinalizer, InputSource
 from ..utils.clock import Clock
 
 LOGGER = logging.getLogger(__name__)
 
 
-def _make_dsv_file_commit_fn(
-    bound_csv_file: str,
+def _make_dsv_finalizer(
+    data_source: str,
     bound_file_time: Any,
-) -> Callable[[Connection, List[Tuple[str, str]]], Awaitable[bool]]:
-    async def commit_fn(
+) -> BatchFinalizer:
+    def write_audit_before_commit(
         connection: Connection,
         modified_tables: List[Tuple[str, str]],
     ) -> bool:
         result = True
         for modified_schema, modified_table in modified_tables:
             aops = AuditOps(modified_schema)
-            path = Path(bound_csv_file).absolute()
             result = aops.add_entry(
                 "dsv",
-                path.as_posix(),
+                data_source,
                 modified_table,
                 connection,
                 bound_file_time,
@@ -48,13 +48,17 @@ def _make_dsv_file_commit_fn(
                     "audit for [%s.%s - %s]: FAILED",
                     modified_schema,
                     modified_table,
-                    path.name,
+                    data_source,
                 )
                 raise NonRetryableException("Failed to update audit log")
 
         return result
 
-    return commit_fn
+    return BatchFinalizer(write_audit_before_commit)
+
+
+def _make_dsv_file_finalizer(csv_file: str, file_time: Any) -> BatchFinalizer:
+    return _make_dsv_finalizer(Path(csv_file).absolute().as_posix(), file_time)
 
 
 class DsvCrawlerInputSource(InputSource[DsvCrawlerInputConfig]):
@@ -92,14 +96,14 @@ class DsvCrawlerInputSource(InputSource[DsvCrawlerInputConfig]):
     ) -> AsyncGenerator[
         Tuple[
             List[Tuple[datetime, pl.DataFrame]],
-            Callable[[Connection, List[Tuple[str, str]]], Awaitable[bool]],
+            BatchFinalizer,
         ],
         None,
     ]:
         async def _generator() -> AsyncGenerator[
             Tuple[
                 List[Tuple[datetime, pl.DataFrame]],
-                Callable[[Connection, List[Tuple[str, str]]], Awaitable[bool]],
+                BatchFinalizer,
             ],
             None,
         ]:
@@ -109,20 +113,22 @@ class DsvCrawlerInputSource(InputSource[DsvCrawlerInputConfig]):
                 assert isinstance(self.config.payload, str)
                 assert self.config.payload_time is not None
 
-                partitions = self._process_payload(
-                    bytes(self.config.payload, "UTF8"), self.config.payload_time
+                payload = bytes(self.config.payload, "UTF8")
+                data_source = f"payload:{sha256(payload).hexdigest()}"
+                candidates = pl.DataFrame(
+                    {
+                        "__path": [data_source],
+                        "__created_at": [self.config.payload_time],
+                    }
                 )
-
-                async def commit_fn(
-                    connection: Connection, modified_tables: List[Tuple[str, str]]
-                ) -> bool:
-                    # payload was send directly to the pipeline, rather than a filepath
-                    # difficult generate an audit id in this case
-                    # for now, these messages are not audited - but might need to require
-                    # an audit_id field to be provided
-                    return True
-
-                yield partitions, commit_fn
+                if self._search_and_filter_files(
+                    candidates, table_schema, table_name, engine
+                ).is_empty():
+                    return
+                yield (
+                    self._process_payload(payload, self.config.payload_time),
+                    (_make_dsv_finalizer(data_source, self.config.payload_time)),
+                )
                 return
 
             # Handle file-based case
@@ -147,7 +153,7 @@ class DsvCrawlerInputSource(InputSource[DsvCrawlerInputConfig]):
 
                 partitions = self._process_payload(Path(csv_file), file_time)
 
-                yield partitions, _make_dsv_file_commit_fn(csv_file, file_time)
+                yield partitions, _make_dsv_file_finalizer(csv_file, file_time)
 
                 pipeline_time = time.perf_counter() - start_time
                 timings.add_timing("pipeline", pipeline_time)

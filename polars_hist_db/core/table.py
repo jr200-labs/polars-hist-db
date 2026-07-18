@@ -69,13 +69,11 @@ class TableOps:
     def row_count(self) -> int:
         tbl = self.get_table_metadata()
         count_sql = select(func.count().label("nrow")).select_from(tbl)
-        row_count = DbOps(self.connection).execute_sqlalchemy(
-            "sql.op.row_count", count_sql
+        return (
+            DbOps(self.connection)
+            .execute_sqlalchemy("sql.op.row_count", count_sql)
+            .scalar_one()
         )
-        assert isinstance(row_count, int), (
-            f"expected row count to be int, got {type(row_count)}"
-        )
-        return row_count
 
     def get_column_intersection(
         self,

@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from polars_hist_db.loaders.dsv_input_source import _make_dsv_file_commit_fn
+from polars_hist_db.loaders.dsv_input_source import _make_dsv_file_finalizer
 
 
 @pytest.mark.asyncio
@@ -14,9 +14,9 @@ async def test_dsv_file_commit_succeeds_when_no_tables_changed(monkeypatch):
         "polars_hist_db.loaders.dsv_input_source.AuditOps", fail_audit_ops
     )
 
-    commit_fn = _make_dsv_file_commit_fn(
+    finalizer = _make_dsv_file_finalizer(
         "/tmp/source.csv",
         datetime(2026, 1, 1, tzinfo=timezone.utc),
     )
 
-    assert await commit_fn(object(), []) is True
+    assert finalizer.write_audit_before_commit(object(), []) is True

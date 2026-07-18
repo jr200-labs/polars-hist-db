@@ -172,6 +172,9 @@ Input configuration is polymorphic via `InputConfig.from_dict(config)`.
 - `payload_ingest: JetstreamIngestConfig`
 - `run_until: Literal["empty", "forever"]`
 
+`JetStreamFetchConfig.heartbeat_interval` controls `in_progress()` heartbeats in
+seconds (default `30`; set to `0` to disable).
+
 ## Core Operations (`polars_hist_db.core`)
 
 ### DbOps

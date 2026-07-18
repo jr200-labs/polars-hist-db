@@ -70,6 +70,7 @@ datasets:
         fetch:
           batch_size: 1000
           batch_timeout: 1
+          heartbeat_interval: 30
 
     time_partition:
       column: time

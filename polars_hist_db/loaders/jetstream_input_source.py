@@ -1,13 +1,7 @@
 import asyncio
 from datetime import datetime
 import logging
-from typing import (
-    AsyncGenerator,
-    Awaitable,
-    Callable,
-    List,
-    Tuple,
-)
+from typing import AsyncGenerator, List, Tuple
 
 from nats.js.api import ConsumerConfig
 from nats.js.client import JetStreamContext
@@ -25,7 +19,7 @@ from .ingest_payload import load_df_from_msg
 from ..config.dataset import DatasetConfig
 from ..config.input.jetstream_config import JetStreamInputConfig
 from ..config.table import TableConfigs
-from .input_source import InputSource
+from .input_source import BatchFinalizer, InputSource
 from .transform import apply_transformations
 
 
@@ -52,14 +46,14 @@ class JetStreamInputSource(InputSource[JetStreamInputConfig]):
     ) -> AsyncGenerator[
         Tuple[
             List[Tuple[datetime, pl.DataFrame]],
-            Callable[[Connection, List[Tuple[str, str]]], Awaitable[bool]],
+            BatchFinalizer,
         ],
         None,
     ]:
         async def _generator() -> AsyncGenerator[
             Tuple[
                 List[Tuple[datetime, pl.DataFrame]],
-                Callable[[Connection, List[Tuple[str, str]]], Awaitable[bool]],
+                BatchFinalizer,
             ],
             None,
         ]:
@@ -108,8 +102,11 @@ class JetStreamInputSource(InputSource[JetStreamInputConfig]):
                 run_until == "forever"
             ):
                 try:
+                    fetch_size = self.config.jetstream.fetch.batch_size
+                    if remaining_msgs > 0:
+                        fetch_size = min(fetch_size, remaining_msgs)
                     msgs = await sub.fetch(
-                        self.config.jetstream.fetch.batch_size,
+                        fetch_size,
                         self.config.jetstream.fetch.batch_timeout,
                     )
 
@@ -117,6 +114,8 @@ class JetStreamInputSource(InputSource[JetStreamInputConfig]):
                         continue
 
                     total_msgs += len(msgs)
+                    if remaining_msgs > 0:
+                        remaining_msgs -= len(msgs)
                     msg_ts: datetime = msgs[-1].metadata.timestamp
 
                     all_dfs = []
@@ -172,18 +171,16 @@ class JetStreamInputSource(InputSource[JetStreamInputConfig]):
 
                     partitions = self._apply_time_partitioning(df, msg_ts)
 
-                    def _make_commit_fn(
+                    def _make_finalizer(
                         bound_msgs: list,
                         bound_msg_audits: list,
                         bound_audit_entries: List[str],
-                    ) -> Callable[[Connection, List[Tuple[str, str]]], Awaitable[bool]]:
-                        async def commit_fn(
+                    ) -> BatchFinalizer:
+                        def write_audit_before_commit(
                             connection: Connection,
                             modified_tables: List[Tuple[str, str]],
                         ) -> bool:
-                            for msg, (audit_log_id, created_at) in zip(
-                                bound_msgs, bound_msg_audits, strict=True
-                            ):
+                            for audit_log_id, created_at in bound_msg_audits:
                                 result = True
                                 if audit_log_id in bound_audit_entries:
                                     for (
@@ -199,10 +196,7 @@ class JetStreamInputSource(InputSource[JetStreamInputConfig]):
                                             created_at,
                                         )
 
-                                if result:
-                                    await msg.ack()
-                                else:
-                                    await msg.nak()
+                                if not result:
                                     LOGGER.error(
                                         "audit for [%s.%s - %s]: FAILED",
                                         table_schema,
@@ -215,12 +209,37 @@ class JetStreamInputSource(InputSource[JetStreamInputConfig]):
 
                             return True
 
-                        return commit_fn
+                        async def ack_after_commit() -> None:
+                            for msg in bound_msgs:
+                                await msg.ack()
 
-                    yield (
-                        partitions,
-                        _make_commit_fn(msgs, msg_audits, audit_entries),
+                        return BatchFinalizer(
+                            write_audit_before_commit, ack_after_commit
+                        )
+
+                    async def heartbeat(bound_msgs: list) -> None:
+                        while True:
+                            await asyncio.sleep(
+                                self.config.jetstream.fetch.heartbeat_interval
+                            )
+                            await asyncio.gather(
+                                *(msg.in_progress() for msg in bound_msgs)
+                            )
+
+                    heartbeat_task = (
+                        asyncio.create_task(heartbeat(msgs))
+                        if self.config.jetstream.fetch.heartbeat_interval > 0
+                        else None
                     )
+                    try:
+                        yield (
+                            partitions,
+                            _make_finalizer(msgs, msg_audits, audit_entries),
+                        )
+                    finally:
+                        if heartbeat_task is not None:
+                            heartbeat_task.cancel()
+                            await asyncio.gather(heartbeat_task, return_exceptions=True)
 
                 except TimeoutError:
                     if run_until == "empty":

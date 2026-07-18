@@ -8,8 +8,7 @@ requires-python = ">=3.12,<4.0"
 
 dependencies = [
     "nats-py>=2.15.0",
-    "pandas>=3.0.3",
-    "polars[sqlalchemy]>=1.42.1",
+    "polars>=1.42.1",
     "pyarrow>=25.0.0",
     "pymysql>=1.2.0",
     "pytz>=2026.2",
@@ -20,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-sqlalchemy = ["polars[sqlalchemy]"]
+sqlalchemy = ["polars"]
 nats = ["nats-py"]
 xtdb = ["adbc-driver-flightsql>=1.11.0", "psycopg[binary]>=3.3.4"]
 crdt = [

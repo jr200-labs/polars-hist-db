@@ -4,7 +4,7 @@ import logging
 from typing import Any, Literal, Optional
 
 import polars as pl
-from sqlalchemy import and_, Connection, delete, select, Table
+from sqlalchemy import and_, Connection, delete, func, Index, select, Table
 
 from ..config.input.types import InputDataSourceType
 from ..config.table import TableColumnConfig, TableConfig
@@ -143,6 +143,11 @@ class AuditOps:
         table_config = self._table_config()
         tbl = TableConfigOps(connection).create(table_config)
         assert tbl is not None
+        Index(
+            f"ix_{self._table_name}_table_ts",
+            tbl.c["table_name"],
+            tbl.c["data_source_ts"],
+        ).create(connection)
         return tbl
 
     def reset_dataset(self, target_table_name: str, connection: Connection) -> None:
@@ -251,14 +256,12 @@ class AuditOps:
                 return
 
             latest_log = _xtdb_dataframe_ops(connection).from_raw_sql(
-                "SELECT data_source_ts "
+                "SELECT MAX(data_source_ts) AS data_source_ts "
                 f"FROM {self._table_sql()} "
-                f"WHERE table_name = {_sql_literal(target_table_name)} "
-                "ORDER BY data_source_ts "
-                "LIMIT 1",
+                f"WHERE table_name = {_sql_literal(target_table_name)} ",
                 schema_overrides={"data_source_ts": pl.Datetime("us", "UTC")},
             )
-            if latest_log.is_empty():
+            if latest_log.is_empty() or latest_log[0, "data_source_ts"] is None:
                 return
 
             xtdb_latest_log_ts: datetime = latest_log[0, "data_source_ts"]
@@ -281,15 +284,12 @@ class AuditOps:
         self.create(connection)
         tbo = TableOps(self.schema, self._table_name, connection)
         tbl = tbo.get_table_metadata()
-        latest_log_sql = (
-            select(tbl)
-            .where(tbl.c["table_name"] == target_table_name)
-            .order_by("data_source_ts")
-            .limit(1)
-        )
+        latest_log_sql = select(
+            func.max(tbl.c["data_source_ts"]).label("data_source_ts")
+        ).where(tbl.c["table_name"] == target_table_name)
 
         latest_log = DataframeOps(connection).from_selectable(latest_log_sql)
-        if latest_log.is_empty():
+        if latest_log.is_empty() or latest_log[0, "data_source_ts"] is None:
             return
 
         latest_log_ts: datetime = latest_log[0, "data_source_ts"]
@@ -321,10 +321,10 @@ class AuditOps:
             existing_tbl_entries = (
                 _xtdb_dataframe_ops(connection)
                 .from_raw_sql(
-                    "SELECT data_source, data_source_ts "
+                    "SELECT data_source, MAX(data_source_ts) AS data_source_ts "
                     f"FROM {self._table_sql()} "
                     f"WHERE table_name = {_sql_literal(target_table_name)} "
-                    "ORDER BY data_source_ts",
+                    "GROUP BY data_source",
                     schema_overrides={"data_source_ts": pl.Datetime("us", "UTC")},
                 )
                 .with_columns(pl.col("data_source").cast(pl.Utf8))
@@ -345,9 +345,12 @@ class AuditOps:
 
         # get the set of datasource items already processed
         target_table_logs_sql = (
-            select(audit_tbl.c["data_source"], audit_tbl.c["data_source_ts"])
+            select(
+                audit_tbl.c["data_source"],
+                func.max(audit_tbl.c["data_source_ts"]).label("data_source_ts"),
+            )
             .where(audit_tbl.c["table_name"] == target_table_name)
-            .order_by(audit_tbl.c["data_source_ts"])
+            .group_by(audit_tbl.c["data_source"])
         )
 
         existing_tbl_entries = (
@@ -493,23 +496,19 @@ class AuditOps:
 
             where_clause = f"WHERE {' AND '.join(xtdb_filters)}" if xtdb_filters else ""
             latest_log = _xtdb_dataframe_ops(connection).from_raw_sql(
-                "SELECT * "
-                f"FROM {self._table_sql()} "
-                f"{where_clause} "
-                "ORDER BY data_source_ts DESC",
+                "SELECT audit_id, table_name, data_source_type, data_source, "
+                "data_source_ts, upload_ts FROM ("
+                "SELECT *, ROW_NUMBER() OVER ("
+                "PARTITION BY table_name ORDER BY data_source_ts DESC"
+                ") AS _rn "
+                f"FROM {self._table_sql()} {where_clause}"
+                ") AS ranked WHERE _rn = 1",
                 schema_overrides={
                     "data_source_ts": pl.Datetime("us", "UTC"),
                     "upload_ts": pl.Datetime("us", "UTC"),
                 },
             )
-            if latest_log.is_empty():
-                return latest_log
-            return (
-                latest_log.group_by("table_name")
-                .first()
-                .with_columns(pl.col("data_source_ts").cast(pl.Datetime("us", "UTC")))
-                .with_columns(pl.col("upload_ts").cast(pl.Datetime("us", "UTC")))
-            )
+            return latest_log
 
         tbl = self.create(connection)
         assert isinstance(tbl, Table)
@@ -524,19 +523,23 @@ class AuditOps:
                 raise ValueError("asof_timestamp must be timezone aware")
             filters.append(tbl.c["data_source_ts"] <= asof_timestamp)
 
-        latest_log_sql = (
+        ranked = (
             select(tbl)
+            .add_columns(
+                func.row_number()
+                .over(
+                    partition_by=tbl.c["table_name"],
+                    order_by=tbl.c["data_source_ts"].desc(),
+                )
+                .label("_rn")
+            )
             .where(and_(True, *filters))
-            .order_by(tbl.c["data_source_ts"].desc())
+            .subquery()
         )
+        latest_log_sql = select(
+            *(ranked.c[column.name] for column in tbl.columns)
+        ).where(ranked.c["_rn"] == 1)
 
-        latest_log = (
-            DataframeOps(connection)
-            .from_selectable(latest_log_sql)
-            .group_by("table_name")
-            .first()
-            .with_columns(pl.col("data_source_ts").cast(pl.Datetime("us", "UTC")))
-            .with_columns(pl.col("upload_ts").cast(pl.Datetime("us", "UTC")))
-        )
+        latest_log = DataframeOps(connection).from_selectable(latest_log_sql)
 
         return latest_log
