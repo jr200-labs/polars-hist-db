@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.61](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.60...v0.12.61) (2026-07-18)
+
+
+### Bug Fixes
+
+* **xtdb:** reflect nullable schemas safely ([#250](https://github.com/jr200-labs/polars-hist-db/issues/250)) ([365d855](https://github.com/jr200-labs/polars-hist-db/commit/365d855cb52fe2ef5c0c648361cf927fbd9235a8))
+
 ## [0.12.60](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.59...v0.12.60) (2026-07-18)
 
 
