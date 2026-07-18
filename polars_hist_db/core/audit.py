@@ -115,7 +115,7 @@ class AuditOps:
     def _empty_xtdb_audit_df(self) -> pl.DataFrame:
         return pl.DataFrame(
             schema={
-                "audit_id": pl.Int64,
+                "audit_id": pl.Int32,
                 "table_name": pl.Utf8,
                 "data_source_type": pl.Utf8,
                 "data_source": pl.Utf8,
@@ -461,7 +461,9 @@ class AuditOps:
                 )
                 & 0x7FFFFFFF
             )
-            df = pl.DataFrame([new_item])
+            df = pl.DataFrame([new_item]).with_columns(
+                pl.col("audit_id").cast(pl.Int32)
+            )
             num_rows_changed = _xtdb_dataframe_ops(connection).table_insert(
                 df,
                 self.schema,

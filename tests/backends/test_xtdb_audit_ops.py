@@ -350,6 +350,7 @@ def test_xtdb_audit_add_entry_writes_via_backend_dataframe_ops(monkeypatch):
     assert table_name == "__audit_log"
     assert table_config.name == "__audit_log"
     assert "audit_id" in inserted_df.columns
+    assert inserted_df.schema["audit_id"] == pl.Int32
     assert inserted_df.select("table_name", "data_source").rows() == [
         ("trades", "trades.csv")
     ]
