@@ -1,4 +1,4 @@
-"""Benchmark XTDB delta and foreign-key scaling.
+"""Benchmark XTDB delta, normalized foreign keys, and DSV partitioning.
 
 Examples:
     uv run python benchmarks/xtdb_delta.py
@@ -9,6 +9,7 @@ Examples:
 
 from argparse import ArgumentParser
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 import gc
 import json
 import os
@@ -16,6 +17,7 @@ from pathlib import Path
 import re
 from statistics import median
 from time import perf_counter
+from types import SimpleNamespace
 from typing import Any
 
 import polars as pl
@@ -25,6 +27,8 @@ from polars_hist_db.backends.xtdb import (
     _filter_xtdb_unchanged_rows,
 )
 from polars_hist_db.config import DatasetConfig, TableColumnConfig, TableConfig
+from polars_hist_db.config.dataset import TimePartition
+from polars_hist_db.loaders.dsv_input_source import DsvCrawlerInputSource
 
 
 @dataclass
@@ -235,6 +239,61 @@ def benchmark_foreign_keys(
     )
 
 
+def benchmark_time_partitions(
+    row_count: int, bucket_count: int, repeats: int
+) -> tuple[float, float, int]:
+    if row_count < bucket_count:
+        raise ValueError("row count cannot be smaller than bucket count")
+    if bucket_count < 1:
+        raise ValueError("bucket count must be positive")
+
+    start = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    rows = (
+        pl.DataFrame({"id": range(row_count)})
+        .with_columns(
+            event_time=pl.lit(start) + pl.duration(days=pl.col("id") % bucket_count)
+        )
+        .sample(fraction=1, shuffle=True, seed=42)
+    )
+    source: Any = object.__new__(DsvCrawlerInputSource)
+    source.tables = {
+        "events": TableConfig(
+            schema="benchmark",
+            name="events",
+            columns=[],
+            primary_keys=["id"],
+        )
+    }
+    source.dataset = SimpleNamespace(
+        pipeline=SimpleNamespace(
+            get_main_table_name=lambda: ("benchmark", "events"),
+            get_header_map=lambda _table: {"id": "id"},
+        ),
+        time_partition=TimePartition(
+            column="event_time",
+            bucket_interval="1d",
+            bucket_strategy="round_down",
+        ),
+    )
+    source.config = SimpleNamespace(filter_past_events=False)
+    source.previous_payload_time = datetime.min
+
+    timings = []
+    partition_count = 0
+    for _ in range(repeats):
+        gc.collect()
+        started = perf_counter()
+        partitions = source._apply_time_partitioning(
+            rows, start + timedelta(days=bucket_count - 1)
+        )
+        timings.append(perf_counter() - started)
+        partition_count = len(partitions)
+        assert partition_count == bucket_count
+        assert sum(len(partition) for _, partition in partitions) == row_count
+
+    return median(timings), rows.estimated_size("mb"), partition_count
+
+
 def benchmark_remote_sample(dsn: str, table: str, limit: int) -> None:
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*", table):
         raise ValueError("remote table must be an unquoted schema.table identifier")
@@ -261,6 +320,8 @@ def main() -> None:
     parser.add_argument("--target-gb", type=float, default=100)
     parser.add_argument("--bandwidth-gbps", default="1,10,100")
     parser.add_argument("--fk-match-fractions", default="0,0.5,1")
+    parser.add_argument("--partition-rows", type=int, default=500_000)
+    parser.add_argument("--partition-buckets", type=int, default=365)
     parser.add_argument("--remote-table")
     parser.add_argument("--remote-limit", type=int, default=50_000)
     parser.add_argument("--json-output")
@@ -326,6 +387,27 @@ def main() -> None:
                     "value": elapsed,
                 }
             )
+
+    partition_elapsed, partition_mb, partition_count = benchmark_time_partitions(
+        args.partition_rows,
+        args.partition_buckets,
+        args.repeats,
+    )
+    print("partition_rows,partition_buckets,input_mb,unordered_partition_seconds")
+    print(
+        f"{args.partition_rows},{partition_count},{partition_mb:.2f},"
+        f"{partition_elapsed:.3f}"
+    )
+    results.append(
+        {
+            "name": (
+                f"time partitioning {args.partition_rows} rows / "
+                f"{partition_count} buckets"
+            ),
+            "unit": "seconds",
+            "value": partition_elapsed,
+        }
+    )
 
     if args.remote_table:
         dsn = os.environ.get("XTDB_BENCHMARK_DSN")

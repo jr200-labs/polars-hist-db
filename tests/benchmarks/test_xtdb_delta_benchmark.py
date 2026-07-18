@@ -1,5 +1,6 @@
 from benchmarks.xtdb_delta import (
     benchmark_foreign_keys,
+    benchmark_time_partitions,
     network_floor_seconds,
     synthetic_frames,
 )
@@ -17,3 +18,7 @@ def test_xtdb_delta_benchmark_models_target_and_upload_independently():
     )
     assert parent_mb > upload_mb
     assert (matched, created, collisions, updated) == (5, 5, 0, True)
+
+    _, input_mb, partition_count = benchmark_time_partitions(100, 10, 1)
+    assert input_mb > 0
+    assert partition_count == 10

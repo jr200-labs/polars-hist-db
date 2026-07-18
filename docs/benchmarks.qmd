@@ -1,0 +1,70 @@
+---
+title: "Benchmarks"
+---
+
+The benchmark suite tracks the ingestion paths most likely to dominate runtime
+as datasets grow. Results are synthetic and intended for regression tracking;
+they are not database service-level guarantees.
+
+## What is measured
+
+| Benchmark | Workload | Included | Excluded |
+|---|---|---|---|
+| Selective delta | Compare a 50,000-row upload with increasingly large current tables | Polars filtering and changed-row selection | XTDB network and write latency |
+| Normalized foreign keys | Resolve existing natural keys, generate missing IDs, and update the staged primary rows | Lookup joins, deterministic ID generation, collision handling | XTDB network and insert latency |
+| Unordered time partitioning | Sort, deduplicate, and split an interleaved DSV frame into daily buckets | Polars preparation and partition slicing | CSV decoding and database writes |
+
+The runner also prints theoretical transfer floors for 1, 10, and 100 Gbps
+links. An optional remote-read mode can measure decoding from a live XTDB
+table, but it is not part of the portable CI history because it requires a
+deployment-specific DSN.
+
+## Tracked results
+
+Each successful benchmark run on `master` appends its custom benchmark output
+to [`docs/benchmark-history.json`](benchmark-history.json). The workflow keeps
+the latest 100 commits, commits the updated history, and republishes this
+Quarto site.
+
+<div id="benchmark-status" class="benchmark-note">Loading benchmark history…</div>
+<div id="benchmark-latest"></div>
+
+### History
+
+<label for="benchmark-select"><strong>Benchmark series</strong></label>
+<select id="benchmark-select" class="form-select benchmark-select"></select>
+<div id="benchmark-chart" class="benchmark-chart"></div>
+
+## Run locally
+
+```bash
+make benchmark-xtdb-delta
+```
+
+For a smaller development run:
+
+```bash
+uv run python benchmarks/xtdb_delta.py \
+  --target-rows 50000 \
+  --upload-rows 10000 \
+  --partition-rows 100000 \
+  --repeats 1
+```
+
+The JSON consumed by CI can be generated with `--json-output`:
+
+```bash
+uv run python benchmarks/xtdb_delta.py --json-output benchmark-results.json
+```
+
+<style>
+.benchmark-note { margin: 1rem 0; color: var(--bs-secondary-color); }
+.benchmark-select { max-width: 52rem; margin: .5rem 0 1rem; }
+.benchmark-chart { overflow-x: auto; min-height: 18rem; }
+.benchmark-chart svg { width: 100%; min-width: 44rem; height: auto; }
+.benchmark-chart .axis { stroke: currentColor; opacity: .35; }
+.benchmark-chart .series { fill: none; stroke: #2780e3; stroke-width: 3; }
+.benchmark-chart .point { fill: #2780e3; }
+</style>
+
+<script src="benchmark-history.js"></script>
