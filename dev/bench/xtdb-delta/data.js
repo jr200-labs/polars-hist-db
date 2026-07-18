@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784346893645,
+  "lastUpdate": 1784349470858,
   "repoUrl": "https://github.com/jr200-labs/polars-hist-db",
   "entries": {
     "Benchmark": [
@@ -335,6 +335,90 @@ window.BENCHMARK_DATA = {
           {
             "name": "foreign keys 5000000 stored / 50000 uploaded / 1 matched",
             "value": 0.40172924899999884,
+            "unit": "seconds"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "jr200@users.noreply.github.com",
+            "name": "Jayshan Raghunandan",
+            "username": "jr200"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6491f8a4749d6260156ca69a58a1d856b83cbf07",
+          "message": "perf: batch XTDB numeric key collision checks (#232)",
+          "timestamp": "2026-07-18T13:36:32+09:00",
+          "tree_id": "b126777511144dd5e73f195d5634596d78970d98",
+          "url": "https://github.com/jr200-labs/polars-hist-db/commit/6491f8a4749d6260156ca69a58a1d856b83cbf07"
+        },
+        "date": 1784349469823,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "delta 50000 stored / 50000 uploaded",
+            "value": 0.006716412000002947,
+            "unit": "seconds"
+          },
+          {
+            "name": "delta 500000 stored / 50000 uploaded",
+            "value": 0.009260627999992721,
+            "unit": "seconds"
+          },
+          {
+            "name": "delta 5000000 stored / 50000 uploaded",
+            "value": 0.02279743199999018,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 50000 stored / 50000 uploaded / 0 matched",
+            "value": 0.8644589720000084,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 50000 stored / 50000 uploaded / 0.5 matched",
+            "value": 0.683042357000005,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 50000 stored / 50000 uploaded / 1 matched",
+            "value": 0.5057780399999956,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 500000 stored / 50000 uploaded / 0 matched",
+            "value": 0.868199611999998,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 500000 stored / 50000 uploaded / 0.5 matched",
+            "value": 0.6927653719999967,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 500000 stored / 50000 uploaded / 1 matched",
+            "value": 0.5143726919999949,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 5000000 stored / 50000 uploaded / 0 matched",
+            "value": 0.883791305999992,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 5000000 stored / 50000 uploaded / 0.5 matched",
+            "value": 0.7111272629999945,
+            "unit": "seconds"
+          },
+          {
+            "name": "foreign keys 5000000 stored / 50000 uploaded / 1 matched",
+            "value": 0.5314837519999998,
             "unit": "seconds"
           }
         ]
