@@ -117,8 +117,15 @@ def _is_xtdb_adbc_ingest_unavailable(exc: Exception) -> bool:
     )
 
 
+def _unwrap_xtdb_optional_type(data_type: str) -> str:
+    normalized = data_type.upper().strip()
+    if normalized.startswith("[:?") and normalized.endswith("]"):
+        return normalized[3:-1].strip()
+    return normalized
+
+
 def _xtdb_type_to_config_type(data_type: str) -> str:
-    normalized = data_type.upper()
+    normalized = _unwrap_xtdb_optional_type(data_type)
     xtdb_types = {
         ":I8": "TINYINT",
         ":I16": "SMALLINT",
@@ -132,11 +139,19 @@ def _xtdb_type_to_config_type(data_type: str) -> str:
         ":DATE": "DATE",
         ":TIMESTAMP": "TIMESTAMP",
     }
+    if normalized.startswith("[:TIMESTAMP-TZ"):
+        return "TIMESTAMP WITH TIME ZONE"
+    if normalized.startswith("[:TIMESTAMP-LOCAL"):
+        return "TIMESTAMP"
+    if normalized.startswith("[:DATE"):
+        return "DATE"
+    if normalized.startswith("[:TIME"):
+        return "TIME"
     return xtdb_types.get(normalized, normalized)
 
 
 def _xtdb_physical_type_family(data_type: str) -> str:
-    normalized = data_type.upper().strip()
+    normalized = _unwrap_xtdb_optional_type(data_type)
     if normalized.startswith("[:UNION"):
         members = set(
             re.findall(
@@ -269,20 +284,38 @@ def _xtdb_table_config_metadata(
     table_schema: str,
     table_name: str,
 ) -> pl.DataFrame | None:
+    if not _xtdb_table_exists(
+        connection,
+        table_schema,
+        _XTDB_TABLE_CONFIG_METADATA_TABLE,
+    ):
+        return None
     escaped_schema = table_schema.replace("'", "''")
     escaped_name = table_name.replace("'", "''")
-    try:
-        return pl.read_database(
-            f"""
-            SELECT *
-            FROM {_xtdb_table_config_metadata_table(table_schema)}
-            WHERE table_schema = '{escaped_schema}'
-              AND table_name = '{escaped_name}'
+    return pl.read_database(
+        f"""
+        SELECT *
+        FROM {_xtdb_table_config_metadata_table(table_schema)}
+        WHERE table_schema = '{escaped_schema}'
+          AND table_name = '{escaped_name}'
+    """,
+        connection,
+    )
+
+
+def _xtdb_table_exists(connection: Any, table_schema: str, table_name: str) -> bool:
+    table_schema = _validate_identifier(table_schema)
+    table_name = _validate_identifier(table_name)
+    metadata = pl.read_database(
+        f"""
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = '{table_schema}'
+              AND table_name = '{table_name}'
         """,
-            connection,
-        )
-    except Exception:
-        return None
+        connection,
+    )
+    return not metadata.is_empty()
 
 
 def _xtdb_primary_keys_from_metadata(
@@ -1030,18 +1063,7 @@ class XtdbTableConfigOps:
         )
 
     def table_exists(self, table_schema: str, table_name: str) -> bool:
-        table_schema = _validate_identifier(table_schema)
-        table_name = _validate_identifier(table_name)
-        metadata = pl.read_database(
-            f"""
-            SELECT table_name
-            FROM information_schema.tables
-            WHERE table_schema = '{table_schema}'
-              AND table_name = '{table_name}'
-        """,
-            self.connection,
-        )
-        return not metadata.is_empty()
+        return _xtdb_table_exists(self.connection, table_schema, table_name)
 
     def from_table(self, table_schema: str, table_name: str) -> TableConfig:
         table_schema = _validate_identifier(table_schema)

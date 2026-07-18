@@ -129,6 +129,49 @@ def test_xtdb_live_create_append_read_roundtrip():
     }
 
 
+def test_xtdb_live_reflection_preserves_caller_transaction_without_metadata():
+    table_name = f"live_reflection_{int(time.time())}"
+    table_config = TableConfig(
+        schema="public",
+        name=table_name,
+        primary_keys=["id"],
+        columns=[
+            TableColumnConfig(table_name, "id", "BIGINT", nullable=False),
+            TableColumnConfig(table_name, "label", "VARCHAR(255)"),
+            TableColumnConfig(table_name, "seen_at", "DATETIME"),
+        ],
+    )
+
+    with _xtdb_engine() as engine:
+        backend = XtdbBackend()
+        with backend.connection_scope(engine) as connection:
+            backend.dataframes(connection).table_insert(
+                pl.DataFrame(
+                    {
+                        "id": [1],
+                        "label": ["Alpha"],
+                        "seen_at": [datetime(2026, 7, 18, tzinfo=timezone.utc)],
+                    }
+                ),
+                "public",
+                table_name,
+                table_config=table_config,
+            )
+
+        with engine.begin() as connection:
+            reflected = backend.table_configs(connection).from_table(
+                "public", table_name
+            )
+            assert connection.execute(text("SELECT 1")).scalar_one() == 1
+
+    assert {column.name: column.data_type for column in reflected.columns} == {
+        "_id": "BIGINT",
+        "id": "BIGINT",
+        "label": "VARCHAR(255)",
+        "seen_at": "TIMESTAMP WITH TIME ZONE",
+    }
+
+
 def test_xtdb_live_insert_non_public_table_with_reserved_column_name():
     table_config = TableConfig(
         schema="source_a",
