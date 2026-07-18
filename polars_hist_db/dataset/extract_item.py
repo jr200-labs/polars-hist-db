@@ -52,7 +52,7 @@ def scrape_extract_item(
     TableConfigOps(connection).create(target_table_config)
 
     col_info = pipeline.extract_items(pipeline_id)
-    required_cols = col_info.filter("required")["source"].to_list()
+    required_cols = [column.source for column in col_info if column.required]
 
     # these case can pass through
     # require columns are all present in source data
@@ -76,14 +76,14 @@ def scrape_extract_item(
     )
 
     found_source_cols = [
-        str(c.name) for c in tbo.get_column_intersection(col_info["source"].to_list())
+        str(c.name)
+        for c in tbo.get_column_intersection([column.source for column in col_info])
     ]
 
     col_map_dict: Mapping[str, str] = {
-        src: tgt
-        for src, tgt in col_info.filter(pl.col("source").is_in(found_source_cols))
-        .select("source", "target")
-        .iter_rows()
+        column.source: column.target
+        for column in col_info
+        if column.source in found_source_cols
     }
 
     ni, nu, nd = DeltaTableOps(

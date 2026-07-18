@@ -88,8 +88,8 @@ def scrape_primary_item(
     source_tbl = tbo.get_table_metadata()
 
     upload_items = pipeline.extract_items(pipeline_id)
-    selected_columns = upload_items["source"].to_list()
-    src_tgt_colname_map = dict(upload_items.select("source", "target").iter_rows())
+    selected_columns = [item.source for item in upload_items]
+    src_tgt_colname_map = {item.source: item.target for item in upload_items}
     valid_time = dataset.valid_time_for_table(
         main_table_config.schema, main_table_config.name
     )

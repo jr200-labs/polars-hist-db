@@ -1,23 +1,16 @@
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import polars as pl
 import pytest
 
-from polars_hist_db.config import TableColumnConfig, TableConfig, ValidTimeConfig
+from polars_hist_db.config import (
+    TableColumnConfig,
+    TableConfig,
+    ValidTimeConfig,
+)
+from polars_hist_db.config.dataset import Pipeline
 from polars_hist_db.pipeline_projection import project_staged_pipeline_item_dataframe
-
-
-class _Pipeline:
-    def __init__(self, items: pl.DataFrame):
-        self._items = items
-
-    def extract_items(self, pipeline_id: int) -> pl.DataFrame:
-        return self._items.filter(pl.col("id") == pipeline_id)
-
-
-class _Dataset:
-    def __init__(self, items: pl.DataFrame):
-        self.pipeline = _Pipeline(items)
 
 
 def _table_config() -> TableConfig:
@@ -32,16 +25,20 @@ def _table_config() -> TableConfig:
     )
 
 
-def _dataset() -> _Dataset:
-    return _Dataset(
-        pl.DataFrame(
-            {
-                "id": [0, 0],
-                "schema": ["source", "source"],
-                "table": ["events", "events"],
-                "source": ["id", "event_value"],
-                "target": ["id", "event_value"],
-            }
+def _dataset() -> SimpleNamespace:
+    return SimpleNamespace(
+        pipeline=Pipeline(
+            [
+                {
+                    "schema": "source",
+                    "table": "events",
+                    "type": "primary",
+                    "columns": [
+                        {"source": "id", "target": "id"},
+                        {"source": "event_value", "target": "event_value"},
+                    ],
+                }
+            ]
         )
     )
 

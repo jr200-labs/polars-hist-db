@@ -52,6 +52,6 @@ async def test_run_datasets_leaves_stage_table_empty(fixture_simple, request):
     dsv = "id,double_col,varchar_col\n1,1.5,alpha\n2,2.5,beta\n"
 
     dataset.input_config.set_payload(dsv, ts)
-    await run_datasets(base_config, engine)
+    await run_datasets(base_config, engine, raise_on_error=True)
 
     assert _stage_row_count(engine, dataset, backend_name) == 0

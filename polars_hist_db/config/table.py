@@ -216,8 +216,8 @@ class TableConfig:
 
     def dtypes(self) -> Mapping[str, pl.DataType]:
         result = {
-            row["name"]: PolarsType.from_sql(row["data_type"])
-            for row in self.columns_df().iter_rows(named=True)
+            column.name: PolarsType.from_sql(column.data_type)
+            for column in self.columns
         }
 
         return result
@@ -241,18 +241,21 @@ class ForeignKeyConfig:
 @dataclass
 class TableConfigs:
     items: List[TableConfig]
+    _by_name: Dict[str, TableConfig] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
         self.items = [TableConfig(**tc_dict) for tc_dict in self.items]
         for tc in self.items:
             tc._resolve_foreign_keys(*self.items)
+        self._by_name = {}
+        for table in self.items:
+            self._by_name.setdefault(table.name, table)
 
     def __getitem__(self, name: str) -> TableConfig:
-        tc = next((tc for tc in self.items if tc.name == name), None)
-        if tc:
-            return tc
-
-        raise ValueError(f"TableConfig {name} not found")
+        try:
+            return self._by_name[name]
+        except KeyError as exc:
+            raise ValueError(f"TableConfig {name} not found") from exc
 
     def names(self) -> List[str]:
         return [tc.name for tc in self.items]

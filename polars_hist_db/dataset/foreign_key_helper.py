@@ -1,11 +1,11 @@
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 import polars as pl
 from sqlalchemy import ColumnElement, and_, Column, Connection, select
 from sqlalchemy.sql.functions import coalesce
 
 from ..core import DataframeOps, TableOps
-from ..config import TableConfig
+from ..config import PipelineExtractColumn, TableConfig
 
 LOGGER = logging.getLogger(__name__)
 
@@ -14,11 +14,13 @@ def _get_column_info(
     table_config: TableConfig, col_map: Dict[str, str], col_name: str
 ) -> Optional[Dict[str, Any]]:
     """Retrieve column information for the given column name."""
-    col_info = table_config.columns_df()
-    row = col_info.filter(pl.col("name") == col_map[col_name])
-    if row.is_empty():
+    column = next(
+        (column for column in table_config.columns if column.name == col_map[col_name]),
+        None,
+    )
+    if column is None:
         return None
-    return {"nullable": row[0, "nullable"], "default_value": row[0, "default_value"]}
+    return {"nullable": column.nullable, "default_value": column.default_value}
 
 
 def _coalesce_with_default(
@@ -38,22 +40,29 @@ def _coalesce_with_default(
     return col
 
 
-def _get_foreign_key_columns(col_info: pl.DataFrame) -> List[str]:
+def _get_foreign_key_columns(
+    col_info: Sequence[PipelineExtractColumn],
+) -> List[str]:
     """Retrieve columns that need foreign key deducing."""
-    return col_info.filter("deduce_foreign_key")["source"].to_list()
+    return [column.source for column in col_info if column.deduce_foreign_key]
 
 
-def _get_value_columns(col_info: pl.DataFrame) -> Dict[str, str]:
+def _get_value_columns(
+    col_info: Sequence[PipelineExtractColumn],
+) -> Dict[str, str]:
     """Retrieve columns that do not need foreign key deducing."""
-    df = col_info.filter(pl.col("deduce_foreign_key").not_()).select("source", "target")
-    return dict(df.iter_rows())
+    return {
+        column.source: column.target
+        for column in col_info
+        if not column.deduce_foreign_key
+    }
 
 
 def _prepare_population_set(
     table_schema: str,
     src_table_name: str,
     parent_table_config: TableConfig,
-    col_info: pl.DataFrame,
+    col_info: Sequence[PipelineExtractColumn],
     connection: Connection,
 ) -> pl.DataFrame:
     """Prepare population set to deduce foreign keys."""
@@ -66,8 +75,7 @@ def _prepare_population_set(
 
     src_primary_keys = [src_tbl.c[k] for k in src_tbl.primary_key.columns.keys()]
     parent_implied_cols = [
-        parent_tbl.c[col]
-        for col in col_info.filter("deduce_foreign_key").select("target").iter_rows()
+        parent_tbl.c[column.target] for column in col_info if column.deduce_foreign_key
     ]
 
     value_col_map = _get_value_columns(col_info)
@@ -93,7 +101,7 @@ def deduce_foreign_keys(
     src_table_schema: str,
     src_table_name: str,
     parent_table_config: TableConfig,
-    col_info: pl.DataFrame,
+    col_info: Sequence[PipelineExtractColumn],
     connection: Connection,
 ):
     src_implied_col_names = _get_foreign_key_columns(col_info)
@@ -105,7 +113,7 @@ def deduce_foreign_keys(
         src_table_name,
         parent_table_config.name,
     )
-    src_parent_col_map = dict(col_info.select("source", "target").iter_rows())
+    src_parent_col_map = {column.source: column.target for column in col_info}
 
     population_set_df = _prepare_population_set(
         src_table_schema, src_table_name, parent_table_config, col_info, connection

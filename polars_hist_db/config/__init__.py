@@ -10,6 +10,7 @@ from .dataset import (
     DatasetsConfig,
     IngestionColumnConfig,
     DeltaConfig,
+    PipelineExtractColumn,
     ValidTimeConfig,
 )
 from .table import (
@@ -33,6 +34,7 @@ __all__ = [
     "TableColumnConfig",
     "IngestionColumnConfig",
     "DeltaConfig",
+    "PipelineExtractColumn",
     "ValidTimeConfig",
     "ForeignKeyConfig",
     "TableConfig",

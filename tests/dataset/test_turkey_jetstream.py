@@ -83,6 +83,7 @@ async def test_turkey_stream(nats_js, fixture_with_config):
         "turkey_food_prices_jetstream",
         debug_capture_output=uploaded_dfs,
         js=js,
+        raise_on_error=True,
     )
 
     uploaded_df = pl.concat([df for _, df in uploaded_dfs])

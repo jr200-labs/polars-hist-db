@@ -29,6 +29,7 @@ from sqlalchemy.engine import Engine
 from ..config import (
     DeltaConfig,
     ForeignKeyConfig,
+    PipelineExtractColumn,
     TableColumnConfig,
     TableConfig,
     ValidTimeConfig,
@@ -1319,18 +1320,22 @@ def _dedupe_xtdb_staging_dataframe(
     return df.unique(subset=unique_columns, keep="last", maintain_order=True)
 
 
-def _xtdb_deduced_foreign_key_columns(col_info: pl.DataFrame) -> dict[str, str]:
-    return dict(
-        col_info.filter("deduce_foreign_key").select("source", "target").iter_rows()
-    )
+def _xtdb_deduced_foreign_key_columns(
+    col_info: Iterable[PipelineExtractColumn],
+) -> dict[str, str]:
+    return {
+        column.source: column.target for column in col_info if column.deduce_foreign_key
+    }
 
 
-def _xtdb_deduced_value_columns(col_info: pl.DataFrame) -> dict[str, str]:
-    return dict(
-        col_info.filter(pl.col("deduce_foreign_key").not_())
-        .select("source", "target")
-        .iter_rows()
-    )
+def _xtdb_deduced_value_columns(
+    col_info: Iterable[PipelineExtractColumn],
+) -> dict[str, str]:
+    return {
+        column.source: column.target
+        for column in col_info
+        if not column.deduce_foreign_key
+    }
 
 
 def _xtdb_is_textual_config_column(table_config: TableConfig, column_name: str) -> bool:
