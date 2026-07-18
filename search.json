@@ -391,7 +391,7 @@
     "href": "benchmarks.html#tracked-results",
     "title": "Benchmarks",
     "section": "Tracked results",
-    "text": "Tracked results\nEach successful benchmark run on master appends its custom benchmark output to docs/benchmark-history.json. The workflow keeps the latest 100 commits, commits the updated history, and republishes this Quarto site.\n\nLoading benchmark history…\n\n\n\n\n\nHistory\nBenchmark series",
+    "text": "Tracked results\nEach successful benchmark run on master appends its custom benchmark output to docs/benchmark-history.json. The workflow keeps the latest 100 commits and opens a one-file auto-merge pull request. Once its required checks pass, merging republishes this Quarto site.\n\nLoading benchmark history…\n\n\n\n\n\nHistory\nBenchmark series",
     "crumbs": [
       "Overview",
       "Polars Hist DB",

@@ -471,7 +471,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="tracked-results" class="level2">
 <h2 class="anchored" data-anchor-id="tracked-results">Tracked results</h2>
-<p>Each successful benchmark run on <code>master</code> appends its custom benchmark output to <a href="benchmark-history.json"><code>docs/benchmark-history.json</code></a>. The workflow keeps the latest 100 commits, commits the updated history, and republishes this Quarto site.</p>
+<p>Each successful benchmark run on <code>master</code> appends its custom benchmark output to <a href="benchmark-history.json"><code>docs/benchmark-history.json</code></a>. The workflow keeps the latest 100 commits and opens a one-file auto-merge pull request. Once its required checks pass, merging republishes this Quarto site.</p>
 <div id="benchmark-status" class="benchmark-note">
 Loading benchmark history…
 </div>
