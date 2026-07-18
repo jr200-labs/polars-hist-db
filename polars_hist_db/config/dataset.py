@@ -1,7 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, List, Literal, Optional, Sequence, Tuple
-
-import polars as pl
+from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence, Tuple, cast
 import logging
 
 from .parser_config import IngestionColumnConfig
@@ -30,205 +28,267 @@ class DeltaConfig:
         return f"__{table_name}_tmp"
 
 
-@dataclass
+PipelineColumnType = Literal["data", "computed", "dsv_only", "time_partition_only"]
+
+
+@dataclass(frozen=True)
+class PipelineColumn:
+    pipeline_id: int
+    schema: str
+    table: str
+    item_type: str
+    column_type: PipelineColumnType
+    source: Optional[str] = None
+    target: Optional[str] = None
+    target_data_type: Optional[str] = None
+    ingestion_data_type: Optional[str] = None
+    required: bool = False
+    transforms: Mapping[str, Any] = field(default_factory=dict)
+    aggregation: Optional[str] = None
+    deduce_foreign_key: bool = False
+    value_if_missing: Optional[str] = None
+    nullable: bool = True
+
+
+@dataclass(frozen=True)
+class PipelineExtractColumn:
+    table: str
+    source: str
+    target: str
+    required: bool = False
+    deduce_foreign_key: bool = False
+
+
+@dataclass(init=False)
 class Pipeline:
-    items: pl.DataFrame
+    items: Tuple[PipelineColumn, ...]
     _header_maps: Dict[str, Dict[str, str]] = field(
         init=False, repr=False, compare=False
     )
     _item_types: Dict[str, Tuple[str, ...]] = field(
         init=False, repr=False, compare=False
     )
-    _extract_items: Dict[int, pl.DataFrame] = field(
+    _extract_items: Dict[int, Tuple[PipelineExtractColumn, ...]] = field(
         init=False, repr=False, compare=False
     )
-    _empty_extract_items: pl.DataFrame = field(init=False, repr=False, compare=False)
     _main_table_name: Tuple[str, str] = field(init=False, repr=False, compare=False)
     _table_names: Tuple[str, ...] = field(init=False, repr=False, compare=False)
     _pipeline_items: Dict[int, Tuple[str, str]] = field(
         init=False, repr=False, compare=False
     )
 
-    def __post_init__(self):
-        item_schema = IngestionColumnConfig.df_schema()
-        items = (
-            pl.from_records(self.items)
-            .with_row_index(name="id")
-            .explode("columns", empty_as_null=True)
-            .unnest("columns")
-        )
+    def __init__(self, items: Sequence[Mapping[str, Any] | PipelineColumn]) -> None:
+        if all(isinstance(item, PipelineColumn) for item in items):
+            columns = tuple(cast(PipelineColumn, item) for item in items)
+        else:
+            raw_items = cast(Sequence[Mapping[str, Any]], items)
+            parsed_columns: List[PipelineColumn] = []
+            for pipeline_id, item in enumerate(raw_items):
+                item_columns: Sequence[Mapping[str, Any]] = item.get("columns") or ({},)
+                parsed_columns.extend(
+                    self._parse_column(pipeline_id, item, column)
+                    for column in item_columns
+                )
+            columns = tuple(parsed_columns)
 
-        items = items.with_columns(
-            pl.lit(None).cast(t).alias(c)
-            for c, t in item_schema.items()
-            if c not in items.columns
-        ).with_columns(
-            pl.col("type").fill_null("extract"),
-            pl.col("required").fill_null(False),
-            pl.col("nullable").fill_null(True),
-            pl.col("deduce_foreign_key").fill_null(False),
-            pl.when(pl.col("column_type").is_null())
-            .then(
-                pl.when(pl.col("target").is_null())
-                .then(pl.lit("dsv_only"))
-                .when(pl.col("source").is_null())
-                .then(pl.lit("computed"))
-                .otherwise(pl.lit("data"))
-            )
-            .otherwise(pl.col("column_type"))
-            .alias("column_type"),
-        )
-
-        primary_item = items.filter(type="primary").select("table", "schema").unique()
-        if len(primary_item) != 1:
+        primary_items = {
+            (column.schema, column.table)
+            for column in columns
+            if column.item_type == "primary"
+        }
+        if len(primary_items) != 1:
             raise ValueError("invalid pipeline, required exactly one primary table")
 
-        self.items = items
-        self._main_table_name = (primary_item[0, "schema"], primary_item[0, "table"])
-        self._table_names = tuple(
-            items.get_column("table").unique(maintain_order=True).to_list()
-        )
-        self._pipeline_items = {
-            pipeline_id: (schema, table)
-            for pipeline_id, schema, table in items.select("id", "schema", "table")
-            .unique(maintain_order=True)
-            .iter_rows()
-        }
+        self.items = columns
+        self._main_table_name = next(iter(primary_items))
+        self._table_names = tuple(dict.fromkeys(column.table for column in columns))
+        self._pipeline_items = {}
+        for column in columns:
+            self._pipeline_items.setdefault(
+                column.pipeline_id, (column.schema, column.table)
+            )
 
         self._header_maps = {table: {} for table in self._table_names}
-        for table, source, target in (
-            items.select("table", "source", "target").drop_nulls().iter_rows()
+        for column in columns:
+            if column.source is not None and column.target is not None:
+                self._header_maps[column.table][column.target] = column.source
+
+        item_types: Dict[str, List[str]] = {table: [] for table in self._table_names}
+        for column in columns:
+            if column.item_type not in item_types[column.table]:
+                item_types[column.table].append(column.item_type)
+        self._item_types = {table: tuple(types) for table, types in item_types.items()}
+
+        self._extract_items = {pipeline_id: () for pipeline_id in self._pipeline_items}
+        for pipeline_id in self._pipeline_items:
+            self._extract_items[pipeline_id] = tuple(
+                PipelineExtractColumn(
+                    table=column.table,
+                    source=column.source or column.target or "",
+                    target=column.target or "",
+                    required=column.required,
+                    deduce_foreign_key=column.deduce_foreign_key,
+                )
+                for column in columns
+                if column.pipeline_id == pipeline_id
+                and column.column_type in {"data", "computed"}
+            )
+
+        if any(
+            not column.source or not column.target
+            for extract_columns in self._extract_items.values()
+            for column in extract_columns
         ):
-            self._header_maps[table][target] = source
+            raise ValueError("data and computed pipeline columns require a target")
 
-        self._item_types = {
-            table: tuple(
-                items.filter(table=table)
-                .get_column("type")
-                .unique(maintain_order=True)
-                .to_list()
+    @staticmethod
+    def _parse_column(
+        pipeline_id: int,
+        item: Mapping[str, Any],
+        column: Mapping[str, Any],
+    ) -> PipelineColumn:
+        source = column.get("source")
+        target = column.get("target")
+        column_type = column.get("column_type")
+        if column_type is None:
+            column_type = (
+                "dsv_only"
+                if target is None
+                else "computed"
+                if source is None
+                else "data"
             )
-            for table in self._table_names
-        }
 
-        extract_items = (
-            items.filter(pl.col("column_type").is_in(["data", "computed"]))
-            .with_columns(source=pl.coalesce("source", "target"))
-            .select(
-                "id",
-                "table",
-                "source",
-                "target",
-                "required",
-                "deduce_foreign_key",
-            )
+        return PipelineColumn(
+            pipeline_id=pipeline_id,
+            schema=item["schema"],
+            table=item["table"],
+            item_type=item.get("type") or "extract",
+            column_type=cast(PipelineColumnType, column_type),
+            source=source,
+            target=target,
+            target_data_type=column.get("target_data_type"),
+            ingestion_data_type=column.get("ingestion_data_type"),
+            required=bool(column.get("required")),
+            transforms=column.get("transforms") or {},
+            aggregation=column.get("aggregation"),
+            deduce_foreign_key=bool(column.get("deduce_foreign_key")),
+            value_if_missing=column.get("value_if_missing"),
+            nullable=True if column.get("nullable") is None else column["nullable"],
         )
-        self._extract_items = {
-            pipeline_id: extract_items.filter(id=pipeline_id).drop("id")
-            for pipeline_id in self._pipeline_items
-        }
-        self._empty_extract_items = extract_items.head(0).drop("id")
+
+    @staticmethod
+    def _resolved_types(
+        column: PipelineColumn,
+        table_column: Optional[TableColumnConfig],
+        table_schema: str,
+        table_name: str,
+    ) -> Tuple[str, str]:
+        table_data_type = table_column.data_type if table_column is not None else None
+        target_data_type = (
+            column.target_data_type or table_data_type or column.ingestion_data_type
+        )
+        ingestion_data_type = (
+            column.ingestion_data_type or table_data_type or target_data_type
+        )
+        if target_data_type is None or ingestion_data_type is None:
+            LOGGER.error("Missing types for pipeline column %s", column)
+            raise ValueError(f"Missing types in {table_schema}.{table_name}")
+        return ingestion_data_type, target_data_type
 
     def build_ingestion_column_definitions(
         self, all_tables: TableConfigs
     ) -> List[IngestionColumnConfig]:
-        tmp_cols = self.items.filter(
-            pl.col("column_type").is_in(["dsv_only", "time_partition_only"])
-        )
-        pipeline_cols = self.items.filter(
-            pl.col("column_type").is_in(["dsv_only", "time_partition_only"]).not_()
-        )
-        merged_cols = pl.concat([pipeline_cols, tmp_cols])
-        all_dfs = self._merge_with_table_config(
-            merged_cols, ["schema", "table", "source", "target"], all_tables
-        )
-
-        schema_keys = IngestionColumnConfig.df_schema().keys()
+        temporary_types = {"dsv_only", "time_partition_only"}
+        ordered_columns = [
+            column for column in self.items if column.column_type not in temporary_types
+        ] + [column for column in self.items if column.column_type in temporary_types]
         result = []
-        for df in all_dfs:
-            df = df.with_columns(
-                name=pl.coalesce("target", "source"),
-            )
-            for row in df.iter_rows(named=True):
-                row_dict = {c: row[c] for c in schema_keys if c in row}
-                cc = IngestionColumnConfig(**row_dict)
-                result.append(cc)
-
+        for table in all_tables.items:
+            table_columns = {column.name: column for column in table.columns}
+            seen = set()
+            for column in ordered_columns:
+                if column.table != table.name:
+                    continue
+                key = (column.schema, column.table, column.source, column.target)
+                if key in seen:
+                    continue
+                seen.add(key)
+                table_column = table_columns.get(column.target or "")
+                ingestion_type, target_type = self._resolved_types(
+                    column, table_column, table.schema, table.name
+                )
+                result.append(
+                    IngestionColumnConfig(
+                        column_type=column.column_type,
+                        schema=column.schema,
+                        table=column.table,
+                        ingestion_data_type=ingestion_type,
+                        target_data_type=target_type,
+                        source=column.source,
+                        target=column.target,
+                        transforms=dict(column.transforms),
+                        aggregation=column.aggregation,
+                        deduce_foreign_key=column.deduce_foreign_key,
+                        value_if_missing=column.value_if_missing,
+                        nullable=(
+                            table_column.nullable
+                            if table_column is not None
+                            else column.nullable
+                        ),
+                        required=column.required,
+                    )
+                )
         return result
-
-    def _merge_with_table_config(
-        self,
-        pipeline_cols: pl.DataFrame,
-        unique_key: List[str],
-        all_tables: TableConfigs,
-    ) -> List[pl.DataFrame]:
-        all_dfs = []
-        for tbl_cfg in all_tables.items:
-            tbl_cols = tbl_cfg.columns_df().rename({"data_type": "tbl_data_type"})
-            pipeline_tbl = pipeline_cols.filter(table=tbl_cfg.name)
-            merged_tbl = (
-                pipeline_tbl.unique(subset=unique_key, maintain_order=True)
-                .drop([c for c in pipeline_tbl.columns if c in tbl_cols.columns])
-                .join(tbl_cols, left_on=["target"], right_on=["name"], how="left")
-                .with_columns(
-                    pl.coalesce(
-                        "target_data_type", "tbl_data_type", "ingestion_data_type"
-                    ).alias("target_data_type")
-                )
-                .with_columns(
-                    pl.coalesce(
-                        "ingestion_data_type", "tbl_data_type", "target_data_type"
-                    ).alias("ingestion_data_type")
-                )
-            )
-
-            missing_types = merged_tbl.select(
-                "id",
-                "table",
-                "source",
-                "target",
-                "ingestion_data_type",
-                "target_data_type",
-                "tbl_data_type",
-                is_missing=pl.col("ingestion_data_type").is_null()
-                | pl.col("target_data_type").is_null(),
-            ).filter(pl.col("is_missing"))
-            if not missing_types.is_empty():
-                LOGGER.error("Missing types for dataframe %s", missing_types)
-                raise ValueError(f"Missing types in {tbl_cfg.schema}.{tbl_cfg.name}")
-
-            all_dfs.append(merged_tbl)
-
-        all_dfs = [df for df in all_dfs if not df.is_empty()]
-
-        return all_dfs
 
     def build_delta_table_column_configs(
         self, all_tables: TableConfigs, table_name: str
     ) -> List[TableColumnConfig]:
-        pipeline_cols = self.items.filter(
-            pl.col("column_type").is_in(["data", "computed"])
-        )
-        all_dfs = self._merge_with_table_config(
-            pipeline_cols, ["table", "source", "target"], all_tables
-        )
+        candidates = []
+        for table in all_tables.items:
+            table_columns = {column.name: column for column in table.columns}
+            seen = set()
+            for column in self.items:
+                if column.table != table.name or column.column_type not in {
+                    "data",
+                    "computed",
+                }:
+                    continue
+                key = (column.table, column.source, column.target)
+                if key in seen:
+                    continue
+                seen.add(key)
+                table_column = table_columns.get(column.target or "")
+                _, target_type = self._resolved_types(
+                    column, table_column, table.schema, table.name
+                )
+                candidates.append(
+                    (column, table_column, column.source or column.target, target_type)
+                )
 
-        candidate_cols = (
-            pl.concat(all_dfs)
-            .sort("type")
-            .with_columns(
-                name=pl.coalesce("source", "target"),
-                data_type=pl.col("target_data_type"),
+        candidates.sort(key=lambda candidate: candidate[0].item_type)
+        last_index = {name: index for index, (_, _, name, _) in enumerate(candidates)}
+        return [
+            TableColumnConfig(
+                table=table_name,
+                name=name,
+                data_type=data_type,
+                default_value=(
+                    table_column.default_value if table_column is not None else None
+                ),
+                autoincrement=(
+                    table_column.autoincrement if table_column is not None else False
+                ),
+                nullable=(table_column.nullable if table_column is not None else True),
+                unique_constraint=(
+                    list(table_column.unique_constraint)
+                    if table_column is not None
+                    else []
+                ),
             )
-            .unique(subset=["name"], keep="last", maintain_order=True)
-            .drop("target", "source")
-        )
-
-        columns = TableColumnConfig.from_dataframe(
-            candidate_cols, table_name_override=table_name
-        )
-
-        return columns
+            for index, (_, table_column, name, data_type) in enumerate(candidates)
+            if name is not None and last_index[name] == index
+        ]
 
     def get_header_map(self, table: str) -> Dict[str, str]:
         return dict(self._header_maps.get(table, {}))
@@ -240,8 +300,8 @@ class Pipeline:
 
         return item_types[0]
 
-    def extract_items(self, pipeline_id: int) -> pl.DataFrame:
-        return self._extract_items.get(pipeline_id, self._empty_extract_items)
+    def extract_items(self, pipeline_id: int) -> Tuple[PipelineExtractColumn, ...]:
+        return self._extract_items.get(pipeline_id, ())
 
     def get_main_table_name(self) -> Tuple[str, str]:
         return self._main_table_name

@@ -70,8 +70,8 @@ def project_staged_pipeline_item_dataframe(
     valid_time: Optional[ValidTimeConfig],
 ) -> pl.DataFrame:
     upload_items = dataset.pipeline.extract_items(pipeline_id)
-    src_tgt_colname_map = dict(upload_items.select("source", "target").iter_rows())
-    selected_columns = upload_items["source"].to_list()
+    src_tgt_colname_map = {item.source: item.target for item in upload_items}
+    selected_columns = [item.source for item in upload_items]
     selected_columns = _include_valid_time_source_columns(
         selected_columns,
         src_tgt_colname_map,
@@ -103,8 +103,7 @@ def project_staged_pipeline_item_dataframe(
 
         if rejected_columns:
             raise ValueError(
-                "column mismatch on "
-                f"{set(rejected_columns)} in {upload_items['source'].to_list()}"
+                f"column mismatch on {set(rejected_columns)} in {selected_columns}"
             )
 
         stage_df = stage_df.with_columns(fill_columns)
