@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.12.62](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.61...v0.12.62) (2026-07-18)
+
+
+### Bug Fixes
+
+* **deps:** update all non-major dependencies ([#256](https://github.com/jr200-labs/polars-hist-db/issues/256)) ([6c97890](https://github.com/jr200-labs/polars-hist-db/commit/6c97890213df1466bb7ac404e43983d26be47035))
+* **deps:** update dependency jr200-labs/github-action-templates to shared-v0.1.31 ([#257](https://github.com/jr200-labs/polars-hist-db/issues/257)) ([df21708](https://github.com/jr200-labs/polars-hist-db/commit/df217080f4d1fb9949af43755ce55c8fb0e690bc))
+* **types:** validate complete XTDB type grammar ([#254](https://github.com/jr200-labs/polars-hist-db/issues/254)) ([d98e928](https://github.com/jr200-labs/polars-hist-db/commit/d98e928ee4957c5f025cf9e37fc0bff8d6248846))
+
 ## [0.12.61](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.60...v0.12.61) (2026-07-18)
 
 
