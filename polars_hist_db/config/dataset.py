@@ -33,21 +33,6 @@ class DeltaConfig:
 @dataclass
 class Pipeline:
     items: pl.DataFrame
-    _header_maps: Dict[str, Dict[str, str]] = field(
-        init=False, repr=False, compare=False
-    )
-    _item_types: Dict[str, Tuple[str, ...]] = field(
-        init=False, repr=False, compare=False
-    )
-    _extract_items: Dict[int, pl.DataFrame] = field(
-        init=False, repr=False, compare=False
-    )
-    _empty_extract_items: pl.DataFrame = field(init=False, repr=False, compare=False)
-    _main_table_name: Tuple[str, str] = field(init=False, repr=False, compare=False)
-    _table_names: Tuple[str, ...] = field(init=False, repr=False, compare=False)
-    _pipeline_items: Dict[int, Tuple[str, str]] = field(
-        init=False, repr=False, compare=False
-    )
 
     def __post_init__(self):
         item_schema = IngestionColumnConfig.df_schema()
@@ -79,55 +64,10 @@ class Pipeline:
             .alias("column_type"),
         )
 
-        primary_item = items.filter(type="primary").select("table", "schema").unique()
-        if len(primary_item) != 1:
+        if len(items.filter(type="primary").select("table").unique()) != 1:
             raise ValueError("invalid pipeline, required exactly one primary table")
 
         self.items = items
-        self._main_table_name = (primary_item[0, "schema"], primary_item[0, "table"])
-        self._table_names = tuple(
-            items.get_column("table").unique(maintain_order=True).to_list()
-        )
-        self._pipeline_items = {
-            pipeline_id: (schema, table)
-            for pipeline_id, schema, table in items.select("id", "schema", "table")
-            .unique(maintain_order=True)
-            .iter_rows()
-        }
-
-        self._header_maps = {table: {} for table in self._table_names}
-        for table, source, target in (
-            items.select("table", "source", "target").drop_nulls().iter_rows()
-        ):
-            self._header_maps[table][target] = source
-
-        self._item_types = {
-            table: tuple(
-                items.filter(table=table)
-                .get_column("type")
-                .unique(maintain_order=True)
-                .to_list()
-            )
-            for table in self._table_names
-        }
-
-        extract_items = (
-            items.filter(pl.col("column_type").is_in(["data", "computed"]))
-            .with_columns(source=pl.coalesce("source", "target"))
-            .select(
-                "id",
-                "table",
-                "source",
-                "target",
-                "required",
-                "deduce_foreign_key",
-            )
-        )
-        self._extract_items = {
-            pipeline_id: extract_items.filter(id=pipeline_id).drop("id")
-            for pipeline_id in self._pipeline_items
-        }
-        self._empty_extract_items = extract_items.head(0).drop("id")
 
     def build_ingestion_column_definitions(
         self, all_tables: TableConfigs
@@ -231,26 +171,55 @@ class Pipeline:
         return columns
 
     def get_header_map(self, table: str) -> Dict[str, str]:
-        return dict(self._header_maps.get(table, {}))
+        will_copy = (
+            self.items.filter(table=table).select("source", "target").drop_nulls()
+        )
+        return {row["target"]: row["source"] for row in will_copy.iter_rows(named=True)}
 
     def item_type(self, table: str) -> str:
-        item_types = self._item_types.get(table, ())
-        if len(item_types) != 1:
+        df = self.items.filter(table=table).select("type").unique()
+        if len(df) != 1:
             raise ValueError("invalid pipeline")
 
-        return item_types[0]
+        result: str = df[0, "type"]
+        return result
 
     def extract_items(self, pipeline_id: int) -> pl.DataFrame:
-        return self._extract_items.get(pipeline_id, self._empty_extract_items)
+        df = (
+            self.items.filter(id=pipeline_id)
+            # .drop("table")
+            .filter(pl.col("column_type").is_in(["data", "computed"]))
+            .with_columns(source=pl.coalesce("source", "target"))
+            .select("table", "source", "target", "required", "deduce_foreign_key")
+        )
+
+        return df
 
     def get_main_table_name(self) -> Tuple[str, str]:
-        return self._main_table_name
+        if self.items.is_empty():
+            raise ValueError("missing pipeline")
+
+        primary_item = (
+            self.items.filter(type="primary").select("table", "schema").unique()
+        )
+        if len(primary_item) != 1:
+            raise ValueError("invalid pipeline, required exactly one primary table")
+
+        table_name: str = primary_item[0, "table"]
+        table_schema: str = primary_item[0, "schema"]
+        return table_schema, table_name
 
     def get_table_names(self) -> List[str]:
-        return list(self._table_names)
+        return self.items["table"].unique(maintain_order=True).to_list()
 
     def get_pipeline_items(self) -> Dict[int, Tuple[str, str]]:
-        return dict(self._pipeline_items)
+        pipeline_items = self.items.select("id", "schema", "table").unique(
+            maintain_order=True
+        )
+        result: Dict[int, Tuple[str, str]] = {
+            id: (schema, table) for (id, schema, table) in pipeline_items.iter_rows()
+        }
+        return result
 
 
 @dataclass
