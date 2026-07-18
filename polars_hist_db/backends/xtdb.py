@@ -632,37 +632,32 @@ def _delete_xtdb_missing_rows(
     update_time: Optional[datetime],
     dropout_close_time: Optional[datetime],
 ) -> int:
+    document_id_columns = _xtdb_document_id_columns(table_config)
+    incoming_ids = _prepare_xtdb_insert_dataframe(
+        df.select(document_id_columns).unique(maintain_order=True),
+        table_config,
+    ).get_column("_id")
+    id_cast_type = _xtdb_document_id_cast_type(table_config)
+    ids_sql = ", ".join(
+        _xtdb_sql_literal(value, id_cast_type) for value in incoming_ids
+    )
+    missing_predicate = f"_id NOT IN ({ids_sql})" if ids_sql else "TRUE"
+    table_sql = _qualified_table_name(table_schema, table_name)
     try:
-        current = dataframe_ops.from_raw_sql(
-            "SELECT _id FROM "
-            f"{_qualified_table_name(table_schema, table_name)}"
-            f"{_xtdb_temporal_basis_clause(update_time)}"
+        missing_count = int(
+            dataframe_ops.from_raw_sql(
+                "SELECT COUNT(*) AS missing_count FROM "
+                f"{table_sql}{_xtdb_temporal_basis_clause(update_time)} "
+                f"WHERE {missing_predicate}"
+            ).item()
         )
     except Exception as exc:
         if _is_xtdb_table_not_found_error(exc):
             _rollback_xtdb_connection(dataframe_ops.connection)
             return 0
         raise
-    if current.is_empty():
+    if missing_count == 0:
         return 0
-
-    document_id_columns = _xtdb_document_id_columns(table_config)
-
-    incoming_ids = _prepare_xtdb_insert_dataframe(
-        df.select(document_id_columns).unique(maintain_order=True),
-        table_config,
-    )
-    missing_ids = (
-        current.select("_id")
-        .join(incoming_ids.select("_id"), on="_id", how="anti")
-        .get_column("_id")
-        .to_list()
-    )
-    if not missing_ids:
-        return 0
-
-    id_cast_type = _xtdb_document_id_cast_type(table_config)
-    ids_sql = ", ".join(_xtdb_sql_literal(value, id_cast_type) for value in missing_ids)
     valid_time_clause = ""
     close_time = _xtdb_dropout_close_time(df, dropout_close_time, update_time)
     if close_time is not None:
@@ -670,17 +665,13 @@ def _delete_xtdb_missing_rows(
             " FOR PORTION OF VALID_TIME FROM "
             f"{_xtdb_timestamp_literal(close_time)} TO NULL"
         )
-    delete_sql = (
-        f"DELETE FROM {_qualified_table_name(table_schema, table_name)}"
-        f"{valid_time_clause} "
-        f"WHERE _id IN ({ids_sql})"
-    )
+    delete_sql = f"DELETE FROM {table_sql}{valid_time_clause} WHERE {missing_predicate}"
     _execute_xtdb_dml(
         dataframe_ops.connection,
         delete_sql,
         system_time=update_time,
     )
-    return len(missing_ids)
+    return missing_count
 
 
 def _xtdb_dropout_close_time(
@@ -1037,21 +1028,26 @@ def _xtdb_table_query_target_column(column: str, table_config: TableConfig) -> s
     return _xtdb_column_identifier(column)
 
 
-def _xtdb_values_cte(name: str, df: pl.DataFrame) -> str:
+def _xtdb_values_cte(name: str, df: pl.DataFrame) -> tuple[str, dict[str, Any]]:
     if df.is_empty():
         raise ValueError("XTDB table_query requires at least one query row")
 
     cte_name = _validate_identifier(name)
     columns = [_xtdb_column_identifier(column) for column in df.columns]
     casts = [_xtdb_cast_type_from_polars(dtype) for dtype in df.schema.values()]
-    row_queries = []
-    for row in df.rows():
-        select_sql = ", ".join(
-            f"{_xtdb_sql_literal(value, cast)} AS {column}"
-            for value, cast, column in zip(row, casts, columns, strict=True)
-        )
-        row_queries.append(f"SELECT {select_sql}")
-    return f"{cte_name} AS ({' UNION ALL '.join(row_queries)})"
+    parameters = {}
+    value_rows = []
+    for row_index, row in enumerate(df.rows()):
+        placeholders = []
+        for column_index, (value, cast_type) in enumerate(zip(row, casts, strict=True)):
+            parameter = f"q_{row_index}_{column_index}"
+            parameters[parameter] = _xtdb_parameter_value(value, cast_type)
+            placeholders.append(f"CAST(:{parameter} AS {cast_type})")
+        value_rows.append(f"({', '.join(placeholders)})")
+    return (
+        f"{cte_name} ({', '.join(columns)}) AS (VALUES {', '.join(value_rows)})",
+        parameters,
+    )
 
 
 def _xtdb_polars_type_or_none(data_type: str) -> pl.DataType | None:
@@ -1452,13 +1448,17 @@ class XtdbDataframeOps:
         self,
         query: str,
         schema_overrides: Optional[Mapping[str, pl.DataType]] = None,
+        execute_options: Optional[dict[str, Any]] = None,
     ) -> pl.DataFrame:
         if schema_overrides is None:
             schema_overrides = {}
+        kwargs: dict[str, Any] = {"schema_overrides": schema_overrides}
+        if execute_options is not None:
+            kwargs["execute_options"] = execute_options
         return pl.read_database(
             query,
             self.connection,
-            schema_overrides=schema_overrides,
+            **kwargs,
         )
 
     def from_table(
@@ -1560,6 +1560,7 @@ class XtdbDataframeOps:
         chunk_size = self.max_rows_per_insert or _XTDB_QUERY_ROWS_PER_CHUNK
         chunks = []
         for query_chunk in query_df.iter_slices(chunk_size):
+            values_cte, parameters = _xtdb_values_cte("query_df", query_chunk)
             join_clause = " AND ".join(
                 "t."
                 f"{_xtdb_table_query_target_column(column, table_config)} = "
@@ -1567,7 +1568,7 @@ class XtdbDataframeOps:
                 for column in query_chunk.columns
             )
             query = (
-                f"WITH {_xtdb_values_cte('query_df', query_chunk)} "
+                f"WITH {values_cte} "
                 f"SELECT {select_sql} "
                 "FROM ("
                 "SELECT *, _valid_from, _valid_to "
@@ -1576,7 +1577,13 @@ class XtdbDataframeOps:
                 "JOIN query_df AS q "
                 f"ON {join_clause}"
             )
-            chunks.append(self.from_raw_sql(query, schema_overrides))
+            chunks.append(
+                self.from_raw_sql(
+                    query,
+                    schema_overrides,
+                    {"parameters": parameters},
+                )
+            )
         df = pl.concat(chunks, how="vertical_relaxed")
         for temporal_column in ["__valid_from", "__valid_to"]:
             if (
