@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.66](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.65...v0.12.66) (2026-07-19)
+
+
+### Features
+
+* scope document names by owning group ([#267](https://github.com/jr200-labs/polars-hist-db/issues/267)) ([2d9ce78](https://github.com/jr200-labs/polars-hist-db/commit/2d9ce78de8b76e28c0082f996cb11615a241c202))
+
 ## [0.12.65](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.64...v0.12.65) (2026-07-19)
 
 
