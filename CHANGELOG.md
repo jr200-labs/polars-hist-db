@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.65](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.64...v0.12.65) (2026-07-19)
+
+
+### Features
+
+* support idempotent document access creation ([#264](https://github.com/jr200-labs/polars-hist-db/issues/264)) ([879ac68](https://github.com/jr200-labs/polars-hist-db/commit/879ac68be47656e918a9b3e5acbb77625c934649))
+
 ## [0.12.64](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.63...v0.12.64) (2026-07-19)
 
 
