@@ -96,20 +96,39 @@ class InMemoryDocumentAccessStore:
         initial_grants: Iterable[AccessGrantInput] = (),
         idempotency_key: str,
         owning_group: str | None = None,
+        allow_existing: bool = False,
     ) -> AccessMutationResult:
         grants = tuple(initial_grants)
-        payload = _payload(
-            "create", document_id, name, description, actor_id, grants, owning_group
+        payload = _create_payload(
+            document_id,
+            name,
+            description,
+            actor_id,
+            grants,
+            owning_group,
+            allow_existing,
         )
         duplicate = self._duplicate(idempotency_key, payload)
         if duplicate is not None:
             return duplicate
+        normalized_name = _normalized(name)
+        existing = next(
+            (
+                doc
+                for doc in self._documents.values()
+                if doc.normalized_name == normalized_name
+            ),
+            None,
+        )
+        if existing is not None and allow_existing:
+            return _existing_result(
+                existing,
+                self.grants(existing.document_id),
+                owning_group,
+            )
         if document_id in self._documents:
             raise DocumentAccessError("document already exists")
-        normalized_name = _normalized(name)
-        if any(
-            doc.normalized_name == normalized_name for doc in self._documents.values()
-        ):
+        if existing is not None:
             raise DocumentAccessError("document name already exists")
         _require_time(recorded_at)
         document = AccessDocument(
@@ -332,6 +351,52 @@ def _normalized(value: str) -> str:
     if not normalized:
         raise DocumentAccessError("name is required")
     return normalized
+
+
+def _create_payload(
+    document_id: str,
+    name: str,
+    description: str | None,
+    actor_id: str,
+    grants: Iterable[AccessGrantInput],
+    owning_group: str | None,
+    allow_existing: bool,
+) -> str:
+    grants = tuple(grants)
+    if allow_existing:
+        return _payload(
+            "create",
+            name,
+            description,
+            actor_id,
+            tuple((grant.group_name, grant.role) for grant in grants),
+            owning_group,
+            "allow_existing",
+        )
+    values: list[object] = [
+        document_id,
+        name,
+        description,
+        actor_id,
+        grants,
+        owning_group,
+    ]
+    return _payload("create", *values)
+
+
+def _existing_result(
+    document: AccessDocument,
+    grants: Iterable[AccessGrant],
+    owning_group: str | None,
+) -> AccessMutationResult:
+    if document.status != "active" or document.owning_group != owning_group:
+        raise DocumentAccessError("document name already exists")
+    return AccessMutationResult(
+        document,
+        tuple(grants),
+        accepted=False,
+        duplicate=True,
+    )
 
 
 def _require_time(value: datetime) -> None:

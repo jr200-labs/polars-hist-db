@@ -53,6 +53,16 @@ def test_mariadb_access_store_persists_lifecycle_and_idempotency():
                 initial_grants=(AccessGrantInput("grant-1", "operators", "editor"),),
                 idempotency_key="command-1",
             )
+            existing = store.create(
+                "document-2",
+                " shared corrections ",
+                None,
+                "user-1",
+                now,
+                initial_grants=(AccessGrantInput("grant-2", "operators", "editor"),),
+                idempotency_key="command-ensure",
+                allow_existing=True,
+            )
             revoked = store.revoke(
                 "document-1",
                 "operators",
@@ -68,6 +78,8 @@ def test_mariadb_access_store_persists_lifecycle_and_idempotency():
             assert created.document.revision == 1
             assert duplicate.duplicate is True
             assert duplicate.document.created_at == now
+            assert existing.document.document_id == "document-1"
+            assert existing.duplicate is True
             assert revoked.grants[0].active is False
             assert archived.document.status == "archived"
             with pytest.raises(DocumentArchived):

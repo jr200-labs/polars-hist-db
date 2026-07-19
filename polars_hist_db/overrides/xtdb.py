@@ -33,6 +33,8 @@ from .access import (
     DocumentNotFound,
     DocumentRevisionConflict,
     IdempotencyConflict,
+    _create_payload,
+    _existing_result,
     _normalized,
     _payload,
     _require_time,
@@ -422,6 +424,24 @@ class XtdbCrdtDocumentStore:
             return []
 
 
+_ACCESS_ASSERTION_MESSAGES = (
+    "idempotency key already exists",
+    "document already exists",
+    "document name already exists",
+    "grant already exists",
+    "group already has an active grant",
+    "document revision changed",
+    "active group grant not found",
+)
+
+
+def _access_assertion_message(exc: Exception) -> str | None:
+    error = str(exc)
+    return next(
+        (message for message in _ACCESS_ASSERTION_MESSAGES if message in error), None
+    )
+
+
 class XtdbDocumentAccessStore:
     """XTDB implementation of the backend-neutral document access contract."""
 
@@ -513,16 +533,31 @@ class XtdbDocumentAccessStore:
         initial_grants: Sequence[AccessGrantInput] = (),
         idempotency_key: str,
         owning_group: str | None = None,
+        allow_existing: bool = False,
     ) -> AccessMutationResult:
         grants = tuple(initial_grants)
-        payload = _payload(
-            "create", document_id, name, description, actor_id, grants, owning_group
+        payload = _create_payload(
+            document_id,
+            name,
+            description,
+            actor_id,
+            grants,
+            owning_group,
+            allow_existing,
         )
         duplicate = self._duplicate(idempotency_key, payload)
         if duplicate:
             return duplicate
         _require_time(recorded_at)
         normalized_name = _normalized(name)
+        if allow_existing:
+            existing = self._by_normalized_name(normalized_name)
+            if existing is not None:
+                return _existing_result(
+                    existing,
+                    self.grants(existing.document_id),
+                    owning_group,
+                )
         if len({grant.grant_id for grant in grants}) != len(grants) or len(
             {grant.group_name.casefold() for grant in grants}
         ) != len(grants):
@@ -562,8 +597,28 @@ class XtdbDocumentAccessStore:
                 idempotency_key, payload, "create", result, recorded_at
             ),
         ]
-        duplicate = self._run(statements, idempotency_key, payload, document_id, None)
+        try:
+            duplicate = self._run(
+                statements, idempotency_key, payload, document_id, None
+            )
+        except DocumentAccessError as exc:
+            if allow_existing and str(exc) == "document name already exists":
+                existing = self._by_normalized_name(normalized_name)
+                if existing is not None:
+                    return _existing_result(
+                        existing,
+                        self.grants(existing.document_id),
+                        owning_group,
+                    )
+            raise
         return result if duplicate is None else duplicate
+
+    def _by_normalized_name(self, normalized_name: str) -> AccessDocument | None:
+        rows = self._rows(
+            f"SELECT {_access_document_columns()} FROM {_table_name(self.documents)} "
+            f"WHERE normalized_name = {_literal(normalized_name, 'VARCHAR(255)')}"
+        )
+        return _access_document_from_row(rows[0]) if rows else None
 
     def grant(
         self,
@@ -778,13 +833,16 @@ class XtdbDocumentAccessStore:
         self._ensure_tables()
         try:
             _execute_xtdb_transaction(self.connection, statements)
-        except Exception:
+        except Exception as exc:
             duplicate = self._duplicate(key, payload)
             if duplicate:
                 return duplicate
             if revision is not None:
                 self._active(document_id, revision)
-            raise DocumentAccessError("access command conflicts") from None
+            conflict = _access_assertion_message(exc)
+            if conflict is not None:
+                raise DocumentAccessError(conflict) from exc
+            raise
         return None
 
     def _ensure_tables(self) -> None:
@@ -801,10 +859,12 @@ class XtdbDocumentAccessStore:
             }
             bootstrap_id = _document_id(config, bootstrap_row)
             _execute_xtdb_transaction(
+                self.connection, [_insert_statement(config, bootstrap_row)]
+            )
+            _execute_xtdb_transaction(
                 self.connection,
                 [
-                    _insert_statement(config, bootstrap_row),
-                    f"ERASE FROM {_table_name(config)} WHERE _id = {_literal(bootstrap_id, 'TEXT')}",
+                    f"ERASE FROM {_table_name(config)} WHERE _id = {_literal(bootstrap_id, 'TEXT')}"
                 ],
             )
 

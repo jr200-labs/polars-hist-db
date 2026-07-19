@@ -24,6 +24,12 @@ from polars_hist_db.dataset.entrypoint import (
 )
 from polars_hist_db.dataset.scrape import _run_pipeline_as_transaction
 from polars_hist_db.loaders.input_source import BatchFinalizer
+from polars_hist_db.overrides import (
+    AccessGrantInput,
+    DocumentAccessStoreConfig,
+    XtdbDocumentAccessStore,
+    build_document_access_table_configs,
+)
 
 
 pytestmark = [
@@ -127,6 +133,51 @@ def test_xtdb_live_create_append_read_roundtrip():
         "destination": ["Alpha", "Beta"],
         "amount_value": [10.5, 20.25],
     }
+
+
+def test_xtdb_live_document_access_create():
+    suffix = int(time.time())
+    config = DocumentAccessStoreConfig(
+        schema="public",
+        documents_table=f"access_documents_{suffix}",
+        grants_table=f"access_grants_{suffix}",
+        commands_table=f"access_commands_{suffix}",
+    )
+
+    with _xtdb_engine() as engine:
+        backend = XtdbBackend()
+        with backend.connection_scope(engine) as connection:
+            tables = backend.table_configs(connection)
+            for table_config in build_document_access_table_configs(config):
+                tables.create(table_config)
+            store = XtdbDocumentAccessStore(connection, config)
+            result = store.create(
+                "document-1",
+                "Shared layer",
+                None,
+                "user-1",
+                datetime.now(timezone.utc),
+                initial_grants=(AccessGrantInput("grant-1", "group-1", "manager"),),
+                idempotency_key="command-1",
+                owning_group="group-1",
+            )
+            existing = store.create(
+                "document-2",
+                " shared layer ",
+                None,
+                "user-1",
+                datetime.now(timezone.utc),
+                initial_grants=(AccessGrantInput("grant-2", "group-1", "manager"),),
+                idempotency_key="command-2",
+                owning_group="group-1",
+                allow_existing=True,
+            )
+            documents = store.list_all()
+
+    assert result.accepted is True
+    assert existing.document.document_id == "document-1"
+    assert existing.duplicate is True
+    assert [document.document_id for document in documents] == ["document-1"]
 
 
 def test_xtdb_live_reflection_preserves_caller_transaction_without_metadata():
