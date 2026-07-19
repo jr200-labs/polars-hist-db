@@ -4,6 +4,7 @@ import pytest
 
 from polars_hist_db.overrides import (
     AccessGrantInput,
+    DocumentAccessError,
     DocumentArchived,
     DocumentRevisionConflict,
     IdempotencyConflict,
@@ -79,3 +80,89 @@ def test_guard_matches_the_portable_active_revision_contract():
 
     assert guard.key_values == {"document_id": "doc-1"}
     assert guard.expected_values == {"status": "active", "revision": 4}
+
+
+def test_create_can_ensure_an_existing_active_document_for_the_same_owner():
+    store = InMemoryDocumentAccessStore()
+    created = store.create(
+        "doc-1",
+        "Analysts",
+        None,
+        "admin",
+        TIME,
+        initial_grants=[AccessGrantInput("grant-1", "analysts", "manager")],
+        idempotency_key="create-1",
+        owning_group="analysts",
+    )
+
+    existing = store.create(
+        "doc-1",
+        " analysts ",
+        None,
+        "admin",
+        TIME,
+        initial_grants=[AccessGrantInput("grant-2", "analysts", "manager")],
+        idempotency_key="create-2",
+        owning_group="analysts",
+        allow_existing=True,
+    )
+
+    assert existing.document == created.document
+    assert existing.grants == created.grants
+    assert existing.accepted is False
+    assert existing.duplicate is True
+
+
+def test_allow_existing_does_not_cross_ownership_boundaries():
+    store = InMemoryDocumentAccessStore()
+    store.create(
+        "doc-1",
+        "Analysts",
+        None,
+        "admin",
+        TIME,
+        idempotency_key="create-1",
+        owning_group="analysts",
+    )
+
+    with pytest.raises(DocumentAccessError, match="document name already exists"):
+        store.create(
+            "doc-2",
+            "Analysts",
+            None,
+            "admin",
+            TIME,
+            idempotency_key="create-2",
+            owning_group="reviewers",
+            allow_existing=True,
+        )
+
+
+def test_allow_existing_idempotency_ignores_generated_identifiers():
+    store = InMemoryDocumentAccessStore()
+    created = store.create(
+        "generated-doc-1",
+        "Analysts",
+        None,
+        "admin",
+        TIME,
+        initial_grants=[AccessGrantInput("generated-grant-1", "analysts", "manager")],
+        idempotency_key="create-1",
+        owning_group="analysts",
+        allow_existing=True,
+    )
+
+    retried = store.create(
+        "generated-doc-2",
+        "Analysts",
+        None,
+        "admin",
+        TIME,
+        initial_grants=[AccessGrantInput("generated-grant-2", "analysts", "manager")],
+        idempotency_key="create-1",
+        owning_group="analysts",
+        allow_existing=True,
+    )
+
+    assert retried.document == created.document
+    assert retried.duplicate is True

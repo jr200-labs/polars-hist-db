@@ -22,6 +22,8 @@ from .access import (
     DocumentNotFound,
     DocumentRevisionConflict,
     IdempotencyConflict,
+    _create_payload,
+    _existing_result,
     _normalized,
     _payload,
     _require_time,
@@ -501,24 +503,34 @@ class MariaDbDocumentAccessStore:
         initial_grants: Sequence[AccessGrantInput] = (),
         idempotency_key: str,
         owning_group: str | None = None,
+        allow_existing: bool = False,
     ) -> AccessMutationResult:
-        payload = _payload(
-            "create",
+        payload = _create_payload(
             document_id,
             name,
             description,
             actor_id,
             initial_grants,
             owning_group,
+            allow_existing,
         )
         duplicate = self._duplicate(idempotency_key, payload)
         if duplicate:
             return duplicate
         _require_time(recorded_at)
+        normalized_name = _normalized(name)
+        if allow_existing:
+            existing = self._by_normalized_name(normalized_name)
+            if existing is not None:
+                return _existing_result(
+                    existing,
+                    self.grants(existing.document_id),
+                    owning_group,
+                )
         document = AccessDocument(
             document_id,
             name,
-            _normalized(name),
+            normalized_name,
             description,
             "active",
             1,
@@ -540,7 +552,26 @@ class MariaDbDocumentAccessStore:
             duplicate = self._duplicate(idempotency_key, payload)
             if duplicate:
                 return duplicate
+            existing = self._by_normalized_name(normalized_name)
+            if existing is not None and allow_existing:
+                return _existing_result(
+                    existing,
+                    self.grants(existing.document_id),
+                    owning_group,
+                )
             raise DocumentAccessError("document or grant already exists") from exc
+
+    def _by_normalized_name(self, normalized_name: str) -> AccessDocument | None:
+        row = (
+            self.connection.execute(
+                select(self.documents).where(
+                    self.documents.c.normalized_name == normalized_name
+                )
+            )
+            .mappings()
+            .first()
+        )
+        return _access_document(row) if row else None
 
     def grant(
         self,

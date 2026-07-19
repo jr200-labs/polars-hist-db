@@ -1,7 +1,10 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from polars_hist_db.overrides import (
     AccessGrantInput,
+    DocumentAccessError,
     DocumentAccessStoreConfig,
     XtdbDocumentAccessStore,
 )
@@ -46,3 +49,77 @@ def test_xtdb_access_guard_uses_active_revision():
 
     assert guard.key_values == {"document_id": "document-1"}
     assert guard.expected_values == {"status": "active", "revision": 3}
+
+
+def test_xtdb_access_create_reports_the_assertion_that_conflicted(monkeypatch):
+    store = XtdbDocumentAccessStore(object(), DocumentAccessStoreConfig())
+    monkeypatch.setattr(store, "_duplicate", lambda *_: None)
+    monkeypatch.setattr(store, "_ensure_tables", lambda: None)
+
+    def reject(*_):
+        raise RuntimeError("document name already exists\nDETAIL: assertion failed")
+
+    monkeypatch.setattr(
+        "polars_hist_db.overrides.xtdb._execute_xtdb_transaction", reject
+    )
+
+    with pytest.raises(DocumentAccessError, match="^document name already exists$"):
+        store.create(
+            "document-1",
+            "Shared corrections",
+            None,
+            "user-1",
+            datetime(2026, 7, 12, 11, tzinfo=timezone.utc),
+            idempotency_key="command-1",
+        )
+
+
+def test_xtdb_access_create_does_not_mask_unexpected_database_errors(monkeypatch):
+    store = XtdbDocumentAccessStore(object(), DocumentAccessStoreConfig())
+    monkeypatch.setattr(store, "_duplicate", lambda *_: None)
+    monkeypatch.setattr(store, "_ensure_tables", lambda: None)
+    database_error = RuntimeError("connection closed")
+
+    def reject(*_):
+        raise database_error
+
+    monkeypatch.setattr(
+        "polars_hist_db.overrides.xtdb._execute_xtdb_transaction", reject
+    )
+
+    with pytest.raises(RuntimeError, match="connection closed") as error:
+        store.create(
+            "document-1",
+            "Shared corrections",
+            None,
+            "user-1",
+            datetime(2026, 7, 12, 11, tzinfo=timezone.utc),
+            idempotency_key="command-1",
+        )
+
+    assert error.value is database_error
+
+
+def test_xtdb_access_bootstrap_erases_rows_in_a_followup_transaction(monkeypatch):
+    transactions: list[list[str]] = []
+    store = XtdbDocumentAccessStore(object(), DocumentAccessStoreConfig())
+    monkeypatch.setattr(store, "_rows", lambda *_: [])
+    monkeypatch.setattr(
+        "polars_hist_db.overrides.xtdb._execute_xtdb_transaction",
+        lambda _, statements: transactions.append(list(statements)),
+    )
+
+    store._ensure_tables()
+
+    assert len(transactions) == 6
+    assert all(len(transaction) == 1 for transaction in transactions)
+    assert [
+        transaction[0].lstrip().split(maxsplit=1)[0] for transaction in transactions
+    ] == [
+        "INSERT",
+        "ERASE",
+        "INSERT",
+        "ERASE",
+        "INSERT",
+        "ERASE",
+    ]
