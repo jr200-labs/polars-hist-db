@@ -152,7 +152,7 @@ class XtdbCrdtDocumentStore:
         document_id_sql = _literal(document_id, "VARCHAR(128)")
         head = self._rows(
             f"SELECT document_id, revision FROM {_table_name(self.documents)} "
-            f"WHERE _id = {document_id_sql}"
+            f"WHERE document_id = {document_id_sql}"
         )
         if not head:
             return None
@@ -190,7 +190,7 @@ class XtdbCrdtDocumentStore:
             [
                 f"ERASE FROM {_table_name(self.projection)} WHERE crdt_document_id = {value}",
                 f"ERASE FROM {_table_name(self.updates)} WHERE document_id = {value}",
-                f"ERASE FROM {_table_name(self.documents)} WHERE _id = {value}",
+                f"ERASE FROM {_table_name(self.documents)} WHERE document_id = {value}",
             ],
         )
 
@@ -312,11 +312,11 @@ class XtdbCrdtDocumentStore:
     def _revision_assertion(self, prepared: PreparedCrdtCommit) -> str:
         document_id = _literal(prepared.document_id, "VARCHAR(128)")
         if prepared.base_revision == 0:
-            predicate = f"NOT EXISTS (SELECT 1 FROM {_table_name(self.documents)} WHERE _id = {document_id})"
+            predicate = f"NOT EXISTS (SELECT 1 FROM {_table_name(self.documents)} WHERE document_id = {document_id})"
         else:
             predicate = (
                 "EXISTS (SELECT 1 FROM "
-                f"{_table_name(self.documents)} WHERE _id = {document_id} "
+                f"{_table_name(self.documents)} WHERE document_id = {document_id} "
                 f"AND revision = {prepared.base_revision}::BIGINT)"
             )
         return f"ASSERT {predicate}, 'CRDT document revision changed'"
@@ -405,12 +405,11 @@ class XtdbCrdtDocumentStore:
                 column.name: _bootstrap_value(column.data_type)
                 for column in config.columns
             }
-            bootstrap_id = _document_id(config, bootstrap_row)
             _execute_xtdb_transaction(
                 self.connection,
                 [
                     _insert_statement(config, bootstrap_row),
-                    f"ERASE FROM {table_name} WHERE _id = {_literal(bootstrap_id, 'TEXT')}",
+                    f"ERASE FROM {table_name} WHERE {_where(config, {key: bootstrap_row[key] for key in config.primary_keys})}",
                 ],
             )
 
@@ -460,7 +459,7 @@ class XtdbDocumentAccessStore:
     def get(self, document_id: str) -> AccessDocument | None:
         rows = self._rows(
             f"SELECT {_access_document_columns()} FROM {_table_name(self.documents)} "
-            f"WHERE _id = {_literal(document_id, 'VARCHAR(128)')}"
+            f"WHERE document_id = {_literal(document_id, 'VARCHAR(128)')}"
         )
         return _access_document_from_row(rows[0]) if rows else None
 
@@ -522,7 +521,7 @@ class XtdbDocumentAccessStore:
         _execute_xtdb_transaction(
             self.connection,
             [
-                f"ASSERT EXISTS (SELECT 1 FROM {_table_name(self.documents)} WHERE _id = {_literal(document_id, 'VARCHAR(128)')} AND generation = {expected_generation}::BIGINT), 'document generation changed'",
+                f"ASSERT EXISTS (SELECT 1 FROM {_table_name(self.documents)} WHERE document_id = {_literal(document_id, 'VARCHAR(128)')} AND generation = {expected_generation}::BIGINT), 'document generation changed'",
                 _access_update(self.documents, document_id, {"status": "purging"}),
             ],
         )
@@ -588,10 +587,10 @@ class XtdbDocumentAccessStore:
         )
         statements = [
             self._command_assertion(idempotency_key),
-            f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.documents)} WHERE _id = {_literal(document_id, 'VARCHAR(128)')}), 'document already exists'",
+            f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.documents)} WHERE document_id = {_literal(document_id, 'VARCHAR(128)')}), 'document already exists'",
             f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.documents)} WHERE {_owning_group_predicate(owning_group)} AND normalized_name = {_literal(normalized_name, 'VARCHAR(255)')}), 'document name already exists'",
             *(
-                f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.grants_table)} WHERE _id = {_literal(grant.grant_id, 'VARCHAR(128)')}), 'grant already exists'"
+                f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.grants_table)} WHERE grant_id = {_literal(grant.grant_id, 'VARCHAR(128)')}), 'grant already exists'"
                 for grant in grants
             ),
             _insert_statement(self.documents, _document_row(document)),
@@ -653,7 +652,7 @@ class XtdbDocumentAccessStore:
         statements = [
             self._command_assertion(idempotency_key),
             self._active_assertion(document_id, expected_revision),
-            f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.grants_table)} WHERE _id = {_literal(grant.grant_id, 'VARCHAR(128)')}), 'grant already exists'",
+            f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.grants_table)} WHERE grant_id = {_literal(grant.grant_id, 'VARCHAR(128)')}), 'grant already exists'",
             f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.grants_table)} WHERE active_group_key = {_literal(_active_group_key(document_id, grant.group_name), 'VARCHAR(512)')}), 'group already has an active grant'",
             _access_update(self.documents, document_id, {"revision": updated.revision}),
             _insert_statement(self.grants_table, _grant_row(new_grant)),
@@ -707,7 +706,7 @@ class XtdbDocumentAccessStore:
         statements = [
             self._command_assertion(idempotency_key),
             self._active_assertion(document_id, expected_revision),
-            f"ASSERT EXISTS (SELECT 1 FROM {_table_name(self.grants_table)} WHERE _id = {_literal(active_grant.grant_id, 'VARCHAR(128)')} AND revoked_at IS NULL), 'active group grant not found'",
+            f"ASSERT EXISTS (SELECT 1 FROM {_table_name(self.grants_table)} WHERE grant_id = {_literal(active_grant.grant_id, 'VARCHAR(128)')} AND revoked_at IS NULL), 'active group grant not found'",
             _access_update(self.documents, document_id, {"revision": updated.revision}),
             _access_update(
                 self.grants_table,
@@ -792,7 +791,7 @@ class XtdbDocumentAccessStore:
     def _duplicate(self, key: str, payload: str) -> AccessMutationResult | None:
         rows = self._rows(
             f"SELECT payload_hash, result_json FROM {_table_name(self.commands)} "
-            f"WHERE _id = {_literal(key, 'VARCHAR(128)')}"
+            f"WHERE idempotency_key = {_literal(key, 'VARCHAR(128)')}"
         )
         if not rows:
             return None
@@ -803,12 +802,12 @@ class XtdbDocumentAccessStore:
         return _access_result_from_json(rows[0]["result_json"], duplicate=True)
 
     def _command_assertion(self, key: str) -> str:
-        return f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.commands)} WHERE _id = {_literal(key, 'VARCHAR(128)')}), 'idempotency key already exists'"
+        return f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.commands)} WHERE idempotency_key = {_literal(key, 'VARCHAR(128)')}), 'idempotency key already exists'"
 
     def _active_assertion(self, document_id: str, revision: int) -> str:
         return (
             f"ASSERT EXISTS (SELECT 1 FROM {_table_name(self.documents)} WHERE "
-            f"_id = {_literal(document_id, 'VARCHAR(128)')} AND status = 'active' "
+            f"document_id = {_literal(document_id, 'VARCHAR(128)')} AND status = 'active' "
             f"AND revision = {revision}::BIGINT), 'document revision changed'"
         )
 
@@ -866,14 +865,13 @@ class XtdbDocumentAccessStore:
                 column.name: _bootstrap_value(column.data_type)
                 for column in config.columns
             }
-            bootstrap_id = _document_id(config, bootstrap_row)
             _execute_xtdb_transaction(
                 self.connection, [_insert_statement(config, bootstrap_row)]
             )
             _execute_xtdb_transaction(
                 self.connection,
                 [
-                    f"ERASE FROM {_table_name(config)} WHERE _id = {_literal(bootstrap_id, 'TEXT')}"
+                    f"ERASE FROM {_table_name(config)} WHERE {_where(config, {key: bootstrap_row[key] for key in config.primary_keys})}"
                 ],
             )
 
@@ -1041,7 +1039,7 @@ def _access_update(
     )
     return (
         f"UPDATE {_table_name(config)} SET {assignments} WHERE "
-        f"_id = {_literal(document_id, 'VARCHAR(128)')}"
+        f"{_where(config, {next(iter(config.primary_keys)): document_id})}"
     )
 
 

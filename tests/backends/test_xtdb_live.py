@@ -137,6 +137,7 @@ def test_xtdb_live_create_append_read_roundtrip():
 
 def test_xtdb_live_document_access_create():
     suffix = int(time.time())
+    document_id = "e9ca81c9-6116-4247-b951-185e82033440"
     config = DocumentAccessStoreConfig(
         schema="public",
         documents_table=f"access_documents_{suffix}",
@@ -152,7 +153,7 @@ def test_xtdb_live_document_access_create():
                 tables.create(table_config)
             store = XtdbDocumentAccessStore(connection, config)
             result = store.create(
-                "document-1",
+                document_id,
                 "Shared layer",
                 None,
                 "user-1",
@@ -184,15 +185,17 @@ def test_xtdb_live_document_access_create():
                 allow_existing=True,
             )
             documents = store.list_all()
+            loaded = store.get(document_id)
 
     assert result.accepted is True
-    assert existing.document.document_id == "document-1"
+    assert existing.document.document_id == document_id
     assert existing.duplicate is True
     assert other_group.document.document_id == "document-3"
     assert {document.document_id for document in documents} == {
-        "document-1",
+        document_id,
         "document-3",
     }
+    assert loaded == result.document
 
 
 def test_xtdb_live_reflection_preserves_caller_transaction_without_metadata():
