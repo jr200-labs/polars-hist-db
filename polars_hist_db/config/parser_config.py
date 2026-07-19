@@ -12,7 +12,9 @@ LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class IngestionColumnConfig:
-    column_type: Literal["data", "computed", "dsv_only", "time_partition_only"]
+    column_type: Literal[
+        "data", "computed", "input_only", "dsv_only", "time_partition_only"
+    ]
     schema: str
     table: Optional[str]
     ingestion_data_type: str

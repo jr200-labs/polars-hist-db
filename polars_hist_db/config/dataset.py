@@ -28,7 +28,13 @@ class DeltaConfig:
         return f"__{table_name}_tmp"
 
 
-PipelineColumnType = Literal["data", "computed", "dsv_only", "time_partition_only"]
+PipelineColumnType = Literal[
+    "data",
+    "computed",
+    "input_only",
+    "dsv_only",
+    "time_partition_only",
+]
 
 
 @dataclass(frozen=True)
@@ -199,7 +205,7 @@ class Pipeline:
     def build_ingestion_column_definitions(
         self, all_tables: TableConfigs
     ) -> List[IngestionColumnConfig]:
-        temporary_types = {"dsv_only", "time_partition_only"}
+        temporary_types = {"input_only", "dsv_only", "time_partition_only"}
         ordered_columns = [
             column for column in self.items if column.column_type not in temporary_types
         ] + [column for column in self.items if column.column_type in temporary_types]
@@ -248,6 +254,7 @@ class Pipeline:
                 if column.table != table.name or column.column_type not in {
                     "data",
                     "computed",
+                    "time_partition_only",
                 }:
                     continue
                 key = (column.table, column.source, column.target)

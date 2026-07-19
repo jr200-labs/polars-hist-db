@@ -69,6 +69,11 @@ def test_pipeline_builds_normalized_table_metadata_without_dataframes():
                 "columns": [
                     {"source": "id", "target": "id", "required": True},
                     {"source": "country_id", "target": "country_id"},
+                    {
+                        "source": "unused_payload_field",
+                        "column_type": "input_only",
+                        "ingestion_data_type": "VARCHAR(16)",
+                    },
                     {"source": "raw_date", "ingestion_data_type": "VARCHAR(10)"},
                     {
                         "target": "event_date",
@@ -112,6 +117,7 @@ def test_pipeline_builds_normalized_table_metadata_without_dataframes():
     assert definitions[("ref", "country_id")].deduce_foreign_key is True
     assert definitions[("ref", "country")].target_data_type == "VARCHAR(64)"
     assert definitions[("sample", "id")].required is True
+    assert definitions[("sample", "unused_payload_field")].column_type == "input_only"
     assert definitions[("sample", "raw_date")].column_type == "dsv_only"
     assert definitions[("sample", "raw_date")].table is None
     assert definitions[("sample", "event_date")].transforms == {"parse_date": []}
@@ -120,4 +126,5 @@ def test_pipeline_builds_normalized_table_metadata_without_dataframes():
         ("country", "VARCHAR(64)"),
         ("id", "INT"),
         ("country_id", "INT"),
+        ("event_date", "DATE"),
     ]

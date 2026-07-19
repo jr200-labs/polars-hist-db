@@ -1,0 +1,79 @@
+import polars as pl
+import pytest
+from typing import Literal
+
+from polars_hist_db.config.parser_config import IngestionColumnConfig
+from polars_hist_db.loaders.transform import (
+    InputSchemaError,
+    apply_transformations,
+    enforce_input_schema,
+)
+
+
+def _column(
+    source: str,
+    data_type: str,
+    *,
+    column_type: Literal["data", "input_only"] = "data",
+    nullable: bool = True,
+) -> IngestionColumnConfig:
+    return IngestionColumnConfig(
+        column_type=column_type,
+        schema="sample",
+        table="items" if column_type == "data" else None,
+        ingestion_data_type=data_type,
+        target_data_type=data_type,
+        source=source,
+        target=source if column_type == "data" else None,
+        nullable=nullable,
+    )
+
+
+def test_input_schema_types_nulls_and_drops_declared_input_only_columns() -> None:
+    columns = [
+        _column("id", "INT", nullable=False),
+        _column("note", "VARCHAR(32)"),
+        _column("unused", "VARCHAR(32)", column_type="input_only"),
+    ]
+    first_raw = pl.DataFrame(
+        {"id": [1], "unused": [None]},
+        schema={"id": pl.Int64, "unused": pl.Null},
+    )
+    second_raw = pl.DataFrame({"id": [2], "note": ["ready"], "unused": ["x"]})
+
+    typed = pl.concat(
+        [
+            enforce_input_schema(first_raw, columns),
+            enforce_input_schema(second_raw, columns),
+        ]
+    )
+    transformed = apply_transformations(typed, columns)
+
+    assert typed.schema == {
+        "id": pl.Int32,
+        "note": pl.String,
+        "unused": pl.String,
+    }
+    assert typed.get_column("note").to_list() == [None, "ready"]
+    assert transformed.columns == ["id", "note"]
+
+
+def test_input_schema_rejects_unknown_missing_null_and_conflicting_columns() -> None:
+    required = _column("id", "INT", nullable=False)
+
+    with pytest.raises(InputSchemaError, match="undeclared input columns: surprise"):
+        enforce_input_schema(pl.DataFrame({"id": [1], "surprise": [2]}), [required])
+
+    with pytest.raises(InputSchemaError, match="missing required input column: id"):
+        enforce_input_schema(pl.DataFrame(), [required])
+
+    with pytest.raises(InputSchemaError, match="nulls in required input column: id"):
+        enforce_input_schema(
+            pl.DataFrame({"id": [None]}, schema={"id": pl.Null}), [required]
+        )
+
+    with pytest.raises(InputSchemaError, match="conflicting ingestion types"):
+        enforce_input_schema(
+            pl.DataFrame({"id": [1]}),
+            [required, _column("id", "VARCHAR(8)")],
+        )
