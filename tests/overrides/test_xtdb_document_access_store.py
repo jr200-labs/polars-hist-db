@@ -57,6 +57,17 @@ def test_xtdb_access_guard_uses_active_revision():
     assert guard.expected_values == {"status": "active", "revision": 3}
 
 
+def test_xtdb_access_get_uses_logical_key_not_native_id(monkeypatch):
+    queries: list[str] = []
+    store = XtdbDocumentAccessStore(object(), DocumentAccessStoreConfig())
+    monkeypatch.setattr(store, "_rows", lambda sql: queries.append(sql) or [])
+
+    store.get("e9ca81c9-6116-4247-b951-185e82033440")
+
+    assert "WHERE document_id =" in queries[0]
+    assert "WHERE _id =" not in queries[0]
+
+
 def test_xtdb_access_create_reports_the_assertion_that_conflicted(monkeypatch):
     store = XtdbDocumentAccessStore(object(), DocumentAccessStoreConfig())
     monkeypatch.setattr(store, "_duplicate", lambda *_: None)
