@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.67](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.66...v0.12.67) (2026-07-19)
+
+
+### Bug Fixes
+
+* preserve native XTDB document identifiers ([#270](https://github.com/jr200-labs/polars-hist-db/issues/270)) ([3673bd2](https://github.com/jr200-labs/polars-hist-db/commit/3673bd2e2b6747ef0715d6a50a58f98c34ba3852))
+
 ## [0.12.66](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.65...v0.12.66) (2026-07-19)
 
 
