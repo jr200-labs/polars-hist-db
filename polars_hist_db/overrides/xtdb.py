@@ -442,6 +442,12 @@ def _access_assertion_message(exc: Exception) -> str | None:
     )
 
 
+def _owning_group_predicate(owning_group: str | None) -> str:
+    if owning_group is None:
+        return "owning_group IS NULL"
+    return f"owning_group = {_literal(owning_group, 'VARCHAR(255)')}"
+
+
 class XtdbDocumentAccessStore:
     """XTDB implementation of the backend-neutral document access contract."""
 
@@ -551,7 +557,7 @@ class XtdbDocumentAccessStore:
         _require_time(recorded_at)
         normalized_name = _normalized(name)
         if allow_existing:
-            existing = self._by_normalized_name(normalized_name)
+            existing = self._by_group_and_name(owning_group, normalized_name)
             if existing is not None:
                 return _existing_result(
                     existing,
@@ -583,7 +589,7 @@ class XtdbDocumentAccessStore:
         statements = [
             self._command_assertion(idempotency_key),
             f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.documents)} WHERE _id = {_literal(document_id, 'VARCHAR(128)')}), 'document already exists'",
-            f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.documents)} WHERE normalized_name = {_literal(normalized_name, 'VARCHAR(255)')}), 'document name already exists'",
+            f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.documents)} WHERE {_owning_group_predicate(owning_group)} AND normalized_name = {_literal(normalized_name, 'VARCHAR(255)')}), 'document name already exists'",
             *(
                 f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.grants_table)} WHERE _id = {_literal(grant.grant_id, 'VARCHAR(128)')}), 'grant already exists'"
                 for grant in grants
@@ -603,7 +609,7 @@ class XtdbDocumentAccessStore:
             )
         except DocumentAccessError as exc:
             if allow_existing and str(exc) == "document name already exists":
-                existing = self._by_normalized_name(normalized_name)
+                existing = self._by_group_and_name(owning_group, normalized_name)
                 if existing is not None:
                     return _existing_result(
                         existing,
@@ -613,10 +619,13 @@ class XtdbDocumentAccessStore:
             raise
         return result if duplicate is None else duplicate
 
-    def _by_normalized_name(self, normalized_name: str) -> AccessDocument | None:
+    def _by_group_and_name(
+        self, owning_group: str | None, normalized_name: str
+    ) -> AccessDocument | None:
         rows = self._rows(
             f"SELECT {_access_document_columns()} FROM {_table_name(self.documents)} "
-            f"WHERE normalized_name = {_literal(normalized_name, 'VARCHAR(255)')}"
+            f"WHERE {_owning_group_predicate(owning_group)} AND "
+            f"normalized_name = {_literal(normalized_name, 'VARCHAR(255)')}"
         )
         return _access_document_from_row(rows[0]) if rows else None
 

@@ -520,7 +520,7 @@ class MariaDbDocumentAccessStore:
         _require_time(recorded_at)
         normalized_name = _normalized(name)
         if allow_existing:
-            existing = self._by_normalized_name(normalized_name)
+            existing = self._by_group_and_name(owning_group, normalized_name)
             if existing is not None:
                 return _existing_result(
                     existing,
@@ -552,7 +552,7 @@ class MariaDbDocumentAccessStore:
             duplicate = self._duplicate(idempotency_key, payload)
             if duplicate:
                 return duplicate
-            existing = self._by_normalized_name(normalized_name)
+            existing = self._by_group_and_name(owning_group, normalized_name)
             if existing is not None and allow_existing:
                 return _existing_result(
                     existing,
@@ -561,11 +561,19 @@ class MariaDbDocumentAccessStore:
                 )
             raise DocumentAccessError("document or grant already exists") from exc
 
-    def _by_normalized_name(self, normalized_name: str) -> AccessDocument | None:
+    def _by_group_and_name(
+        self, owning_group: str | None, normalized_name: str
+    ) -> AccessDocument | None:
+        group_match = (
+            self.documents.c.owning_group.is_(None)
+            if owning_group is None
+            else self.documents.c.owning_group == owning_group
+        )
         row = (
             self.connection.execute(
                 select(self.documents).where(
-                    self.documents.c.normalized_name == normalized_name
+                    group_match,
+                    self.documents.c.normalized_name == normalized_name,
                 )
             )
             .mappings()

@@ -77,7 +77,7 @@ def build_document_access_table_configs(
                 "normalized_name",
                 "VARCHAR(255)",
                 nullable=False,
-                unique_constraint=["document_access_normalized_name"],
+                unique_constraint=["document_access_group_name"],
             ),
             TableColumnConfig(config.documents_table, "description", "MEDIUMTEXT"),
             TableColumnConfig(
@@ -92,7 +92,12 @@ def build_document_access_table_configs(
             TableColumnConfig(
                 config.documents_table, "created_at", "DATETIME(6)", nullable=False
             ),
-            TableColumnConfig(config.documents_table, "owning_group", "VARCHAR(255)"),
+            TableColumnConfig(
+                config.documents_table,
+                "owning_group",
+                "VARCHAR(255)",
+                unique_constraint=["document_access_group_name"],
+            ),
             TableColumnConfig(
                 config.documents_table,
                 "generation",
