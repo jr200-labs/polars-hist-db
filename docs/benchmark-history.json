@@ -1086,6 +1086,81 @@
           "value": 0.09315060100000494
         }
       ]
+    },
+    {
+      "commit": "a38e7fdf7a902e29ad3980e500b1b949a0d175a8",
+      "repository": "jr200-labs/polars-hist-db",
+      "timestamp": "2026-07-19T10:48:40.374192+00:00",
+      "runner": "Linux/X64",
+      "python": "3.12.3",
+      "polars": "1.42.1",
+      "benchmarks": [
+        {
+          "name": "delta 50000 stored / 50000 uploaded",
+          "unit": "seconds",
+          "value": 0.00625112000000172
+        },
+        {
+          "name": "delta 500000 stored / 50000 uploaded",
+          "unit": "seconds",
+          "value": 0.009406014000006735
+        },
+        {
+          "name": "delta 5000000 stored / 50000 uploaded",
+          "unit": "seconds",
+          "value": 0.025845132000000604
+        },
+        {
+          "name": "foreign keys 50000 stored / 50000 uploaded / 0 matched",
+          "unit": "seconds",
+          "value": 0.638751305999989
+        },
+        {
+          "name": "foreign keys 50000 stored / 50000 uploaded / 0.5 matched",
+          "unit": "seconds",
+          "value": 0.4715220359999961
+        },
+        {
+          "name": "foreign keys 50000 stored / 50000 uploaded / 1 matched",
+          "unit": "seconds",
+          "value": 0.2983901470000063
+        },
+        {
+          "name": "foreign keys 500000 stored / 50000 uploaded / 0 matched",
+          "unit": "seconds",
+          "value": 0.648645049999999
+        },
+        {
+          "name": "foreign keys 500000 stored / 50000 uploaded / 0.5 matched",
+          "unit": "seconds",
+          "value": 0.47659234199998934
+        },
+        {
+          "name": "foreign keys 500000 stored / 50000 uploaded / 1 matched",
+          "unit": "seconds",
+          "value": 0.3011434929999979
+        },
+        {
+          "name": "foreign keys 5000000 stored / 50000 uploaded / 0 matched",
+          "unit": "seconds",
+          "value": 0.6685743390000027
+        },
+        {
+          "name": "foreign keys 5000000 stored / 50000 uploaded / 0.5 matched",
+          "unit": "seconds",
+          "value": 0.4929345299999994
+        },
+        {
+          "name": "foreign keys 5000000 stored / 50000 uploaded / 1 matched",
+          "unit": "seconds",
+          "value": 0.3169329660000102
+        },
+        {
+          "name": "time partitioning 500000 rows / 365 buckets",
+          "unit": "seconds",
+          "value": 0.0833171139999962
+        }
+      ]
     }
   ]
 }
