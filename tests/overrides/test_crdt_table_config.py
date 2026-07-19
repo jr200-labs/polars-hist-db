@@ -4,8 +4,10 @@ from sqlalchemy.dialects import mysql
 
 from polars_hist_db.overrides import (
     CrdtDocumentStoreConfig,
+    DocumentAccessStoreConfig,
     build_crdt_document_table_config,
     build_crdt_update_table_config,
+    build_document_access_table_configs,
 )
 
 
@@ -68,3 +70,14 @@ def test_crdt_document_tables_compile_mediumtext_for_mariadb():
     ddl = str(CreateTable(table).compile(dialect=mysql.dialect()))
 
     assert "MEDIUMTEXT" in ddl
+
+
+def test_document_names_are_unique_within_the_owning_group():
+    documents, _, _ = build_document_access_table_configs(DocumentAccessStoreConfig())
+    constrained = {
+        column.name
+        for column in documents.columns
+        if "document_access_group_name" in column.unique_constraint
+    }
+
+    assert constrained == {"normalized_name", "owning_group"}

@@ -4,7 +4,6 @@ import pytest
 
 from polars_hist_db.overrides import (
     AccessGrantInput,
-    DocumentAccessError,
     DocumentArchived,
     DocumentRevisionConflict,
     IdempotencyConflict,
@@ -113,7 +112,7 @@ def test_create_can_ensure_an_existing_active_document_for_the_same_owner():
     assert existing.duplicate is True
 
 
-def test_allow_existing_does_not_cross_ownership_boundaries():
+def test_same_name_can_exist_in_different_ownership_scopes():
     store = InMemoryDocumentAccessStore()
     store.create(
         "doc-1",
@@ -125,17 +124,20 @@ def test_allow_existing_does_not_cross_ownership_boundaries():
         owning_group="analysts",
     )
 
-    with pytest.raises(DocumentAccessError, match="document name already exists"):
-        store.create(
-            "doc-2",
-            "Analysts",
-            None,
-            "admin",
-            TIME,
-            idempotency_key="create-2",
-            owning_group="reviewers",
-            allow_existing=True,
-        )
+    created = store.create(
+        "doc-2",
+        "Analysts",
+        None,
+        "admin",
+        TIME,
+        idempotency_key="create-2",
+        owning_group="reviewers",
+        allow_existing=True,
+    )
+
+    assert created.document.document_id == "doc-2"
+    assert created.document.owning_group == "reviewers"
+    assert created.accepted is True
 
 
 def test_allow_existing_idempotency_ignores_generated_identifiers():

@@ -172,12 +172,27 @@ def test_xtdb_live_document_access_create():
                 owning_group="group-1",
                 allow_existing=True,
             )
+            other_group = store.create(
+                "document-3",
+                "Shared layer",
+                None,
+                "user-2",
+                datetime.now(timezone.utc),
+                initial_grants=(AccessGrantInput("grant-3", "group-2", "manager"),),
+                idempotency_key="command-3",
+                owning_group="group-2",
+                allow_existing=True,
+            )
             documents = store.list_all()
 
     assert result.accepted is True
     assert existing.document.document_id == "document-1"
     assert existing.duplicate is True
-    assert [document.document_id for document in documents] == ["document-1"]
+    assert other_group.document.document_id == "document-3"
+    assert {document.document_id for document in documents} == {
+        "document-1",
+        "document-3",
+    }
 
 
 def test_xtdb_live_reflection_preserves_caller_transaction_without_metadata():

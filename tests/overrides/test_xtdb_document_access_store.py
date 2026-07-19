@@ -28,11 +28,17 @@ def test_xtdb_access_create_submits_one_asserted_transaction(monkeypatch):
         datetime(2026, 7, 12, 11, tzinfo=timezone.utc),
         initial_grants=(AccessGrantInput("grant-1", "operators", "editor"),),
         idempotency_key="command-1",
+        owning_group="operators",
     )
 
     assert result.accepted is True
     assert result.document.revision == 1
     assert statements[0].startswith("ASSERT NOT EXISTS")
+    name_assertion = next(
+        statement for statement in statements if "normalized_name" in statement
+    )
+    assert "owning_group = 'operators'" in name_assertion
+    assert "normalized_name = 'shared corrections'" in name_assertion
     assert any("INSERT INTO overrides.document_access" in item for item in statements)
     assert any(
         "INSERT INTO overrides.document_access_grants" in item for item in statements

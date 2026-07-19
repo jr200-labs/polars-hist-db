@@ -116,7 +116,8 @@ class InMemoryDocumentAccessStore:
             (
                 doc
                 for doc in self._documents.values()
-                if doc.normalized_name == normalized_name
+                if doc.owning_group == owning_group
+                and doc.normalized_name == normalized_name
             ),
             None,
         )
