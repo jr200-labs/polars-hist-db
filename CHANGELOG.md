@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.64](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.63...v0.12.64) (2026-07-19)
+
+
+### Features
+
+* enforce typed flattened input schemas ([#262](https://github.com/jr200-labs/polars-hist-db/issues/262)) ([821b233](https://github.com/jr200-labs/polars-hist-db/commit/821b2336b2ace09858daccc7061b444ac02bc07e))
+
 ## [0.12.63](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.62...v0.12.63) (2026-07-18)
 
 
