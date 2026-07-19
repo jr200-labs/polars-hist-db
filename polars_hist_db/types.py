@@ -61,8 +61,10 @@ def _polars_type_family(dtype: pl.DataType) -> str:
 # This mapping is used by all three converters.
 TYPE_PRIORITY_MAP: List[Tuple[str, pl.DataType, TypeEngine]] = [
     ("BIGINT", pl.Int64(), sqlalchemy.types.BIGINT()),
+    ("BINARY", pl.Binary(), sqlalchemy.types.BINARY()),
     ("BIT", pl.Int32(), sqlalchemy.types.Integer()),
     ("BOOL", pl.Boolean(), sqlalchemy.types.Boolean()),
+    ("BLOB", pl.Binary(), sqlalchemy.types.LargeBinary()),
     ("CHAR", pl.Utf8(), sqlalchemy.types.CHAR()),
     ("DATETIME", pl.Datetime(), sqlalchemy.types.DATETIME()),
     ("DATE", pl.Date(), sqlalchemy.types.DATE()),
@@ -85,6 +87,7 @@ TYPE_PRIORITY_MAP: List[Tuple[str, pl.DataType, TypeEngine]] = [
     ("TIME", pl.Time(), sqlalchemy.types.TIME()),
     ("TINYINT(DISPLAY_WIDTH=1)", pl.Boolean(), sqlalchemy.types.BOOLEAN()),
     ("TINYINT", pl.Int32(), sqlalchemy.types.INTEGER()),
+    ("VARBINARY", pl.Binary(), sqlalchemy.types.VARBINARY()),
     ("MEDIUMINT", pl.Int64(), sqlalchemy.types.BIGINT()),
     ("SMALLINT", pl.Int32(), sqlalchemy.types.INTEGER()),
 ]
@@ -175,6 +178,9 @@ class PolarsType:
         )
         if type_name == "VARCHAR" or type_name.endswith("TEXT"):
             return pl.Utf8()
+
+        if type_name in {"BINARY", "VARBINARY"} or type_name.endswith("BLOB"):
+            return pl.Binary()
 
         if type_name in ["NUMERIC", "DECIMAL", "DEC", "FIXED"]:
             precision = int(
@@ -388,6 +394,10 @@ class SQLAlchemyType:
         type_name, params, param_dict = _TypeConversionUtils._parse_parameterised_type(
             t
         )
+        if type_name == "BINARY":
+            return sqlalchemy.types.BINARY(length=int(params[0]) if params else None)
+        if type_name == "VARBINARY":
+            return sqlalchemy.types.VARBINARY(length=int(params[0]) if params else None)
         if type_name == "DATETIME" and params and params[0]:
             return mysql.DATETIME(fsp=int(params[0]))
         idx = _TypeConversionUtils._rowidx_from_sql_type(t)
@@ -397,6 +407,8 @@ class SQLAlchemyType:
         if type_name == "VARCHAR":
             length = int(param_dict.get("length") or param_dict.get("a") or params[0])
             return sqlalchemy.types.VARCHAR(length=length)
+        if type_name.endswith("BLOB"):
+            return sqlalchemy.types.LargeBinary()
         if type_name == "TEXT":
             return sqlalchemy.types.TEXT()
         if type_name == "MEDIUMTEXT":

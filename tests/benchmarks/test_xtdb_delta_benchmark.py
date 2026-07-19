@@ -1,7 +1,9 @@
 from benchmarks.xtdb_delta import (
+    benchmark_arrow_override_crdt,
     benchmark_foreign_keys,
     benchmark_time_partitions,
     network_floor_seconds,
+    synthetic_arrow_override_operations,
     synthetic_frames,
 )
 
@@ -22,3 +24,16 @@ def test_xtdb_delta_benchmark_models_target_and_upload_independently():
     _, input_mb, partition_count = benchmark_time_partitions(100, 10, 1)
     assert input_mb > 0
     assert partition_count == 10
+
+
+def test_arrow_override_benchmark_covers_clean_and_conflicting_frontiers():
+    proposed = synthetic_arrow_override_operations(10, 5)
+    assert proposed.num_rows == 10
+    assert proposed.schema.field("valid_from").type.tz == "UTC"
+
+    ipc, sync, ipc_mb, projected, conflicts = benchmark_arrow_override_crdt(10, 5, 1)
+
+    assert ipc >= 0
+    assert sync >= 0
+    assert ipc_mb > 0
+    assert (projected, conflicts) == (5, 5)

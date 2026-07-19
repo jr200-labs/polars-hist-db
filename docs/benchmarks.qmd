@@ -13,6 +13,8 @@ they are not database service-level guarantees.
 | Selective delta | Compare a 50,000-row upload with increasingly large current tables | Polars filtering and changed-row selection | XTDB network and write latency |
 | Normalized foreign keys | Resolve existing natural keys, generate missing IDs, and update the staged primary rows | Lookup joins, deterministic ID generation, collision handling | XTDB network and insert latency |
 | Unordered time partitioning | Sort, deduplicate, and split an interleaved DSV frame into daily buckets | Polars preparation and partition slicing | CSV decoding and database writes |
+| Arrow override IPC | Round-trip typed operation batches through the canonical Arrow IPC wire format | Native temporal, decimal, binary, list, and struct encoding and decoding | Network latency |
+| Arrow override synchronization | Validate, hash, commit, acknowledge, and project typed operation batches across clean and conflicting frontiers | Backend-neutral CRDT service and in-memory atomic repository | Database network and storage latency |
 
 The runner also prints theoretical transfer floors for 1, 10, and 100 Gbps
 links. An optional remote-read mode can measure decoding from a live XTDB
@@ -48,6 +50,7 @@ uv run python benchmarks/xtdb_delta.py \
   --target-rows 50000 \
   --upload-rows 10000 \
   --partition-rows 100000 \
+  --override-cases 100:100,100:10 \
   --repeats 1
 ```
 

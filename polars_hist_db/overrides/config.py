@@ -6,12 +6,177 @@ from sqlalchemy.schema import CreateColumn
 from polars_hist_db.config import TableColumnConfig, TableConfig, ValidTimeConfig
 
 from .types import (
+    ArrowOverrideStoreConfig,
     CrdtDocumentStoreConfig,
     DocumentAccessStoreConfig,
     LayerCompositionStoreConfig,
     OverrideLedgerConfig,
     OverridePurgeStoreConfig,
 )
+
+
+def build_arrow_override_table_configs(
+    config: ArrowOverrideStoreConfig,
+) -> tuple[TableConfig, TableConfig, TableConfig, TableConfig]:
+    heads = TableConfig(
+        name=config.heads_table,
+        schema=config.schema,
+        primary_keys=("layer_id",),
+        columns=[
+            TableColumnConfig(
+                config.heads_table, "layer_id", "BINARY(16)", nullable=False
+            ),
+            TableColumnConfig(
+                config.heads_table, "generation", "BIGINT", nullable=False
+            ),
+            TableColumnConfig(config.heads_table, "revision", "BIGINT", nullable=False),
+            TableColumnConfig(
+                config.heads_table,
+                "updated_at",
+                "TIMESTAMP WITH TIME ZONE",
+                nullable=False,
+            ),
+        ],
+    )
+    value_columns = [
+        ("kind", "VARCHAR(32)"),
+        ("string", "TEXT"),
+        ("boolean", "BOOL"),
+        ("integer", "BIGINT"),
+        ("float", "DOUBLE"),
+        ("decimal", "DECIMAL(38,12)"),
+        ("timestamp", "TIMESTAMP WITH TIME ZONE"),
+        ("date", "DATE"),
+        ("time", "TIME"),
+        ("duration_us", "BIGINT"),
+        ("binary", "BLOB"),
+        ("extension_schema_id", "VARCHAR(255)"),
+        ("extension_payload", "BLOB"),
+    ]
+    operations = TableConfig(
+        name=config.operations_table,
+        schema=config.schema,
+        primary_keys=("operation_id",),
+        columns=[
+            TableColumnConfig(
+                config.operations_table, "operation_id", "BINARY(16)", nullable=False
+            ),
+            TableColumnConfig(
+                config.operations_table, "format_version", "INT", nullable=False
+            ),
+            TableColumnConfig(
+                config.operations_table, "change_set_id", "BINARY(16)", nullable=False
+            ),
+            TableColumnConfig(
+                config.operations_table, "layer_id", "BINARY(16)", nullable=False
+            ),
+            TableColumnConfig(
+                config.operations_table, "generation", "BIGINT", nullable=False
+            ),
+            TableColumnConfig(
+                config.operations_table, "layer_revision", "BIGINT", nullable=False
+            ),
+            TableColumnConfig(
+                config.operations_table, "feed_id", "VARCHAR(128)", nullable=False
+            ),
+            TableColumnConfig(
+                config.operations_table, "entity_id", "VARCHAR(256)", nullable=False
+            ),
+            TableColumnConfig(
+                config.operations_table, "field_path", "VARCHAR(128)", nullable=False
+            ),
+            TableColumnConfig(
+                config.operations_table, "operation_type", "VARCHAR(16)", nullable=False
+            ),
+            *[
+                TableColumnConfig(config.operations_table, f"value_{name}", data_type)
+                for name, data_type in value_columns
+            ],
+            TableColumnConfig(config.operations_table, "unit", "VARCHAR(64)"),
+            *[
+                TableColumnConfig(
+                    config.operations_table, f"observed_{name}", data_type
+                )
+                for name, data_type in value_columns
+            ],
+            TableColumnConfig(
+                config.operations_table, "source_drift", "BOOL", nullable=False
+            ),
+            TableColumnConfig(
+                config.operations_table,
+                "valid_from",
+                "TIMESTAMP WITH TIME ZONE",
+                nullable=False,
+            ),
+            TableColumnConfig(
+                config.operations_table, "valid_to", "TIMESTAMP WITH TIME ZONE"
+            ),
+            TableColumnConfig(config.operations_table, "comment", "TEXT"),
+            TableColumnConfig(
+                config.operations_table, "actor_subject", "VARCHAR(255)", nullable=False
+            ),
+            TableColumnConfig(
+                config.operations_table, "actor_display_name", "VARCHAR(255)"
+            ),
+            TableColumnConfig(
+                config.operations_table,
+                "recorded_at",
+                "TIMESTAMP WITH TIME ZONE",
+                nullable=False,
+            ),
+            TableColumnConfig(
+                config.operations_table, "payload_hash", "BINARY(32)", nullable=False
+            ),
+        ],
+    )
+    references = TableConfig(
+        name=config.references_table,
+        schema=config.schema,
+        primary_keys=("operation_id", "reference_kind", "ordinal"),
+        columns=[
+            TableColumnConfig(
+                config.references_table, "operation_id", "BINARY(16)", nullable=False
+            ),
+            TableColumnConfig(
+                config.references_table, "reference_kind", "VARCHAR(16)", nullable=False
+            ),
+            TableColumnConfig(
+                config.references_table, "ordinal", "INT", nullable=False
+            ),
+            TableColumnConfig(
+                config.references_table,
+                "referenced_operation_id",
+                "BINARY(16)",
+                nullable=False,
+            ),
+        ],
+    )
+    string_lists = TableConfig(
+        name=config.string_list_values_table,
+        schema=config.schema,
+        primary_keys=("operation_id", "value_role", "ordinal"),
+        columns=[
+            TableColumnConfig(
+                config.string_list_values_table,
+                "operation_id",
+                "BINARY(16)",
+                nullable=False,
+            ),
+            TableColumnConfig(
+                config.string_list_values_table,
+                "value_role",
+                "VARCHAR(16)",
+                nullable=False,
+            ),
+            TableColumnConfig(
+                config.string_list_values_table, "ordinal", "INT", nullable=False
+            ),
+            TableColumnConfig(
+                config.string_list_values_table, "value", "TEXT", nullable=False
+            ),
+        ],
+    )
+    return heads, operations, references, string_lists
 
 
 def build_layer_composition_table_config(
