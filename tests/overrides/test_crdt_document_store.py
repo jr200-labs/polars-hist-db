@@ -130,7 +130,10 @@ def test_prepared_commit_finalizes_operations_and_rejects_later_mutation():
         source_update,
         actor_id="user-1",
         recorded_at=accepted_at,
-        authoritative_metadata={"actor_display_name": "Verified User"},
+        authoritative_metadata={
+            "actor_display_name": "Verified User",
+            "generation": 1,
+        },
     )
     store = InMemoryCrdtDocumentStore()
     committed = store.commit(prepared)
@@ -140,9 +143,20 @@ def test_prepared_commit_finalizes_operations_and_rejects_later_mutation():
     assert prepared.source_update_hash != prepared.accepted_update_hash
     assert store.projected_operations("document-1")[0].actor_id == "user-1"
     assert store.projected_operations("document-1")[0].metadata_json == {
-        "actor_display_name": "Verified User"
+        "actor_display_name": "Verified User",
+        "generation": 1,
     }
     assert store.projected_operations("document-1")[0].payload_hash is not None
+
+    # Yjs materializes JSON numbers as doubles. The accepted document must
+    # remain valid after that round trip so later updates are not rejected.
+    prepare_crdt_update(
+        "document-1",
+        committed.document,
+        _document_update(),
+        actor_id="user-1",
+        recorded_at=accepted_at,
+    )
 
     document: Any = Doc()
     assert committed.document is not None

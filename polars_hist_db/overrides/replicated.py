@@ -102,35 +102,48 @@ def finalize_replicated_override_operation(
 
 
 def operation_payload_hash(operation: ReplicatedOverrideOperation) -> str:
-    payload = {
-        "format_version": operation.format_version,
-        "operation_id": operation.operation_id,
-        "change_set_id": operation.change_set_id,
-        "layer_id": operation.layer_id,
-        "actor_id": operation.actor_id,
-        "feed_id": operation.feed_id,
-        "entity_id": operation.entity_id,
-        "field_path": operation.field_path,
-        "operation_type": operation.operation_type,
-        "value": None
-        if operation.value is None
-        else {
-            "value_type": operation.value.value_type,
-            "value_json": operation.value.value_json,
-            "unit": operation.value.unit,
-        },
-        "supersedes_operation_ids": operation.supersedes_operation_ids,
-        "removes_operation_ids": operation.removes_operation_ids,
-        "valid_from": _timestamp(operation.valid_from),
-        "valid_to": _timestamp(operation.valid_to),
-        "recorded_at": _timestamp(operation.recorded_at),
-        "observed_canonical_value_json": operation.observed_canonical_value_json,
-        "comment": operation.comment,
-        "metadata_json": operation.metadata_json or {},
-    }
+    payload = _canonical_json_numbers(
+        {
+            "format_version": operation.format_version,
+            "operation_id": operation.operation_id,
+            "change_set_id": operation.change_set_id,
+            "layer_id": operation.layer_id,
+            "actor_id": operation.actor_id,
+            "feed_id": operation.feed_id,
+            "entity_id": operation.entity_id,
+            "field_path": operation.field_path,
+            "operation_type": operation.operation_type,
+            "value": None
+            if operation.value is None
+            else {
+                "value_type": operation.value.value_type,
+                "value_json": operation.value.value_json,
+                "unit": operation.value.unit,
+            },
+            "supersedes_operation_ids": operation.supersedes_operation_ids,
+            "removes_operation_ids": operation.removes_operation_ids,
+            "valid_from": _timestamp(operation.valid_from),
+            "valid_to": _timestamp(operation.valid_to),
+            "recorded_at": _timestamp(operation.recorded_at),
+            "observed_canonical_value_json": operation.observed_canonical_value_json,
+            "comment": operation.comment,
+            "metadata_json": operation.metadata_json or {},
+        }
+    )
     return sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
+
+
+def _canonical_json_numbers(value: object) -> object:
+    """Keep payload hashes stable across JSON/CRDT numeric round trips."""
+    if isinstance(value, dict):
+        return {key: _canonical_json_numbers(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_canonical_json_numbers(item) for item in value]
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return value
 
 
 def validate_replicated_override_operation(
