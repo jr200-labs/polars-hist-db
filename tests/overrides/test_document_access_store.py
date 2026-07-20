@@ -44,8 +44,17 @@ def test_lifecycle_is_versioned_and_preserves_grant_history():
     assert granted.document.revision == 3
     assert archived.document.status == "archived"
     assert archived.document.revision == 4
-    assert len(store.grants("doc-1", include_revoked=True)) == 2
-    assert store.grants("doc-1")[0].role == "resolver"
+    first_page = store.grants("doc-1", include_revoked=True, limit=1)
+    second_page = store.grants(
+        "doc-1", include_revoked=True, cursor=first_page.next_cursor, limit=1
+    )
+    assert len(first_page.items + second_page.items) == 2
+    assert first_page.next_cursor is not None
+    assert second_page.next_cursor is None
+    assert store.grants("doc-1").items[0].role == "resolver"
+    assert store.list_for_groups(["analysts"], include_archived=True).items == (
+        archived.document,
+    )
     with pytest.raises(DocumentArchived):
         store.grant(
             "doc-1",
@@ -138,6 +147,17 @@ def test_same_name_can_exist_in_different_ownership_scopes():
     assert created.document.document_id == "doc-2"
     assert created.document.owning_group == "reviewers"
     assert created.accepted is True
+
+    first_page = store.list_all(limit=1)
+    second_page = store.list_all(cursor=first_page.next_cursor, limit=1)
+    assert {
+        document.document_id for document in first_page.items + second_page.items
+    } == {
+        "doc-1",
+        "doc-2",
+    }
+    assert first_page.next_cursor is not None
+    assert second_page.next_cursor is None
 
 
 def test_allow_existing_idempotency_ignores_generated_identifiers():

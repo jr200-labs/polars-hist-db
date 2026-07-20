@@ -48,6 +48,13 @@ from .config import (
     build_override_table_config,
 )
 from .operations import CompositionRevision
+from .pagination import (
+    Page,
+    decode_cursor,
+    encode_cursor,
+    page_from_items,
+    validate_limit,
+)
 from .crdt import (
     AtomicInsert,
     AtomicUpdate,
@@ -92,28 +99,55 @@ class XtdbLayerCompositionStore:
             ],
         )
 
-    def revisions(self, layer_id: str | None = None) -> tuple[CompositionRevision, ...]:
-        predicate = (
-            ""
-            if layer_id is None
-            else f" WHERE layer_id = {_literal(layer_id, 'VARCHAR(128)')}"
-        )
+    def revisions(
+        self,
+        layer_id: str | None = None,
+        *,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[CompositionRevision]:
+        validate_limit(limit)
+        predicates = []
+        if layer_id is not None:
+            predicates.append(f"layer_id = {_literal(layer_id, 'VARCHAR(128)')}")
+        if cursor is not None:
+            system_from, revision_id = decode_cursor(cursor)
+            timestamp = _literal(system_from, "TIMESTAMP WITH TIME ZONE")
+            revision = _literal(revision_id, "VARCHAR(128)")
+            predicates.append(
+                f"(_system_from > {timestamp} OR "
+                f"(_system_from = {timestamp} AND revision_id > {revision}))"
+            )
+        predicate = " WHERE " + " AND ".join(predicates) if predicates else ""
         try:
-            rows = self.connection.execute(
-                text(
-                    "SELECT revision_id, layer_id, child_layer_ids_json, "
-                    f"valid_from, valid_to, recorded_at, _system_from AS system_from, "
-                    f"supersedes_revision_id "
-                    f"FROM {_table_name(self.table)}"
-                    f"{predicate} ORDER BY _system_from, revision_id"
+            rows = list(
+                self.connection.execute(
+                    text(
+                        "SELECT revision_id, layer_id, child_layer_ids_json, "
+                        f"valid_from, valid_to, recorded_at, _system_from AS system_from, "
+                        f"supersedes_revision_id "
+                        f"FROM {_table_name(self.table)}"
+                        f"{predicate} ORDER BY _system_from, revision_id LIMIT {limit + 1}"
+                    )
+                ).mappings()
+            )
+            revisions = tuple(_composition_revision(row) for row in rows[:limit])
+            next_cursor = (
+                encode_cursor(
+                    (
+                        revisions[-1].recorded_at,
+                        revisions[-1].revision_id,
+                    )
                 )
-            ).mappings()
-            return tuple(_composition_revision(row) for row in rows)
+                if len(rows) > limit
+                else None
+            )
+            return Page(revisions, next_cursor)
         except Exception as exc:
             if not _is_xtdb_table_not_found_error(exc):
                 raise
             _rollback_xtdb_connection(self.connection)
-            return ()
+            return Page((), None)
 
 
 def _composition_revision(row: Mapping[str, object]) -> CompositionRevision:
@@ -465,6 +499,37 @@ class XtdbDocumentAccessStore:
         return _access_document_from_row(rows[0]) if rows else None
 
     def grants(
+        self,
+        document_id: str,
+        *,
+        include_revoked: bool = False,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[AccessGrant]:
+        validate_limit(limit)
+        predicates = [f"document_id = {_literal(document_id, 'VARCHAR(128)')}"]
+        if not include_revoked:
+            predicates.append("revoked_at IS NULL")
+        if cursor is not None:
+            granted_at, grant_id = decode_cursor(cursor)
+            timestamp = _literal(granted_at, "TIMESTAMP WITH TIME ZONE")
+            identifier = _literal(grant_id, "VARCHAR(128)")
+            predicates.append(
+                f"(granted_at > {timestamp} OR "
+                f"(granted_at = {timestamp} AND grant_id > {identifier}))"
+            )
+        rows = self._rows(
+            f"SELECT {_access_grant_columns()} FROM {_table_name(self.grants_table)} "
+            f"WHERE {' AND '.join(predicates)} ORDER BY granted_at, grant_id "
+            f"LIMIT {limit + 1}"
+        )
+        return page_from_items(
+            (_access_grant_from_row(row) for row in rows),
+            lambda grant: (grant.granted_at, grant.grant_id),
+            limit,
+        )
+
+    def _all_grants(
         self, document_id: str, *, include_revoked: bool = False
     ) -> tuple[AccessGrant, ...]:
         predicate = f"document_id = {_literal(document_id, 'VARCHAR(128)')}"
@@ -479,29 +544,71 @@ class XtdbDocumentAccessStore:
         )
 
     def list_for_groups(
-        self, groups: Sequence[str], *, include_archived: bool = False
-    ) -> list[AccessDocument]:
+        self,
+        groups: Sequence[str],
+        *,
+        include_archived: bool = False,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[AccessDocument]:
+        validate_limit(limit)
         if not groups:
-            return []
+            if cursor is not None:
+                decode_cursor(cursor)
+            return Page((), None)
         group_sql = ", ".join(_literal(group, "VARCHAR(255)") for group in groups)
         status = "" if include_archived else " AND d.status = 'active'"
+        after = self._document_cursor_predicate(cursor, alias="d")
         rows = self._rows(
             f"SELECT DISTINCT {_access_document_columns('d')} "
             f"FROM {_table_name(self.documents)} d "
             f"JOIN {_table_name(self.grants_table)} g ON d.document_id = g.document_id "
             f"WHERE g.group_name IN ({group_sql}) AND g.revoked_at IS NULL{status}"
+            f"{' AND ' + after if after else ''} "
+            f"ORDER BY d.created_at, d.document_id LIMIT {limit + 1}"
         )
-        return [_access_document_from_row(row) for row in rows]
+        return page_from_items(
+            (_access_document_from_row(row) for row in rows),
+            lambda document: (document.created_at, document.document_id),
+            limit,
+        )
 
-    def list_all(self, *, include_archived: bool = False) -> list[AccessDocument]:
-        predicate = "" if include_archived else " WHERE status = 'active'"
-        return [
-            _access_document_from_row(row)
-            for row in self._rows(
-                f"SELECT {_access_document_columns()} FROM {_table_name(self.documents)}"
-                f"{predicate} ORDER BY created_at, document_id"
-            )
-        ]
+    def list_all(
+        self,
+        *,
+        include_archived: bool = False,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[AccessDocument]:
+        validate_limit(limit)
+        predicates = [] if include_archived else ["status = 'active'"]
+        after = self._document_cursor_predicate(cursor)
+        if after:
+            predicates.append(after)
+        predicate = " WHERE " + " AND ".join(predicates) if predicates else ""
+        rows = self._rows(
+            f"SELECT {_access_document_columns()} FROM {_table_name(self.documents)}"
+            f"{predicate} ORDER BY created_at, document_id LIMIT {limit + 1}"
+        )
+        return page_from_items(
+            (_access_document_from_row(row) for row in rows),
+            lambda document: (document.created_at, document.document_id),
+            limit,
+        )
+
+    @staticmethod
+    def _document_cursor_predicate(cursor: str | None, alias: str = "") -> str:
+        if cursor is None:
+            return ""
+        created_at, document_id = decode_cursor(cursor)
+        prefix = f"{alias}." if alias else ""
+        timestamp = _literal(created_at, "TIMESTAMP WITH TIME ZONE")
+        identifier = _literal(document_id, "VARCHAR(128)")
+        return (
+            f"({prefix}created_at > {timestamp} OR "
+            f"({prefix}created_at = {timestamp} "
+            f"AND {prefix}document_id > {identifier}))"
+        )
 
     def guard(self, document_id: str, expected_revision: int) -> RowGuard:
         return RowGuard(
@@ -561,7 +668,7 @@ class XtdbDocumentAccessStore:
             if existing is not None:
                 return _existing_result(
                     existing,
-                    self.grants(existing.document_id),
+                    self._all_grants(existing.document_id),
                     owning_group,
                 )
         if len({grant.grant_id for grant in grants}) != len(grants) or len(
@@ -613,7 +720,7 @@ class XtdbDocumentAccessStore:
                 if existing is not None:
                     return _existing_result(
                         existing,
-                        self.grants(existing.document_id),
+                        self._all_grants(existing.document_id),
                         owning_group,
                     )
             raise
@@ -648,7 +755,7 @@ class XtdbDocumentAccessStore:
         updated = _updated_document(document)
         new_grant = _new_grant(updated, grant, actor_id, recorded_at)
         result = AccessMutationResult(
-            updated, (*self.grants(document_id), new_grant), accepted=True
+            updated, (*self._all_grants(document_id), new_grant), accepted=True
         )
         statements = [
             self._command_assertion(idempotency_key),
@@ -701,7 +808,7 @@ class XtdbDocumentAccessStore:
         )
         grants = tuple(
             revoked if item.grant_id == revoked.grant_id else item
-            for item in self.grants(document_id, include_revoked=True)
+            for item in self._all_grants(document_id, include_revoked=True)
         )
         result = AccessMutationResult(updated, grants, accepted=True)
         statements = [
@@ -749,7 +856,9 @@ class XtdbDocumentAccessStore:
             archived_by=actor_id,
             archived_at=recorded_at,
         )
-        result = AccessMutationResult(updated, self.grants(document_id), accepted=True)
+        result = AccessMutationResult(
+            updated, self._all_grants(document_id), accepted=True
+        )
         statements = [
             self._command_assertion(idempotency_key),
             self._active_assertion(document_id, expected_revision),

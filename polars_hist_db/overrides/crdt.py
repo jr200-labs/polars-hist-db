@@ -7,6 +7,7 @@ from typing import Any, Mapping, Sequence
 
 from polars_hist_db.config import TableConfig
 
+from .pagination import Page, paginate
 from .replicated import (
     ReplicatedOverrideOperation,
     finalize_replicated_override_operation,
@@ -364,9 +365,18 @@ class InMemoryCrdtDocumentStore:
         self._rows[self._row_key(table_config, row)] = dict(row)
 
     def projected_operations(
-        self, document_id: str
-    ) -> tuple[ReplicatedOverrideOperation, ...]:
-        return tuple(self._operations.get(document_id, {}).values())
+        self,
+        document_id: str,
+        *,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[ReplicatedOverrideOperation]:
+        return paginate(
+            self._operations.get(document_id, {}).values(),
+            lambda operation: (operation.recorded_at, operation.operation_id),
+            cursor=cursor,
+            limit=limit,
+        )
 
     def _validate_guards(self, guards: Sequence[RowGuard]) -> None:
         for guard in guards:

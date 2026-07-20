@@ -49,8 +49,8 @@ def test_record_classification_set_replace_and_system_close_timeline():
         system=True,
     )
 
-    raw_history = ledger.history_for_entity("user-1", "records", "record-1")
-    history = ledger.projected_history_for_entity("user-1", "records", "record-1")
+    raw_history = ledger.history_for_entity("user-1", "records", "record-1").items
+    history = ledger.projected_history_for_entity("user-1", "records", "record-1").items
 
     assert [operation.operation_type for operation in raw_history] == [
         "set",
@@ -72,6 +72,24 @@ def test_record_classification_set_replace_and_system_close_timeline():
     assert history[3].valid_to == _utc(20)
     assert history[3].reason == "source_match"
     assert ledger.active_for_entity("user-1", "records", "record-1") == []
+
+    first_page = ledger.history_for_entity("user-1", "records", "record-1", limit=2)
+    second_page = ledger.history_for_entity(
+        "user-1",
+        "records",
+        "record-1",
+        cursor=first_page.next_cursor,
+        limit=2,
+    )
+    assert first_page.items + second_page.items == raw_history
+    assert first_page.next_cursor is not None
+    assert second_page.next_cursor is None
+    with pytest.raises(ValueError, match="limit must be between"):
+        ledger.history_for_entity("user-1", "records", "record-1", limit=0)
+    with pytest.raises(ValueError, match="invalid cursor"):
+        ledger.history_for_entity(
+            "user-1", "records", "record-1", cursor="not-a-cursor"
+        )
 
 
 def test_set_rejects_naive_valid_from():
@@ -116,7 +134,7 @@ def test_grouped_sets_share_change_set_id():
         change_set_id="change-1",
     )
 
-    history = ledger.history_for_entity("user-1", "records", "record-1")
+    history = ledger.history_for_entity("user-1", "records", "record-1").items
     assert {operation.change_set_id for operation in history} == {"change-1"}
     assert len(ledger.active_for_entity("user-1", "records", "record-1")) == 2
 
@@ -145,7 +163,7 @@ def test_replacing_same_field_leaves_one_active_override_and_keeps_audit_history
         valid_from=_utc(14),
     )
 
-    history = ledger.projected_history_for_entity("user-1", "records", "record-1")
+    history = ledger.projected_history_for_entity("user-1", "records", "record-1").items
     active = ledger.active_for_entity("user-1", "records", "record-1")
 
     assert [operation.operation_type for operation in history] == [
@@ -182,7 +200,7 @@ def test_user_close_preserves_prior_operation_history():
         reason="user_close",
     )
 
-    history = ledger.projected_history_for_entity("user-1", "records", "record-1")
+    history = ledger.projected_history_for_entity("user-1", "records", "record-1").items
 
     assert [operation.operation_id for operation in history] == [
         set_operation.operation_id,

@@ -31,6 +31,7 @@ from .ordering import (
     project_personal_override_operations,
 )
 from .projection import ColumnOverride, apply_columnar_overrides
+from .pagination import Page
 from .arrow import (
     ARROW_OVERRIDE_FORMAT_VERSION,
     ArrowOverrideContractError,
@@ -154,6 +155,7 @@ __all__ = [
     "InMemoryArrowOverrideRepository",
     "RepositoryArrowOverrideOperationStore",
     "OverrideLedger",
+    "Page",
     "override_recorded_order_sql",
     "override_recorded_time_sql",
     "project_personal_override_operations",

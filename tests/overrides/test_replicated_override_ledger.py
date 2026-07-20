@@ -117,7 +117,16 @@ def test_ledger_validates_references_and_exact_replay_without_partial_append():
     with pytest.raises(ValueError, match="must already exist"):
         ledger.append_batch([uncommitted, invalid])
 
-    assert [
-        operation.operation_id
-        for operation in ledger.history_for_entity("team", "records", "record-1")
-    ] == [original.operation_id, replacement.operation_id]
+    first_page = ledger.history_for_entity("team", "records", "record-1", limit=1)
+    second_page = ledger.history_for_entity(
+        "team",
+        "records",
+        "record-1",
+        cursor=first_page.next_cursor,
+        limit=1,
+    )
+    assert {
+        operation.operation_id for operation in first_page.items + second_page.items
+    } == {original.operation_id, replacement.operation_id}
+    assert first_page.next_cursor is not None
+    assert second_page.next_cursor is None

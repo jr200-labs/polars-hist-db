@@ -3,14 +3,19 @@ from __future__ import annotations
 from typing import Protocol
 
 from .operations import CompositionRevision
+from .pagination import Page, paginate
 
 
 class LayerCompositionStore(Protocol):
     def append(self, revision: CompositionRevision, actor_id: str) -> None: ...
 
     def revisions(
-        self, layer_id: str | None = None
-    ) -> tuple[CompositionRevision, ...]: ...
+        self,
+        layer_id: str | None = None,
+        *,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[CompositionRevision]: ...
 
 
 class InMemoryLayerCompositionStore:
@@ -23,12 +28,20 @@ class InMemoryLayerCompositionStore:
             raise ValueError("composition revision already exists")
         self._revisions.append(revision)
 
-    def revisions(self, layer_id: str | None = None) -> tuple[CompositionRevision, ...]:
-        return tuple(
-            item
-            for item in sorted(
-                self._revisions,
-                key=lambda value: (value.recorded_at, value.revision_id),
-            )
-            if layer_id is None or item.layer_id == layer_id
+    def revisions(
+        self,
+        layer_id: str | None = None,
+        *,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[CompositionRevision]:
+        return paginate(
+            (
+                item
+                for item in self._revisions
+                if layer_id is None or item.layer_id == layer_id
+            ),
+            lambda item: (item.recorded_at, item.revision_id),
+            cursor=cursor,
+            limit=limit,
         )

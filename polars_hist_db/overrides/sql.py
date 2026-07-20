@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Any, Sequence
 
-from sqlalchemy import Connection, MetaData, Table, and_, select
+from sqlalchemy import Connection, MetaData, Table, and_, or_, select
 from sqlalchemy.exc import IntegrityError
 
 from polars_hist_db.config import TableConfig
@@ -36,6 +36,13 @@ from .config import (
     build_layer_composition_table_config,
 )
 from .operations import CompositionRevision
+from .pagination import (
+    Page,
+    decode_cursor,
+    encode_cursor,
+    page_from_items,
+    validate_limit,
+)
 from .crdt import (
     AtomicInsert,
     AtomicUpdate,
@@ -76,14 +83,42 @@ class MariaDbLayerCompositionStore:
             )
         )
 
-    def revisions(self, layer_id: str | None = None) -> tuple[CompositionRevision, ...]:
+    def revisions(
+        self,
+        layer_id: str | None = None,
+        *,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[CompositionRevision]:
+        validate_limit(limit)
         query = select(self.table)
         if layer_id is not None:
             query = query.where(self.table.c.layer_id == layer_id)
-        rows = self.connection.execute(
-            query.order_by(self.table.c.recorded_at, self.table.c.revision_id)
-        ).mappings()
-        return tuple(_composition_revision(row) for row in rows)
+        if cursor is not None:
+            recorded_at, revision_id = decode_cursor(cursor)
+            query = query.where(
+                or_(
+                    self.table.c.recorded_at > recorded_at,
+                    and_(
+                        self.table.c.recorded_at == recorded_at,
+                        self.table.c.revision_id > revision_id,
+                    ),
+                )
+            )
+        rows = list(
+            self.connection.execute(
+                query.order_by(
+                    self.table.c.recorded_at, self.table.c.revision_id
+                ).limit(limit + 1)
+            ).mappings()
+        )
+        revisions = tuple(_composition_revision(row) for row in rows[:limit])
+        next_cursor = (
+            encode_cursor((revisions[-1].recorded_at, revisions[-1].revision_id))
+            if len(rows) > limit
+            else None
+        )
+        return Page(revisions, next_cursor)
 
 
 def _composition_revision(row: Any) -> CompositionRevision:
@@ -429,6 +464,42 @@ class MariaDbDocumentAccessStore:
         return _access_document(row) if row else None
 
     def grants(
+        self,
+        document_id: str,
+        *,
+        include_revoked: bool = False,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[AccessGrant]:
+        validate_limit(limit)
+        query = select(self.grants_table).where(
+            self.grants_table.c.document_id == document_id
+        )
+        if not include_revoked:
+            query = query.where(self.grants_table.c.revoked_at.is_(None))
+        if cursor is not None:
+            granted_at, grant_id = decode_cursor(cursor)
+            query = query.where(
+                or_(
+                    self.grants_table.c.granted_at > granted_at,
+                    and_(
+                        self.grants_table.c.granted_at == granted_at,
+                        self.grants_table.c.grant_id > grant_id,
+                    ),
+                )
+            )
+        rows = self.connection.execute(
+            query.order_by(
+                self.grants_table.c.granted_at, self.grants_table.c.grant_id
+            ).limit(limit + 1)
+        ).mappings()
+        return page_from_items(
+            (_access_grant(row) for row in rows),
+            lambda grant: (grant.granted_at, grant.grant_id),
+            limit,
+        )
+
+    def _all_grants(
         self, document_id: str, *, include_revoked: bool = False
     ) -> tuple[AccessGrant, ...]:
         query = select(self.grants_table).where(
@@ -441,10 +512,18 @@ class MariaDbDocumentAccessStore:
         )
 
     def list_for_groups(
-        self, groups: Sequence[str], *, include_archived: bool = False
-    ) -> list[AccessDocument]:
+        self,
+        groups: Sequence[str],
+        *,
+        include_archived: bool = False,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[AccessDocument]:
+        validate_limit(limit)
         if not groups:
-            return []
+            if cursor is not None:
+                decode_cursor(cursor)
+            return Page((), None)
         query = (
             select(self.documents)
             .distinct()
@@ -456,17 +535,54 @@ class MariaDbDocumentAccessStore:
         )
         if not include_archived:
             query = query.where(self.documents.c.status == "active")
-        return [
-            _access_document(row) for row in self.connection.execute(query).mappings()
-        ]
+        query = self._after_document_cursor(query, cursor)
+        rows = self.connection.execute(
+            query.order_by(
+                self.documents.c.created_at, self.documents.c.document_id
+            ).limit(limit + 1)
+        ).mappings()
+        return page_from_items(
+            (_access_document(row) for row in rows),
+            lambda document: (document.created_at, document.document_id),
+            limit,
+        )
 
-    def list_all(self, *, include_archived: bool = False) -> list[AccessDocument]:
+    def list_all(
+        self,
+        *,
+        include_archived: bool = False,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[AccessDocument]:
+        validate_limit(limit)
         query = select(self.documents)
         if not include_archived:
             query = query.where(self.documents.c.status == "active")
-        return [
-            _access_document(row) for row in self.connection.execute(query).mappings()
-        ]
+        query = self._after_document_cursor(query, cursor)
+        rows = self.connection.execute(
+            query.order_by(
+                self.documents.c.created_at, self.documents.c.document_id
+            ).limit(limit + 1)
+        ).mappings()
+        return page_from_items(
+            (_access_document(row) for row in rows),
+            lambda document: (document.created_at, document.document_id),
+            limit,
+        )
+
+    def _after_document_cursor(self, query: Any, cursor: str | None) -> Any:
+        if cursor is None:
+            return query
+        created_at, document_id = decode_cursor(cursor)
+        return query.where(
+            or_(
+                self.documents.c.created_at > created_at,
+                and_(
+                    self.documents.c.created_at == created_at,
+                    self.documents.c.document_id > document_id,
+                ),
+            )
+        )
 
     def guard(self, document_id: str, expected_revision: int) -> RowGuard:
         return RowGuard(
@@ -524,7 +640,7 @@ class MariaDbDocumentAccessStore:
             if existing is not None:
                 return _existing_result(
                     existing,
-                    self.grants(existing.document_id),
+                    self._all_grants(existing.document_id),
                     owning_group,
                 )
         document = AccessDocument(
@@ -556,7 +672,7 @@ class MariaDbDocumentAccessStore:
             if existing is not None and allow_existing:
                 return _existing_result(
                     existing,
-                    self.grants(existing.document_id),
+                    self._all_grants(existing.document_id),
                     owning_group,
                 )
             raise DocumentAccessError("document or grant already exists") from exc
@@ -782,7 +898,7 @@ class MariaDbDocumentAccessStore:
     ) -> AccessMutationResult:
         result = AccessMutationResult(
             document,
-            self.grants(document.document_id, include_revoked=True),
+            self._all_grants(document.document_id, include_revoked=True),
             accepted=True,
         )
         self.connection.execute(
