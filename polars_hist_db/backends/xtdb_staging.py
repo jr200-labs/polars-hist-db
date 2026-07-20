@@ -15,6 +15,7 @@ from ..config import (
 )
 from ..pipeline_projection import project_staged_pipeline_item_dataframe
 from ..types import PolarsType
+from .xtdb_arrow import _xtdb_json_safe_key_value
 from .xtdb_query import _xtdb_table_query_target_column, _xtdb_values_cte
 from .xtdb_transport import (
     XtdbAdbcDataframeOps,
@@ -23,7 +24,6 @@ from .xtdb_transport import (
     _normalize_xtdb_timestamp_columns,
     _qualified_table_name,
     _xtdb_column_identifier,
-    _xtdb_json_safe_key_value,
 )
 
 

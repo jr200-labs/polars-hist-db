@@ -5,9 +5,9 @@ import polars as pl
 
 from ..config import TableConfig
 from ..core import TimeHint
+from .xtdb_arrow import _xtdb_cast_type_from_polars
 from .xtdb_transport import (
     _validate_identifier,
-    _xtdb_cast_type_from_polars,
     _xtdb_column_identifier,
     _xtdb_parameter_value,
     _xtdb_timestamp_literal,

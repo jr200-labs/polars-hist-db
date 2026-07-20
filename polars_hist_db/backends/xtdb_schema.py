@@ -8,14 +8,16 @@ import polars as pl
 from ..config import ForeignKeyConfig, TableColumnConfig, TableConfig
 from ..observability import record_database_type_contract
 from ..types import TypeContractError
+from .xtdb_arrow import (
+    _xtdb_cast_type,
+    _xtdb_document_id_columns,
+    _xtdb_physical_column_map,
+)
 from .xtdb_transport import (
     _execute_xtdb_dml,
     _qualified_table_name,
     _validate_identifier,
-    _xtdb_cast_type,
     _xtdb_column_identifier,
-    _xtdb_document_id_columns,
-    _xtdb_physical_column_map,
     _xtdb_sql_literal,
 )
 

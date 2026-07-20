@@ -5,16 +5,18 @@ import polars as pl
 
 from ..config import DeltaConfig, TableConfig, ValidTimeConfig
 from ..types import PolarsType
+from .xtdb_arrow import (
+    _prepare_xtdb_insert_dataframe,
+    _xtdb_cast_type,
+    _xtdb_document_id_columns,
+)
 from .xtdb_query import _xtdb_temporal_basis_clause
 from .xtdb_transport import (
     XtdbDataframeOps,
     _execute_xtdb_dml,
     _is_xtdb_table_not_found_error,
-    _prepare_xtdb_insert_dataframe,
     _qualified_table_name,
     _rollback_xtdb_connection,
-    _xtdb_cast_type,
-    _xtdb_document_id_columns,
     _xtdb_sql_literal,
     _xtdb_timestamp_literal,
 )
