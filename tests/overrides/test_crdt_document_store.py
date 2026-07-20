@@ -138,11 +138,10 @@ def test_prepared_commit_finalizes_operations_and_rejects_later_mutation():
     assert committed.accepted is True
     assert committed.revision == 1
     assert prepared.source_update_hash != prepared.accepted_update_hash
-    assert store.projected_operations("document-1")[0].actor_id == "user-1"
-    assert store.projected_operations("document-1")[0].metadata_json == {
-        "actor_display_name": "Verified User"
-    }
-    assert store.projected_operations("document-1")[0].payload_hash is not None
+    projected = store.projected_operations("document-1").items
+    assert projected[0].actor_id == "user-1"
+    assert projected[0].metadata_json == {"actor_display_name": "Verified User"}
+    assert projected[0].payload_hash is not None
 
     document: Any = Doc()
     assert committed.document is not None
