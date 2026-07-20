@@ -21,6 +21,11 @@ from polars_hist_db.backends.xtdb import (
     _xtdb_type_to_config_type,
     _validate_xtdb_physical_types,
 )
+from polars_hist_db.backends.xtdb_arrow import (
+    _prepare_xtdb_insert_dataframe,
+    _xtdb_insert_casts,
+)
+from polars_hist_db.backends.xtdb_query import _xtdb_single_primary_key_alias
 from polars_hist_db.config import (
     DeltaConfig,
     TableColumnConfig,
@@ -44,6 +49,23 @@ def test_xtdb_casts_mediumtext_as_text():
 def test_xtdb_rejects_unknown_configured_column_type():
     with pytest.raises(ValueError, match="Unsupported XTDB column type: UUID"):
         _xtdb_cast_type("UUID")
+
+
+def test_xtdb_encodes_binary_primary_keys_as_valid_text_document_ids():
+    table = TableConfig(
+        name="records",
+        schema="test",
+        primary_keys=("id",),
+        columns=[TableColumnConfig("records", "id", "BINARY(16)")],
+    )
+
+    prepared = _prepare_xtdb_insert_dataframe(
+        pl.DataFrame({"id": [b"\x01" * 16]}, schema={"id": pl.Binary}), table
+    )
+
+    assert prepared["_id"].item().startswith("xtdb-pk-v1:")
+    assert _xtdb_insert_casts(prepared, table)[0] == "TEXT"
+    assert _xtdb_single_primary_key_alias(table) is None
 
 
 def test_xtdb_backend_builds_crdt_document_store(monkeypatch):

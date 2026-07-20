@@ -100,6 +100,50 @@ def _xtdb_document_id_columns(table_config: TableConfig) -> list[str]:
     )
 
 
+_XTDB_NATIVE_ID_CAST_TYPES = {"TEXT", "INTEGER", "BIGINT"}
+
+
+def _xtdb_document_id_cast_type(table_config: TableConfig) -> str:
+    document_id_columns = _xtdb_document_id_columns(table_config)
+    if len(document_id_columns) > 1:
+        return "TEXT"
+    source_key = document_id_columns[0]
+    source_type = next(
+        column.data_type for column in table_config.columns if column.name == source_key
+    )
+    cast_type = _xtdb_cast_type(source_type)
+    if document_id_columns == ["_id"] and cast_type not in _XTDB_NATIVE_ID_CAST_TYPES:
+        raise ValueError(
+            "XTDB explicit _id columns must be string or integer typed; "
+            f"received {source_type}"
+        )
+    return cast_type if cast_type in _XTDB_NATIVE_ID_CAST_TYPES else "TEXT"
+
+
+def _xtdb_document_id_is_encoded(table_config: TableConfig) -> bool:
+    document_id_columns = _xtdb_document_id_columns(table_config)
+    if document_id_columns == ["_id"]:
+        return False
+    if len(document_id_columns) > 1:
+        return True
+    source_type = next(
+        column.data_type
+        for column in table_config.columns
+        if column.name == document_id_columns[0]
+    )
+    return _xtdb_cast_type(source_type) not in _XTDB_NATIVE_ID_CAST_TYPES
+
+
+def _xtdb_document_id_value(table_config: TableConfig, row: Mapping[str, Any]) -> Any:
+    document_id_columns = _xtdb_document_id_columns(table_config)
+    if not _xtdb_document_id_is_encoded(table_config):
+        return row[document_id_columns[0]]
+    return _xtdb_composite_document_id(
+        document_id_columns,
+        tuple(row[column] for column in document_id_columns),
+    )
+
+
 def _xtdb_json_safe_key_value(value: Any) -> Any:
     if isinstance(value, bytes):
         return {"binary_hex": value.hex()}
@@ -200,13 +244,8 @@ def _xtdb_insert_casts(
     configured_types = {}
     if table_config is not None:
         document_id_columns = _xtdb_document_id_columns(table_config)
-        if len(document_id_columns) > 1:
-            configured_types["_id"] = "TEXT"
-        elif document_id_columns != ["_id"]:
-            for column in table_config.columns:
-                if column.name == document_id_columns[0]:
-                    configured_types["_id"] = _xtdb_cast_type(column.data_type)
-                    break
+        if document_id_columns != ["_id"]:
+            configured_types["_id"] = _xtdb_document_id_cast_type(table_config)
         for column in table_config.columns:
             configured_types[column.name] = _xtdb_cast_type(column.data_type)
 
@@ -243,11 +282,11 @@ def _xtdb_configured_column_dtypes(
         if dtype is None:
             continue
         dtypes[column.name] = dtype
-        if document_id_columns != ["_id"] and document_id_columns == [column.name]:
-            dtypes["_id"] = dtype
-
-    if len(document_id_columns) > 1:
-        dtypes["_id"] = pl.String()
+    if document_id_columns != ["_id"]:
+        dtypes["_id"] = (
+            _xtdb_polars_type_or_none(_xtdb_document_id_cast_type(table_config))
+            or pl.String()
+        )
     dtypes["_valid_from"] = pl.Datetime("us", "UTC")
     dtypes["_valid_to"] = pl.Datetime("us", "UTC")
     return dtypes
@@ -315,7 +354,7 @@ def _prepare_xtdb_insert_dataframe(
             f"{missing_keys!r}"
         )
 
-    if len(document_id_columns) == 1:
+    if not _xtdb_document_id_is_encoded(table_config):
         return df.with_columns(pl.col(document_id_columns[0]).alias("_id")).select(
             ["_id", *df.columns]
         )

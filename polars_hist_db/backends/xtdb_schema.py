@@ -10,7 +10,9 @@ from ..observability import record_database_type_contract
 from ..types import TypeContractError
 from .xtdb_arrow import (
     _xtdb_cast_type,
+    _xtdb_document_id_cast_type,
     _xtdb_document_id_columns,
+    _xtdb_document_id_is_encoded,
     _xtdb_physical_column_map,
 )
 from .xtdb_transport import (
@@ -208,17 +210,7 @@ def _validate_xtdb_physical_types(
     document_id_columns = _xtdb_document_id_columns(table_config)
     if document_id_columns != ["_id"]:
         expected["_id"] = (
-            (
-                "TEXT"
-                if len(document_id_columns) > 1
-                else _xtdb_configured_type_family(
-                    next(
-                        column.data_type
-                        for column in table_config.columns
-                        if column.name == document_id_columns[0]
-                    )
-                )
-            ),
+            _xtdb_configured_type_family(_xtdb_document_id_cast_type(table_config)),
             False,
         )
 
@@ -425,7 +417,7 @@ def _xtdb_id_policy(table_config: TableConfig) -> str:
     document_id_columns = _xtdb_document_id_columns(table_config)
     if document_id_columns == ["_id"]:
         return "explicit-id"
-    if len(document_id_columns) == 1:
+    if len(document_id_columns) == 1 and not _xtdb_document_id_is_encoded(table_config):
         return "single-key"
     return "xtdb-pk-v1"
 

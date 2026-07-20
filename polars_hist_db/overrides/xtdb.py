@@ -11,7 +11,8 @@ from sqlalchemy import text
 
 from polars_hist_db.backends.xtdb_arrow import (
     _xtdb_cast_type,
-    _xtdb_composite_document_id,
+    _xtdb_document_id_cast_type,
+    _xtdb_document_id_value,
 )
 from polars_hist_db.backends.xtdb_transport import (
     _execute_xtdb_transaction,
@@ -1081,13 +1082,14 @@ def _insert_statement(
     valid_to: object | None = None,
 ) -> str:
     columns = {column.name: column for column in config.columns}
-    missing_keys = [key for key in config.primary_keys if key not in row]
+    primary_keys = tuple(config.primary_keys)
+    missing_keys = [key for key in primary_keys if key not in row]
     if missing_keys:
         raise ValueError("atomic rows require every configured primary key")
     document_id = _document_id(config, row)
     values = {"_id": document_id, **row}
     types = {
-        "_id": "TEXT",
+        "_id": _xtdb_document_id_cast_type(config),
         **{name: column.data_type for name, column in columns.items()},
     }
     if valid_from is not None:
@@ -1119,10 +1121,7 @@ def _update_statement(update: AtomicUpdate) -> str:
 
 
 def _document_id(config: TableConfig, row: Mapping[str, object]) -> object:
-    keys = list(config.primary_keys)
-    if len(keys) == 1:
-        return row[keys[0]]
-    return _xtdb_composite_document_id(keys, tuple(row[key] for key in keys))
+    return _xtdb_document_id_value(config, row)
 
 
 def _where(config: TableConfig, values: Mapping[str, object]) -> str:
