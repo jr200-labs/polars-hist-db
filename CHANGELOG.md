@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.12.68](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.67...v0.12.68) (2026-07-20)
+
+
+### Features
+
+* **overrides:** add Arrow-native operation CRDT ([#272](https://github.com/jr200-labs/polars-hist-db/issues/272)) ([fbbbd88](https://github.com/jr200-labs/polars-hist-db/commit/fbbbd8848d8f19c55501240ee4b352d9f23c05da))
+* **overrides:** guard Arrow commits atomically ([#273](https://github.com/jr200-labs/polars-hist-db/issues/273)) ([ea2c32d](https://github.com/jr200-labs/polars-hist-db/commit/ea2c32dbb6109ca2f6b3f075ba9ba12c8fd869ec))
+
+
+### Code Refactoring
+
+* split XTDB backend responsibilities ([#275](https://github.com/jr200-labs/polars-hist-db/issues/275)) ([1a1df28](https://github.com/jr200-labs/polars-hist-db/commit/1a1df2857d29345d18a0523bf153a05af092e4ea))
+
 ## [0.12.67](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.66...v0.12.67) (2026-07-19)
 
 
