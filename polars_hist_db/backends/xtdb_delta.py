@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
-from typing import Any, Iterable, Literal, Mapping, Optional
+import logging
+from typing import Any, Callable, Iterable, Literal, Mapping, Optional
 
 import polars as pl
 
@@ -11,9 +12,11 @@ from .xtdb_arrow import (
     _xtdb_document_id_columns,
 )
 from .xtdb_query import _xtdb_temporal_basis_clause
-from .xtdb_dataframe import XtdbDataframeOps
+from .xtdb_dataframe import XtdbAdbcDataframeOps, XtdbDataframeOps
+from .xtdb_staging import _fill_xtdb_defaults, _materialize_xtdb_missing_columns
 from .xtdb_transport import (
     _execute_xtdb_dml,
+    _is_xtdb_adbc_ingest_unavailable,
     _is_xtdb_table_not_found_error,
     _qualified_table_name,
     _rollback_xtdb_connection,
@@ -23,6 +26,110 @@ from .xtdb_transport import (
 
 
 _XTDB_READONLY_SYSTEM_COLUMNS = {"_system_from", "_system_to"}
+LOGGER = logging.getLogger(__name__)
+
+
+def _xtdb_temporal_upsert(
+    df: pl.DataFrame,
+    table_schema: str,
+    table_name: str,
+    *,
+    connection: Any | None = None,
+    dataframe_ops: XtdbDataframeOps | XtdbAdbcDataframeOps | None = None,
+    table_config: Optional[TableConfig] = None,
+    delta_config: Optional[DeltaConfig] = None,
+    update_time: Optional[datetime] = None,
+    valid_time: Optional[ValidTimeConfig] = None,
+    dropout_close_time: Optional[datetime] = None,
+    max_rows_per_insert: Optional[int] = None,
+    dataframe_factory: Callable[[Any], XtdbDataframeOps] | None = None,
+) -> int:
+    def pgwire_dataframes(connection: Any) -> XtdbDataframeOps:
+        if dataframe_factory is not None:
+            return dataframe_factory(connection)
+        return XtdbDataframeOps(connection, max_rows_per_insert)
+
+    if dataframe_ops is None:
+        if connection is None:
+            raise ValueError(
+                "XTDB temporal upsert requires connection or dataframe_ops"
+            )
+        dataframe_ops = pgwire_dataframes(connection)
+
+    df = _apply_xtdb_valid_time_mapping(df, valid_time)
+    df = _apply_xtdb_non_temporal_valid_from(df, table_config, valid_time)
+
+    deleted_count = 0
+    if delta_config is not None:
+        if delta_config.row_finality not in {"disabled", "dropout"}:
+            raise NotImplementedError(
+                "XTDB temporal upsert currently only supports "
+                "row_finality='disabled' or 'dropout'"
+            )
+        if table_config is None:
+            raise ValueError("XTDB delta upsert requires table_config")
+        df = _materialize_xtdb_missing_columns(
+            df,
+            table_config,
+            use_defaults=delta_config.prefill_nulls_with_default,
+        )
+        if delta_config.prefill_nulls_with_default:
+            df = _fill_xtdb_defaults(df, table_config)
+        df = _apply_xtdb_duplicate_policy(df, table_config, delta_config)
+        if delta_config.row_finality == "dropout":
+            if not isinstance(dataframe_ops, XtdbDataframeOps):
+                raise NotImplementedError(
+                    "XTDB row_finality='dropout' currently requires the "
+                    "pgwire dataframe path"
+                )
+            deleted_count = _delete_xtdb_missing_rows(
+                df,
+                table_schema,
+                table_name,
+                table_config,
+                dataframe_ops,
+                update_time,
+                dropout_close_time,
+            )
+        if delta_config.drop_unchanged_rows:
+            df = _filter_xtdb_unchanged_rows(
+                df,
+                table_schema,
+                table_name,
+                table_config,
+                dataframe_ops,
+                update_time,
+            )
+
+    insert_kwargs: dict[str, Any] = {"table_config": table_config}
+    if update_time is not None:
+        insert_kwargs["update_time"] = update_time
+
+    try:
+        inserted_count = dataframe_ops.table_insert(
+            df,
+            table_schema,
+            table_name,
+            **insert_kwargs,
+        )
+    except Exception as exc:
+        if not (
+            isinstance(dataframe_ops, XtdbAdbcDataframeOps)
+            and _is_xtdb_adbc_ingest_unavailable(exc)
+        ):
+            raise
+        if connection is None:
+            raise
+        LOGGER.warning(
+            "XTDB ADBC ingest unavailable — falling back to pgwire (%s)", exc
+        )
+        inserted_count = pgwire_dataframes(connection).table_insert(
+            df,
+            table_schema,
+            table_name,
+            **insert_kwargs,
+        )
+    return deleted_count + inserted_count
 
 
 def _apply_xtdb_duplicate_policy(
