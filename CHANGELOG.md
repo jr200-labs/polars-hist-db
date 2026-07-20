@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.12.70](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.69...v0.12.70) (2026-07-20)
+
+
+### Features
+
+* **overrides:** paginate unbounded APIs ([#287](https://github.com/jr200-labs/polars-hist-db/issues/287)) ([6ee381f](https://github.com/jr200-labs/polars-hist-db/commit/6ee381f2b498816896c963ca74d78dd8ee66123b))
+* **overrides:** return typed operation sync deltas ([#286](https://github.com/jr200-labs/polars-hist-db/issues/286)) ([49b1834](https://github.com/jr200-labs/polars-hist-db/commit/49b1834725eb70415da07cdc0fdc9a0fc5d0a9cd))
+
+
+### Performance Improvements
+
+* **xtdb:** vectorize foreign-key deduplication ([#284](https://github.com/jr200-labs/polars-hist-db/issues/284)) ([040a5c5](https://github.com/jr200-labs/polars-hist-db/commit/040a5c5f778b3c1beac014df203463a9f473197c))
+
+
+### Tests
+
+* **jetstream:** cover transaction fault lifecycle ([#288](https://github.com/jr200-labs/polars-hist-db/issues/288)) ([d273736](https://github.com/jr200-labs/polars-hist-db/commit/d2737365a5da59a92e51b532bef122e0fcf44202))
+
 ## [0.12.69](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.68...v0.12.69) (2026-07-20)
 
 
