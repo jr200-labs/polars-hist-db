@@ -29,7 +29,7 @@ def _xtdb_table_config_ops(connection: Any) -> Any:
 
 
 def _xtdb_dataframe_ops(connection: Any) -> Any:
-    from ..backends.xtdb_transport import XtdbDataframeOps
+    from ..backends.xtdb_dataframe import XtdbDataframeOps
 
     return XtdbDataframeOps(connection)
 

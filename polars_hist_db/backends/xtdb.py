@@ -29,6 +29,7 @@ from .base import (
 from .temporal import system_time_hint_clause
 from . import xtdb_arrow as _xtdb_arrow
 from . import xtdb_delta as _xtdb_delta
+from . import xtdb_dataframe as _xtdb_dataframe
 from . import xtdb_query as _xtdb_query
 from . import xtdb_schema as _xtdb_schema
 from . import xtdb_staging as _xtdb_staging
@@ -46,9 +47,11 @@ from .xtdb_staging import (
     _fill_xtdb_defaults,
     _materialize_xtdb_missing_columns,
 )
-from .xtdb_transport import (
+from .xtdb_dataframe import (
     XtdbAdbcDataframeOps,
     XtdbDataframeOps,
+)
+from .xtdb_transport import (
     _is_xtdb_adbc_ingest_unavailable,
 )
 
@@ -71,21 +74,24 @@ LOGGER = logging.getLogger(__name__)
 def __getattr__(name: str) -> Any:
     """Keep legacy private XTDB imports working during the module split."""
     try:
-        return getattr(_xtdb_arrow, name)
+        return getattr(_xtdb_dataframe, name)
     except AttributeError:
         try:
-            return getattr(_xtdb_query, name)
+            return getattr(_xtdb_arrow, name)
         except AttributeError:
             try:
-                return getattr(_xtdb_delta, name)
+                return getattr(_xtdb_query, name)
             except AttributeError:
                 try:
-                    return getattr(_xtdb_staging, name)
+                    return getattr(_xtdb_delta, name)
                 except AttributeError:
                     try:
-                        return getattr(_xtdb_schema, name)
+                        return getattr(_xtdb_staging, name)
                     except AttributeError:
-                        return getattr(_xtdb_transport, name)
+                        try:
+                            return getattr(_xtdb_schema, name)
+                        except AttributeError:
+                            return getattr(_xtdb_transport, name)
 
 
 def _load_flight_sql() -> Any:

@@ -11,8 +11,8 @@ from .xtdb_arrow import (
     _xtdb_document_id_columns,
 )
 from .xtdb_query import _xtdb_temporal_basis_clause
+from .xtdb_dataframe import XtdbDataframeOps
 from .xtdb_transport import (
-    XtdbDataframeOps,
     _execute_xtdb_dml,
     _is_xtdb_table_not_found_error,
     _qualified_table_name,
