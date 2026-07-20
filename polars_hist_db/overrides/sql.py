@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Any, Sequence
 
-from sqlalchemy import Connection, MetaData, Table, and_, select
+from sqlalchemy import Connection, MetaData, Table, and_, or_, select
 from sqlalchemy.exc import IntegrityError
 
 from polars_hist_db.config import TableConfig
@@ -36,6 +36,7 @@ from .config import (
     build_layer_composition_table_config,
 )
 from .operations import CompositionRevision
+from .pagination import Page, decode_cursor, encode_cursor, validate_limit
 from .crdt import (
     AtomicInsert,
     AtomicUpdate,
@@ -76,14 +77,42 @@ class MariaDbLayerCompositionStore:
             )
         )
 
-    def revisions(self, layer_id: str | None = None) -> tuple[CompositionRevision, ...]:
+    def revisions(
+        self,
+        layer_id: str | None = None,
+        *,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[CompositionRevision]:
+        validate_limit(limit)
         query = select(self.table)
         if layer_id is not None:
             query = query.where(self.table.c.layer_id == layer_id)
-        rows = self.connection.execute(
-            query.order_by(self.table.c.recorded_at, self.table.c.revision_id)
-        ).mappings()
-        return tuple(_composition_revision(row) for row in rows)
+        if cursor is not None:
+            recorded_at, revision_id = decode_cursor(cursor)
+            query = query.where(
+                or_(
+                    self.table.c.recorded_at > recorded_at,
+                    and_(
+                        self.table.c.recorded_at == recorded_at,
+                        self.table.c.revision_id > revision_id,
+                    ),
+                )
+            )
+        rows = list(
+            self.connection.execute(
+                query.order_by(
+                    self.table.c.recorded_at, self.table.c.revision_id
+                ).limit(limit + 1)
+            ).mappings()
+        )
+        revisions = tuple(_composition_revision(row) for row in rows[:limit])
+        next_cursor = (
+            encode_cursor((revisions[-1].recorded_at, revisions[-1].revision_id))
+            if len(rows) > limit
+            else None
+        )
+        return Page(revisions, next_cursor)
 
 
 def _composition_revision(row: Any) -> CompositionRevision:

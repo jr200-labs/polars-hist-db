@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import pytest
+
 from polars_hist_db.overrides import (
     CompositionRevision,
     InMemoryLayerCompositionStore,
@@ -44,8 +46,25 @@ def test_in_memory_composition_store_preserves_revision_order() -> None:
         datetime(2026, 7, 12, tzinfo=timezone.utc),
     )
     store.append(first, "editor")
+    second = CompositionRevision(
+        str(uuid4()),
+        "root",
+        ("left",),
+        datetime(2026, 7, 14, tzinfo=timezone.utc),
+        None,
+        datetime(2026, 7, 13, tzinfo=timezone.utc),
+    )
+    store.append(second, "editor")
 
-    assert store.revisions("root") == (first,)
+    first_page = store.revisions("root", limit=1)
+    second_page = store.revisions("root", cursor=first_page.next_cursor, limit=1)
+
+    assert first_page.items == (first,)
+    assert second_page.items == (second,)
+    assert first_page.next_cursor is not None
+    assert second_page.next_cursor is None
+    with pytest.raises(ValueError, match="limit must be between"):
+        store.revisions(limit=501)
 
 
 def test_xtdb_composition_history_orders_by_system_time() -> None:
@@ -62,6 +81,7 @@ def test_xtdb_composition_history_orders_by_system_time() -> None:
     connection = Connection()
     store = XtdbLayerCompositionStore(connection, LayerCompositionStoreConfig())
 
-    assert store.revisions() == ()
+    assert store.revisions().items == ()
     assert "_system_from AS system_from" in connection.statement
     assert "ORDER BY _system_from, revision_id" in connection.statement
+    assert "LIMIT 101" in connection.statement

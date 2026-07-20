@@ -25,8 +25,7 @@ def paginate(
     cursor: str | None,
     limit: int,
 ) -> Page[T]:
-    if isinstance(limit, bool) or limit < 1 or limit > 500:
-        raise ValueError("limit must be between 1 and 500")
+    validate_limit(limit)
 
     ordered = sorted(items, key=key)
     keys = [key(item) for item in ordered]
@@ -35,6 +34,11 @@ def paginate(
     page = selected[:limit]
     next_cursor = encode_cursor(key(page[-1])) if len(selected) > len(page) else None
     return Page(tuple(page), next_cursor)
+
+
+def validate_limit(limit: int) -> None:
+    if isinstance(limit, bool) or limit < 1 or limit > 500:
+        raise ValueError("limit must be between 1 and 500")
 
 
 def encode_cursor(value: tuple[datetime, str]) -> str:

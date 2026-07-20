@@ -48,6 +48,7 @@ from .config import (
     build_override_table_config,
 )
 from .operations import CompositionRevision
+from .pagination import Page, decode_cursor, encode_cursor, validate_limit
 from .crdt import (
     AtomicInsert,
     AtomicUpdate,
@@ -92,28 +93,55 @@ class XtdbLayerCompositionStore:
             ],
         )
 
-    def revisions(self, layer_id: str | None = None) -> tuple[CompositionRevision, ...]:
-        predicate = (
-            ""
-            if layer_id is None
-            else f" WHERE layer_id = {_literal(layer_id, 'VARCHAR(128)')}"
-        )
+    def revisions(
+        self,
+        layer_id: str | None = None,
+        *,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[CompositionRevision]:
+        validate_limit(limit)
+        predicates = []
+        if layer_id is not None:
+            predicates.append(f"layer_id = {_literal(layer_id, 'VARCHAR(128)')}")
+        if cursor is not None:
+            system_from, revision_id = decode_cursor(cursor)
+            timestamp = _literal(system_from, "TIMESTAMP WITH TIME ZONE")
+            revision = _literal(revision_id, "VARCHAR(128)")
+            predicates.append(
+                f"(_system_from > {timestamp} OR "
+                f"(_system_from = {timestamp} AND revision_id > {revision}))"
+            )
+        predicate = " WHERE " + " AND ".join(predicates) if predicates else ""
         try:
-            rows = self.connection.execute(
-                text(
-                    "SELECT revision_id, layer_id, child_layer_ids_json, "
-                    f"valid_from, valid_to, recorded_at, _system_from AS system_from, "
-                    f"supersedes_revision_id "
-                    f"FROM {_table_name(self.table)}"
-                    f"{predicate} ORDER BY _system_from, revision_id"
+            rows = list(
+                self.connection.execute(
+                    text(
+                        "SELECT revision_id, layer_id, child_layer_ids_json, "
+                        f"valid_from, valid_to, recorded_at, _system_from AS system_from, "
+                        f"supersedes_revision_id "
+                        f"FROM {_table_name(self.table)}"
+                        f"{predicate} ORDER BY _system_from, revision_id LIMIT {limit + 1}"
+                    )
+                ).mappings()
+            )
+            revisions = tuple(_composition_revision(row) for row in rows[:limit])
+            next_cursor = (
+                encode_cursor(
+                    (
+                        revisions[-1].recorded_at,
+                        revisions[-1].revision_id,
+                    )
                 )
-            ).mappings()
-            return tuple(_composition_revision(row) for row in rows)
+                if len(rows) > limit
+                else None
+            )
+            return Page(revisions, next_cursor)
         except Exception as exc:
             if not _is_xtdb_table_not_found_error(exc):
                 raise
             _rollback_xtdb_connection(self.connection)
-            return ()
+            return Page((), None)
 
 
 def _composition_revision(row: Mapping[str, object]) -> CompositionRevision:
