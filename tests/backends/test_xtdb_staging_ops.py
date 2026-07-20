@@ -1237,13 +1237,13 @@ def test_xtdb_staging_does_not_insert_same_generated_parent_twice(
     assert destination_df.is_empty()
 
 
-def test_xtdb_staging_deduces_existing_foreign_key_without_insert(monkeypatch):
+def test_xtdb_staging_deduces_existing_and_missing_foreign_keys(monkeypatch):
     stage_df = pl.DataFrame(
         {
-            "stage_run_id": ["stage-1"],
-            "stage_row_index": [0],
-            "country_id": [None],
-            "country_name": ["Japan"],
+            "stage_run_id": ["stage-1", "stage-1"],
+            "stage_row_index": [0, 1],
+            "country_id": [None, None],
+            "country_name": ["Japan", "Korea"],
         },
         schema={
             "stage_run_id": pl.String,
@@ -1266,7 +1266,7 @@ def test_xtdb_staging_deduces_existing_foreign_key_without_insert(monkeypatch):
         "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_query",
         Mock(return_value=parent_df),
     )
-    table_insert = Mock(return_value=0)
+    table_insert = Mock(return_value=1)
     monkeypatch.setattr(
         "polars_hist_db.backends.xtdb.XtdbDataframeOps.table_insert",
         table_insert,
@@ -1309,10 +1309,15 @@ def test_xtdb_staging_deduces_existing_foreign_key_without_insert(monkeypatch):
         valid_time=None,
     )
 
-    table_insert.assert_not_called()
+    inserted = table_insert.call_args.args[0]
+    generated_id = 'xtdb-fk-v1:ref.countries:[["name","Korea"]]'
+    assert inserted.to_dict(as_series=False) == {
+        "country_id": [generated_id],
+        "name": ["Korea"],
+    }
     assert result.to_dict(as_series=False) == {
-        "country_id": ["country:japan"],
-        "name": ["Japan"],
+        "country_id": ["country:japan", generated_id],
+        "name": ["Japan", "Korea"],
     }
 
 

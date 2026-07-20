@@ -703,6 +703,8 @@ class XtdbStagingOps:
             generated,
             [*fk_targets, *value_targets],
         )
+        parent_exists = "__xtdb_parent_exists"
+        parent_lookup = parent_lookup.with_columns(pl.lit(True).alias(parent_exists))
 
         joined = generated.join(
             parent_lookup,
@@ -711,7 +713,12 @@ class XtdbStagingOps:
             suffix="__existing",
         )
         first_fk = fk_targets[0]
-        has_existing_fk = f"{first_fk}__existing" in joined.columns
+        missing_parent = "__xtdb_missing_parent"
+        joined = joined.with_columns(
+            (pl.col(parent_exists).is_null() & pl.col(first_fk).is_not_null()).alias(
+                missing_parent
+            )
+        )
         for target_column in fk_targets:
             existing_column = f"{target_column}__existing"
             if existing_column in joined.columns:
@@ -719,17 +726,8 @@ class XtdbStagingOps:
                     pl.coalesce(existing_column, target_column).alias(target_column)
                 ).drop(existing_column)
 
-        if has_existing_fk:
-            missing_parent_rows = joined.filter(pl.col(first_fk).is_not_null())
-            if not parent_lookup.is_empty():
-                existing_keys = parent_lookup.select(value_targets).unique()
-                missing_parent_rows = missing_parent_rows.join(
-                    existing_keys,
-                    on=value_targets,
-                    how="anti",
-                )
-        else:
-            missing_parent_rows = joined
+        missing_parent_rows = joined.filter(missing_parent)
+        retained_rows = joined.filter(~pl.col(missing_parent))
 
         missing_parent_rows = self._resolve_numeric_foreign_key_collisions(
             missing_parent_rows,
@@ -741,21 +739,8 @@ class XtdbStagingOps:
             table_config,
             fk_targets,
         )
-        resolved_keys = missing_parent_rows.select(
-            [*value_targets, *fk_targets]
-        ).unique(maintain_order=True)
-        joined = joined.join(
-            resolved_keys,
-            on=value_targets,
-            how="left",
-            suffix="__resolved",
-        )
-        for target_column in fk_targets:
-            resolved_column = f"{target_column}__resolved"
-            if resolved_column in joined.columns:
-                joined = joined.with_columns(
-                    pl.coalesce(resolved_column, target_column).alias(target_column)
-                ).drop(resolved_column)
+        joined = pl.concat([retained_rows, missing_parent_rows], how="vertical_relaxed")
+        joined = joined.drop([missing_parent, parent_exists])
         joined = _cast_xtdb_configured_columns(joined, table_config, fk_targets)
 
         parent_rows_to_insert = missing_parent_rows.select(
