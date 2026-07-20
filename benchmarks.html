@@ -357,7 +357,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="./replicated-overrides.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Yjs-compatible replicated documents and overrides</span></a>
+ <span class="menu-text">Replicated documents and Arrow-native overrides</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -465,6 +465,18 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td>Polars preparation and partition slicing</td>
 <td>CSV decoding and database writes</td>
 </tr>
+<tr class="even">
+<td>Arrow override IPC</td>
+<td>Round-trip typed operation batches through the canonical Arrow IPC wire format</td>
+<td>Native temporal, decimal, binary, list, and struct encoding and decoding</td>
+<td>Network latency</td>
+</tr>
+<tr class="odd">
+<td>Arrow override synchronization</td>
+<td>Validate, hash, commit, acknowledge, and project typed operation batches across clean and conflicting frontiers</td>
+<td>Backend-neutral CRDT service and in-memory atomic repository</td>
+<td>Database network and storage latency</td>
+</tr>
 </tbody>
 </table>
 <p>The runner also prints theoretical transfer floors for 1, 10, and 100 Gbps links. An optional remote-read mode can measure decoding from a live XTDB table, but it is not part of the portable CI history because it requires a deployment-specific DSN.</p>
@@ -494,7 +506,8 @@ Loading benchmark history…
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--target-rows</span> 50000 <span class="dt">\</span></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">--upload-rows</span> 10000 <span class="dt">\</span></span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">--partition-rows</span> 100000 <span class="dt">\</span></span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">--repeats</span> 1</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">--override-cases</span> 100:100,100:10 <span class="dt">\</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">--repeats</span> 1</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>The JSON consumed by CI can be generated with <code>--json-output</code>:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> run python benchmarks/xtdb_delta.py <span class="at">--json-output</span> benchmark-results.json</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <style>

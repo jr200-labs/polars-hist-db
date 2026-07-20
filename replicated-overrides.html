@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>Yjs-compatible replicated documents and overrides – Polars Hist DB</title>
+<title>Replicated documents and Arrow-native overrides – Polars Hist DB</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -327,7 +327,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">Polars Hist DB</a></li><li class="breadcrumb-item"><a href="./replicated-overrides.html">Yjs-compatible replicated documents and overrides</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">Polars Hist DB</a></li><li class="breadcrumb-item"><a href="./replicated-overrides.html">Replicated documents and Arrow-native overrides</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -357,7 +357,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="./replicated-overrides.html" class="sidebar-item-text sidebar-link active">
- <span class="menu-text">Yjs-compatible replicated documents and overrides</span></a>
+ <span class="menu-text">Replicated documents and Arrow-native overrides</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -397,6 +397,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
    
   <ul>
   <li><a href="#scope" id="toc-scope" class="nav-link active" data-scroll-target="#scope">Scope</a></li>
+  <li><a href="#recommended-typed-operation-data-plane" id="toc-recommended-typed-operation-data-plane" class="nav-link" data-scroll-target="#recommended-typed-operation-data-plane">Recommended typed operation data plane</a></li>
+  <li><a href="#yjs-compatibility-path" id="toc-yjs-compatibility-path" class="nav-link" data-scroll-target="#yjs-compatibility-path">Yjs compatibility path</a></li>
   <li><a href="#document-model" id="toc-document-model" class="nav-link" data-scroll-target="#document-model">Document model</a></li>
   <li><a href="#synchronization" id="toc-synchronization" class="nav-link" data-scroll-target="#synchronization">Synchronization</a></li>
   <li><a href="#presence-and-undo" id="toc-presence-and-undo" class="nav-link" data-scroll-target="#presence-and-undo">Presence and undo</a></li>
@@ -429,9 +431,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <main class="content" id="quarto-document-content">
 
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">Polars Hist DB</a></li><li class="breadcrumb-item"><a href="./replicated-overrides.html">Yjs-compatible replicated documents and overrides</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">Polars Hist DB</a></li><li class="breadcrumb-item"><a href="./replicated-overrides.html">Replicated documents and Arrow-native overrides</a></li></ol></nav>
 <div class="quarto-title">
-<h1 class="title">Yjs-compatible replicated documents and overrides</h1>
+<h1 class="title">Replicated documents and Arrow-native overrides</h1>
 </div>
 
 
@@ -450,8 +452,28 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 <section id="scope" class="level2">
 <h2 class="anchored" data-anchor-id="scope">Scope</h2>
-<p><code>polars-hist-db</code> provides backend-independent persistence for Yjs-compatible document updates and snapshots, plus a reusable immutable operation model for valid-time overrides. An optional access registry persists document lifecycle and opaque group-to-role grants. Applications own authentication, authorization policy, transport, field declarations, and business conflict policy.</p>
+<p><code>polars-hist-db</code> provides Yjs-compatible documents for collaborative drafts and an Arrow-native immutable operation-set CRDT for typed valid-time overrides. The Arrow operation stream is the recommended override data plane. Arrow is the canonical in-process and wire representation; normalized native database columns are the durable representation. JSON is not an intermediate override representation.</p>
+<p>An optional access registry persists document lifecycle and opaque group-to-role grants. Applications own authentication, authorization policy, transport, field declarations, and business conflict policy.</p>
 <p>The implementation uses the maintained Yjs/Yrs ecosystem instead of implementing a CRDT algorithm. Browser clients use Yjs. Python services use <code>pycrdt</code>, whose Yrs updates are binary-compatible with Yjs. Binary updates are commutative, associative, and idempotent, so every backend stores the same protocol rather than implementing its own merge rules.</p>
+</section>
+<section id="recommended-typed-operation-data-plane" class="level2">
+<h2 class="anchored" data-anchor-id="recommended-typed-operation-data-plane">Recommended typed operation data plane</h2>
+<p>The Arrow contract is an observed-remove operation set. Each client proposal has a UUID operation id and change-set id, typed value, valid-time interval, and explicit references to operations it supersedes or removes. The accepting service supplies the layer, generation, monotonic layer revision, verified actor snapshot, authoritative recorded time, and a SHA-256 hash over canonical typed content. Replaying the same id and content is a duplicate; reusing an id for different content is rejected.</p>
+<p>Values use a closed Arrow struct with dedicated slots for strings, booleans, integers, decimals, UTC timestamps, dates, durations, binary values, and string lists. Versioned extension values carry an explicit schema id and binary payload. Exactly one slot must be populated. Type conversion is therefore explicit at the application boundary rather than inferred during persistence.</p>
+<p>Synchronization returns Arrow acknowledgement and effective-projection tables. Acknowledgements contain accepted or duplicate operation ids, authoritative revisions, and payload hashes. The projection contains only scopes changed since the caller’s known revision. Projection groups the operation set once by <code>(feed_id, entity_id, field_path)</code> and removes explicit supersessions and removals at the requested valid time. No remaining value is <code>none</code>, one distinct value is <code>clean</code>, and several distinct values are <code>conflict</code>. Arrival order and database row order never choose a winner.</p>
+<p>Each layer has an independent generation and revision head. A compliance rebuild advances the generation and physically removes the previous generation. Old clients fail with <code>generation_changed</code>. An atomic compare-and-swap advances the revision exactly once for an accepted batch. MariaDB uses a transaction and conditional head update. XTDB uses one transaction containing <code>ASSERT</code>, native typed inserts, and the head update. The in-memory implementation follows the same repository contract.</p>
+<p>Durable storage is normalized into four configurable tables:</p>
+<pre class="text"><code>arrow_override_layer_heads
+arrow_override_operations
+arrow_override_operation_references
+arrow_override_string_list_values</code></pre>
+<p>UUIDs and hashes use fixed binary columns. Temporal, decimal, boolean, binary, and numeric values use native database types. References and repeated strings use child rows with stable ordinals. Reconstructing canonical Arrow uses typed Polars frames and Arrow casts; operation rows are never round-tripped through JSON dictionaries.</p>
+<p>Repository reads are bounded by operation ids, revisions, and changed scopes. The projector indexes scopes in one pass. Benchmarks track typed IPC and full synchronization for clean and conflicting frontiers. Optional telemetry records low-cardinality backend, outcome, duration, row-count, duplicate, and conflict measurements. Logs and spans exclude values, comments, identities, tokens, group membership, and layer identifiers.</p>
+<p>The public entry point is <code>backend.arrow_overrides(connection, config)</code>. Every backend shares the canonical schemas, validator, hasher, projector, acknowledgement format, and repository contract. Transport adapters carry Arrow IPC bytes and do not reinterpret values.</p>
+</section>
+<section id="yjs-compatibility-path" class="level2">
+<h2 class="anchored" data-anchor-id="yjs-compatibility-path">Yjs compatibility path</h2>
+<p>The document model below remains supported for collaborative document state and existing operation-map integrations. New typed override flows should keep mutable draft text in Yjs and publish immutable changes into the Arrow operation data plane. This prevents Yjs/JSON scalar encoding from becoming authoritative for database value types while preserving offline draft editing.</p>
 </section>
 <section id="document-model" class="level2">
 <h2 class="anchored" data-anchor-id="document-model">Document model</h2>
@@ -634,13 +656,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>The source update is the untrusted client input. The accepted update is a server-origin update containing both the source change and causal replacement of provisional operation entries with finalized values. It is generated relative to the previously accepted state, so applying it once brings any replica at that state to the accepted state. Replaying the source update later cannot replace its causal server descendant.</p>
 <p>Client-supplied <code>actor_id</code>, <code>recorded_at</code>, or <code>payload_hash</code> values are rejected. The server supplies one actor and acceptance timestamp for the request and computes each operation payload hash after finalization. A draft-only update is valid and produces no relational operation rows.</p>
 <p>The repository contract is intentionally small:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>load_document(document_id) <span class="op">-&gt;</span> CrdtDocument <span class="op">|</span> <span class="va">None</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>commit(prepared_commit, guards<span class="op">=</span>(), inserts<span class="op">=</span>(), updates<span class="op">=</span>()) <span class="op">-&gt;</span> CrdtCommitResult</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>write_snapshot(document_id, expected_revision) <span class="op">-&gt;</span> CrdtSnapshot</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>load_document(document_id) <span class="op">-&gt;</span> CrdtDocument <span class="op">|</span> <span class="va">None</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>commit(prepared_commit, guards<span class="op">=</span>(), inserts<span class="op">=</span>(), updates<span class="op">=</span>()) <span class="op">-&gt;</span> CrdtCommitResult</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>write_snapshot(document_id, expected_revision) <span class="op">-&gt;</span> CrdtSnapshot</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>The optional atomic extensions are deliberately constrained:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>RowGuard(table_config, key_values, expected_values)</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>AtomicInsert(table_config, row)</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>AtomicUpdate(table_config, key_values, expected_values, values)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>RowGuard(table_config, key_values, expected_values)</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>AtomicInsert(table_config, row)</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>AtomicUpdate(table_config, key_values, expected_values, values)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>A guard requires one current row matching its key and expected values. Typical uses are an active layer revision or the source row/version used during validation. An atomic insert adds a row with a deterministic primary key; typical use is a transactional outbox event. An atomic update is a constrained compare-and-swap used for a server-authoritative lifecycle revision in the same commit. There are no arbitrary SQL callbacks or cross-database participants.</p>
 <p><code>commit</code> has five portable outcomes:</p>
 <ul>
@@ -653,15 +675,15 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>Exact source bytes use <code>source_update_hash</code> as a fast retry key. A differently encoded Yjs update that adds no structs and leaves the state vector unchanged is also a no-op, but need not add a persistent hash alias. An exact retry returns the original accepted result without re-running write guards or insert side effects. The application still authorizes document access before returning that result.</p>
 <p>The result includes the accepted update and new revision, so a service can respond and broadcast without an immediate database read. An adapter may also return an opaque consistency token. XTDB callers crossing connections use its await token; MariaDB normally needs no token.</p>
 <p>The application-level retry loop is the same for every backend:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="cf">while</span> <span class="va">True</span>:</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    current <span class="op">=</span> repository.load_document(document_id)</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    prepared <span class="op">=</span> prepare_update(current, source_update, actor_id, recorded_at)</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    guards, inserts, updates <span class="op">=</span> authorize_and_build_side_effects(prepared)</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    result <span class="op">=</span> repository.commit(</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>        prepared, guards<span class="op">=</span>guards, inserts<span class="op">=</span>inserts, updates<span class="op">=</span>updates</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    )</span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="kw">not</span> result.revision_conflict:</span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> result</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="cf">while</span> <span class="va">True</span>:</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    current <span class="op">=</span> repository.load_document(document_id)</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    prepared <span class="op">=</span> prepare_update(current, source_update, actor_id, recorded_at)</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    guards, inserts, updates <span class="op">=</span> authorize_and_build_side_effects(prepared)</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    result <span class="op">=</span> repository.commit(</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>        prepared, guards<span class="op">=</span>guards, inserts<span class="op">=</span>inserts, updates<span class="op">=</span>updates</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="kw">not</span> result.revision_conflict:</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> result</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Authorization to access the document happens before returning either accepted or duplicate content and is repeated after each re-prepare. Repeated revision conflicts may be returned to the caller rather than retried without bound. Malformed updates, client-supplied authoritative fields, and application-defined size or operation-count limits are rejected before persistence. Rejected source bytes are not retained by this library.</p>
 </section>
 <section id="document-access-registry" class="level2">
@@ -681,27 +703,27 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="api" class="level3">
 <h3 class="anchored" data-anchor-id="api">API</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>config <span class="op">=</span> DocumentAccessStoreConfig(</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    schema<span class="op">=</span><span class="st">"overrides"</span>,</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    documents_table<span class="op">=</span><span class="st">"document_access"</span>,</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    grants_table<span class="op">=</span><span class="st">"document_access_grants"</span>,</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    commands_table<span class="op">=</span><span class="st">"document_access_commands"</span>,</span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>store <span class="op">=</span> backend.document_access(connection, config)</span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>store.create(document_id, name, description, actor_id, recorded_at,</span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>             initial_grants<span class="op">=</span>(), idempotency_key<span class="op">=</span>command_id)</span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>store.get(document_id)</span>
-<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>store.list_for_groups(groups, include_archived<span class="op">=</span><span class="va">False</span>)</span>
-<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>store.list_all(include_archived<span class="op">=</span><span class="va">False</span>)</span>
-<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>store.grants(document_id, include_revoked<span class="op">=</span><span class="va">False</span>)</span>
-<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>store.grant(document_id, grant_id, group, role, actor_id, recorded_at,</span>
-<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>            expected_revision, idempotency_key<span class="op">=</span>command_id)</span>
-<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>store.revoke(document_id, group, actor_id, recorded_at, expected_revision,</span>
-<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>             idempotency_key<span class="op">=</span>command_id)</span>
-<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>store.archive(document_id, actor_id, recorded_at, expected_revision,</span>
-<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>              idempotency_key<span class="op">=</span>command_id)</span>
-<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>store.guard(document_id, expected_revision) <span class="op">-&gt;</span> RowGuard</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>config <span class="op">=</span> DocumentAccessStoreConfig(</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    schema<span class="op">=</span><span class="st">"overrides"</span>,</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    documents_table<span class="op">=</span><span class="st">"document_access"</span>,</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    grants_table<span class="op">=</span><span class="st">"document_access_grants"</span>,</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    commands_table<span class="op">=</span><span class="st">"document_access_commands"</span>,</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>store <span class="op">=</span> backend.document_access(connection, config)</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>store.create(document_id, name, description, actor_id, recorded_at,</span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>             initial_grants<span class="op">=</span>(), idempotency_key<span class="op">=</span>command_id)</span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>store.get(document_id)</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>store.list_for_groups(groups, include_archived<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>store.list_all(include_archived<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>store.grants(document_id, include_revoked<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>store.grant(document_id, grant_id, group, role, actor_id, recorded_at,</span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>            expected_revision, idempotency_key<span class="op">=</span>command_id)</span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>store.revoke(document_id, group, actor_id, recorded_at, expected_revision,</span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>             idempotency_key<span class="op">=</span>command_id)</span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>store.archive(document_id, actor_id, recorded_at, expected_revision,</span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>              idempotency_key<span class="op">=</span>command_id)</span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a>store.guard(document_id, expected_revision) <span class="op">-&gt;</span> RowGuard</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><code>create</code>, <code>grant</code>, <code>revoke</code>, and <code>archive</code> return <code>AccessMutationResult</code> with the authoritative document, active grants, and one of <code>accepted</code> or <code>duplicate</code>. Exact command retries return the original result. Reusing an idempotency key with different content raises <code>IdempotencyConflict</code>. Unknown documents, archived documents, stale revisions, and missing active grants raise distinct typed errors. Applications map those errors to non-disclosing transport responses.</p>
 <p>The application supplies actor identity only after token verification and uses its authoritative clock for <code>recorded_at</code>; no mutation accepts actor or audit fields inside an opaque payload. The application also validates names, allowed role values, caller permissions, and group naming policy. The store validates required identifiers, timezone-aware audit timestamps, status transitions, uniqueness, and expected revisions.</p>
 <p><code>list_all</code> is intentionally authorization-neutral. It exists for applications whose verified global administrators or auditors are not represented by a document grant. Calling it before application authorization is a security bug.</p>
@@ -790,11 +812,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="configuration" class="level3">
 <h3 class="anchored" data-anchor-id="configuration">Configuration</h3>
 <p>The equivalent YAML shape is:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">document_access</span><span class="kw">:</span></span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">schema</span><span class="kw">:</span><span class="at"> overrides</span></span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">documents_table</span><span class="kw">:</span><span class="at"> document_access</span></span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">grants_table</span><span class="kw">:</span><span class="at"> document_access_grants</span></span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">commands_table</span><span class="kw">:</span><span class="at"> document_access_commands</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">document_access</span><span class="kw">:</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">schema</span><span class="kw">:</span><span class="at"> overrides</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">documents_table</span><span class="kw">:</span><span class="at"> document_access</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">grants_table</span><span class="kw">:</span><span class="at"> document_access_grants</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">commands_table</span><span class="kw">:</span><span class="at"> document_access_commands</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>There is no backend selector in this block. The existing database backend owns adapter selection. Applications may use different table names, but the three tables must share one connection with the CRDT document and projection tables.</p>
 </section>
 <section id="implementation-sequence" class="level3">
@@ -812,15 +834,15 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="library-api" class="level2">
 <h2 class="anchored" data-anchor-id="library-api">Library API</h2>
 <p>CRDT support is an optional <code>crdt</code> extra so ingestion-only users do not install Yrs bindings.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>prepare_update(current_document, source_update, actor_id, recorded_at)</span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">-&gt;</span> PreparedCrdtCommit</span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>load_document(document_id) <span class="op">-&gt;</span> CrdtDocument <span class="op">|</span> <span class="va">None</span></span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>commit(prepared_commit, guards<span class="op">=</span>(), inserts<span class="op">=</span>(), updates<span class="op">=</span>()) <span class="op">-&gt;</span> CrdtCommitResult</span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>diff(document, state_vector) <span class="op">-&gt;</span> <span class="bu">bytes</span></span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>write_snapshot(document_id, expected_revision) <span class="op">-&gt;</span> CrdtSnapshot</span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>validate_override_changes(before, after) <span class="op">-&gt;</span> <span class="bu">list</span>[OverrideOperation]</span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>project_operations(operations, valid_at) <span class="op">-&gt;</span> <span class="bu">dict</span>[<span class="bu">str</span>, OverrideFrontier]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>prepare_update(current_document, source_update, actor_id, recorded_at)</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">-&gt;</span> PreparedCrdtCommit</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>load_document(document_id) <span class="op">-&gt;</span> CrdtDocument <span class="op">|</span> <span class="va">None</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>commit(prepared_commit, guards<span class="op">=</span>(), inserts<span class="op">=</span>(), updates<span class="op">=</span>()) <span class="op">-&gt;</span> CrdtCommitResult</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>diff(document, state_vector) <span class="op">-&gt;</span> <span class="bu">bytes</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>write_snapshot(document_id, expected_revision) <span class="op">-&gt;</span> CrdtSnapshot</span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>validate_override_changes(before, after) <span class="op">-&gt;</span> <span class="bu">list</span>[OverrideOperation]</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>project_operations(operations, valid_at) <span class="op">-&gt;</span> <span class="bu">dict</span>[<span class="bu">str</span>, OverrideFrontier]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><code>prepare_update</code> is backend-independent and performs all CRDT and immutable operation checks. <code>commit</code> deduplicates the source update, advances a monotonic storage revision, evaluates row guards, and writes relational projections and insert-only side effects in the same transaction. <code>diff</code> returns the Yjs update missing from a supplied state vector. The pure override projector is shared by every backend.</p>
 </section>
 <section id="storage" class="level2">
@@ -837,27 +859,27 @@ crdt_updates(document_id, revision, source_update_hash, accepted_update_hash,
 <p><code>crdt_updates</code> is the append-only synchronization log. <code>crdt_documents</code> is its rebuildable head/snapshot record, not an independent source of truth. Each accepted commit updates the head revision and head state vector. Snapshot fields may lag the head revision and explicitly declare the revision they cover. <code>snapshot_update_hash</code> checks the stored snapshot bytes before they are parsed.</p>
 <p>Snapshots contain a full merged Yjs update and state vector through a known revision. Updates covered by a verified snapshot may be archived, but the snapshot itself remains available to every rebuild path. Snapshotting is introduced with the storage contract because unbounded replay would make offline reconnect progressively slower; frequency remains application policy.</p>
 <p>The relational valid-time projection remains configured independently:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">override_ledgers</span><span class="kw">:</span></span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">schema</span><span class="kw">:</span><span class="at"> overrides</span></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">table</span><span class="kw">:</span><span class="at"> data_override_operations</span></span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">valid_time</span><span class="kw">:</span></span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">from_column</span><span class="kw">:</span><span class="at"> valid_from</span></span>
-<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">to_column</span><span class="kw">:</span><span class="at"> valid_to</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">override_ledgers</span><span class="kw">:</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">schema</span><span class="kw">:</span><span class="at"> overrides</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">table</span><span class="kw">:</span><span class="at"> data_override_operations</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">valid_time</span><span class="kw">:</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">from_column</span><span class="kw">:</span><span class="at"> valid_from</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">to_column</span><span class="kw">:</span><span class="at"> valid_to</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Replicated projection rows add nullable <code>crdt_document_id</code> and <code>crdt_document_revision</code> provenance columns. They remain null for existing personal-ledger rows. The provenance makes per-document comparison and repair possible without inferring document membership from application-owned layer names.</p>
 <p><code>owner_user_id</code> is required by the personal command model but nullable in the shared projection schema. Shared rows use <code>layer_id</code>, <code>actor_id</code>, and CRDT document provenance; they never invent a personal owner. Existing deployments must relax the legacy <code>NOT NULL</code> constraint before shared rows are written.</p>
 <p>The portable repository receives the existing two config objects:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>document_store <span class="op">=</span> CrdtDocumentStoreConfig(</span>
-<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    schema<span class="op">=</span><span class="st">"overrides"</span>,</span>
-<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>    documents_table<span class="op">=</span><span class="st">"crdt_documents"</span>,</span>
-<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>    updates_table<span class="op">=</span><span class="st">"crdt_updates"</span>,</span>
-<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>projection <span class="op">=</span> OverrideLedgerConfig(</span>
-<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>    schema<span class="op">=</span><span class="st">"overrides"</span>,</span>
-<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>    table<span class="op">=</span><span class="st">"data_override_operations"</span>,</span>
-<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>    valid_from_column<span class="op">=</span><span class="st">"valid_from"</span>,</span>
-<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>    valid_to_column<span class="op">=</span><span class="st">"valid_to"</span>,</span>
-<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a>repository <span class="op">=</span> backend.crdt_documents(connection, document_store, projection)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>document_store <span class="op">=</span> CrdtDocumentStoreConfig(</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    schema<span class="op">=</span><span class="st">"overrides"</span>,</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>    documents_table<span class="op">=</span><span class="st">"crdt_documents"</span>,</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>    updates_table<span class="op">=</span><span class="st">"crdt_updates"</span>,</span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>projection <span class="op">=</span> OverrideLedgerConfig(</span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>    schema<span class="op">=</span><span class="st">"overrides"</span>,</span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>    table<span class="op">=</span><span class="st">"data_override_operations"</span>,</span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>    valid_from_column<span class="op">=</span><span class="st">"valid_from"</span>,</span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>    valid_to_column<span class="op">=</span><span class="st">"valid_to"</span>,</span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a>repository <span class="op">=</span> backend.crdt_documents(connection, document_store, projection)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Backend selection remains part of the existing database configuration. No CRDT config contains <code>mariadb</code> or <code>xtdb</code>. The document, update, and projection tables must be reachable through one backend connection and one atomic transaction. Cross-database projection is outside this contract; it would require a durable outbox and an explicitly eventually-consistent projection.</p>
 <p>A CRDT update may contain several valid-time operations, so the update’s acceptance time must never be used as their business valid time. CRDT storage is the synchronization source of truth; normalized operation rows are the SQL query/audit projection and must be reproducible from accepted snapshots and updates.</p>
 </section>
