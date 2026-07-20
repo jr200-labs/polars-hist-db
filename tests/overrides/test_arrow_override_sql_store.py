@@ -2,12 +2,16 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import pyarrow as pa
+import pytest
 from sqlalchemy import MetaData, Table, create_engine, text
 
+from polars_hist_db.config import TableColumnConfig, TableConfig
 from polars_hist_db.overrides import (
     ArrowOverrideStoreConfig,
+    ArrowOverridePreconditionFailed,
     MariaDbArrowOverrideRepository,
     RepositoryArrowOverrideOperationStore,
+    RowGuard,
     arrow_override_operation_schema,
     build_arrow_override_table_configs,
 )
@@ -60,7 +64,33 @@ def test_sql_repository_obeys_arrow_sync_contract() -> None:
                 metadata,
                 *table_config.build_sqlalchemy_columns(is_delta_table=False),
             )
+        access_config = TableConfig(
+            name="access_guard",
+            schema=config.schema,
+            primary_keys=("resource_id",),
+            columns=[
+                TableColumnConfig(
+                    "access_guard", "resource_id", "VARCHAR(128)", nullable=False
+                ),
+                TableColumnConfig(
+                    "access_guard", "status", "VARCHAR(16)", nullable=False
+                ),
+                TableColumnConfig("access_guard", "revision", "BIGINT", nullable=False),
+            ],
+        )
+        access = Table(
+            access_config.name,
+            metadata,
+            *access_config.build_sqlalchemy_columns(is_delta_table=False),
+        )
         metadata.create_all(connection)
+        connection.execute(
+            access.insert().values(
+                resource_id=str(layer_id),
+                status="active",
+                revision=2,
+            )
+        )
         repository = MariaDbArrowOverrideRepository(connection, config)
         repository.create_layer(layer_id)
         store = RepositoryArrowOverrideOperationStore(repository)
@@ -89,3 +119,21 @@ def test_sql_repository_obeys_arrow_sync_contract() -> None:
         assert first.projection_delta["frontier_state"].to_pylist() == ["clean"]
         assert duplicate.acknowledgements["status"].to_pylist() == ["duplicate"]
         assert duplicate.projection_delta.num_rows == 0
+
+        with pytest.raises(ArrowOverridePreconditionFailed, match="guard"):
+            store.sync(
+                layer_id=layer_id,
+                generation=1,
+                known_revision=1,
+                pending=_proposal("blocked"),
+                actor_subject="subject-1",
+                actor_display_name="Verified Name",
+                recorded_at=now,
+                guards=(
+                    RowGuard(
+                        access_config,
+                        {"resource_id": str(layer_id)},
+                        {"status": "active", "revision": 1},
+                    ),
+                ),
+            )
