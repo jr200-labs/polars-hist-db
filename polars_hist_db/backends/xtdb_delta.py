@@ -5,6 +5,7 @@ import polars as pl
 
 from ..config import DeltaConfig, TableConfig, ValidTimeConfig
 from ..types import PolarsType
+from .xtdb_query import _xtdb_temporal_basis_clause
 from .xtdb_transport import (
     XtdbDataframeOps,
     _execute_xtdb_dml,
@@ -15,7 +16,6 @@ from .xtdb_transport import (
     _xtdb_cast_type,
     _xtdb_document_id_columns,
     _xtdb_sql_literal,
-    _xtdb_temporal_basis_clause,
     _xtdb_timestamp_literal,
 )
 

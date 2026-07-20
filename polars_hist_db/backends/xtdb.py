@@ -28,6 +28,7 @@ from .base import (
 )
 from .temporal import system_time_hint_clause
 from . import xtdb_delta as _xtdb_delta
+from . import xtdb_query as _xtdb_query
 from . import xtdb_schema as _xtdb_schema
 from . import xtdb_staging as _xtdb_staging
 from . import xtdb_transport as _xtdb_transport
@@ -69,15 +70,18 @@ LOGGER = logging.getLogger(__name__)
 def __getattr__(name: str) -> Any:
     """Keep legacy private XTDB imports working during the module split."""
     try:
-        return getattr(_xtdb_delta, name)
+        return getattr(_xtdb_query, name)
     except AttributeError:
         try:
-            return getattr(_xtdb_staging, name)
+            return getattr(_xtdb_delta, name)
         except AttributeError:
             try:
-                return getattr(_xtdb_schema, name)
+                return getattr(_xtdb_staging, name)
             except AttributeError:
-                return getattr(_xtdb_transport, name)
+                try:
+                    return getattr(_xtdb_schema, name)
+                except AttributeError:
+                    return getattr(_xtdb_transport, name)
 
 
 def _load_flight_sql() -> Any:
