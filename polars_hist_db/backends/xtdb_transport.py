@@ -1,19 +1,81 @@
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 import math
 import re
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, Iterator, Optional
+from urllib.parse import quote
 
 import polars as pl
 import pyarrow as pa
 from sqlalchemy import text
+from sqlalchemy.engine import Engine
 
 from ..config import TableConfig
+from .config import DbEngineConfig
 
 
 _XTDB_LAST_SYSTEM_TIME_KEY = "polars_hist_db_xtdb_last_system_time"
 _XTDB_RESERVED_IDENTIFIERS = {"flag", "timestamp"}
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _load_flight_sql() -> Any:
+    try:
+        from adbc_driver_flightsql import dbapi as flight_sql
+    except ImportError as exc:
+        raise RuntimeError(
+            "XTDB ADBC support requires the 'xtdb' extra "
+            "(adbc-driver-flightsql). Install with polars-hist-db[xtdb]."
+        ) from exc
+    return flight_sql
+
+
+def _create_xtdb_engine(config: DbEngineConfig, engine_factory: Any) -> Engine:
+    database = config.database or "xtdb"
+    auth = ""
+    if config.username:
+        auth = quote(config.username, safe="")
+        if config.password:
+            auth = f"{auth}:{quote(config.password, safe='')}"
+        auth = f"{auth}@"
+    url = f"postgresql+psycopg://{auth}{config.hostname}:{config.port}/{database}"
+    engine = engine_factory(
+        url,
+        connect_args={"prepare_threshold": None},
+        pool_size=config.pool_size,
+        max_overflow=config.max_overflow,
+        use_native_hstore=False,
+    )
+    # XTDB pgwire currently trips SQLAlchemy's PostgreSQL dialect when it
+    # probes SHOW standard_conforming_strings. XTDB uses standard strings,
+    # so skip that PostgreSQL-specific initialization query.
+    engine.dialect._set_backslash_escapes = lambda connection: setattr(  # type: ignore[attr-defined, method-assign]
+        engine.dialect, "_backslash_escapes", False
+    )
+    return engine
+
+
+@contextmanager
+def _xtdb_connection_scope(engine: Engine) -> Iterator[Any]:
+    """Open a scope for XTDB stores, which manage their own transactions."""
+    with engine.connect() as connection:
+        yield connection
+        connection.commit()
+
+
+def _xtdb_adbc_uri(config: DbEngineConfig) -> str:
+    adbc_port = config.adbc_port or 9832
+    return f"grpc://{config.hostname}:{adbc_port}"
+
+
+def _create_xtdb_adbc_connection(config: DbEngineConfig, flight_loader: Any) -> Any:
+    return flight_loader().connect(_xtdb_adbc_uri(config), autocommit=True)
+
+
+def _close_xtdb_adbc_connection(connection: Any | None) -> None:
+    if connection is not None:
+        connection.close()
 
 
 def __getattr__(name: str) -> Any:

@@ -1,11 +1,8 @@
 from dataclasses import dataclass
-from contextlib import contextmanager
 from datetime import datetime
-from urllib.parse import quote
 from typing import (
     TYPE_CHECKING,
     Any,
-    Iterator,
     Optional,
 )
 
@@ -39,6 +36,13 @@ from .xtdb_staging import XtdbStagingOps
 from .xtdb_dataframe import (
     XtdbAdbcDataframeOps,
     XtdbDataframeOps,
+)
+from .xtdb_transport import (
+    _close_xtdb_adbc_connection,
+    _create_xtdb_adbc_connection,
+    _create_xtdb_engine,
+    _xtdb_adbc_uri,
+    _xtdb_connection_scope,
 )
 
 if TYPE_CHECKING:
@@ -79,14 +83,7 @@ def __getattr__(name: str) -> Any:
 
 
 def _load_flight_sql() -> Any:
-    try:
-        from adbc_driver_flightsql import dbapi as flight_sql
-    except ImportError as exc:
-        raise RuntimeError(
-            "XTDB ADBC support requires the 'xtdb' extra "
-            "(adbc-driver-flightsql). Install with polars-hist-db[xtdb]."
-        ) from exc
-    return flight_sql
+    return _xtdb_transport._load_flight_sql()
 
 
 @dataclass(frozen=True)
@@ -95,49 +92,22 @@ class XtdbBackend:
     max_rows_per_insert: Optional[int] = 10_000
 
     def create_engine(self, config: DbEngineConfig) -> Engine:
-        database = config.database or "xtdb"
-        auth = ""
-        if config.username:
-            auth = quote(config.username, safe="")
-            if config.password:
-                auth = f"{auth}:{quote(config.password, safe='')}"
-            auth = f"{auth}@"
-        url = f"postgresql+psycopg://{auth}{config.hostname}:{config.port}/{database}"
-        engine = create_engine(
-            url,
-            connect_args={"prepare_threshold": None},
-            pool_size=config.pool_size,
-            max_overflow=config.max_overflow,
-            use_native_hstore=False,
-        )
-        # XTDB pgwire currently trips SQLAlchemy's PostgreSQL dialect when it
-        # probes SHOW standard_conforming_strings. XTDB uses standard strings,
-        # so skip that PostgreSQL-specific initialization query.
-        engine.dialect._set_backslash_escapes = lambda connection: setattr(  # type: ignore[attr-defined, method-assign]
-            engine.dialect, "_backslash_escapes", False
-        )
-        return engine
+        return _create_xtdb_engine(config, create_engine)
 
-    @contextmanager
-    def connection_scope(self, engine: Engine) -> Iterator[Any]:
-        """Open a scope for XTDB stores, which manage their own transactions."""
-        with engine.connect() as connection:
-            yield connection
-            connection.commit()
+    def connection_scope(self, engine: Engine) -> Any:
+        return _xtdb_connection_scope(engine)
 
     def adbc_uri(self, config: DbEngineConfig) -> str:
-        adbc_port = config.adbc_port or 9832
-        return f"grpc://{config.hostname}:{adbc_port}"
+        return _xtdb_adbc_uri(config)
 
     def create_adbc_connection(self, config: DbEngineConfig) -> Any:
-        return _load_flight_sql().connect(self.adbc_uri(config), autocommit=True)
+        return _create_xtdb_adbc_connection(config, _load_flight_sql)
 
     def open_ingest_connection(self, config: DbEngineConfig) -> Any:
         return self.create_adbc_connection(config)
 
     def close_ingest_connection(self, connection: Any | None) -> None:
-        if connection is not None:
-            connection.close()
+        _close_xtdb_adbc_connection(connection)
 
     def dataframes(self, connection: Any) -> XtdbDataframeOps:
         return XtdbDataframeOps(
