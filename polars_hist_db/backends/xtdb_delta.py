@@ -225,7 +225,10 @@ def _delete_xtdb_missing_rows(
         pl.DataFrame({"_id": incoming_ids}),
         table_schema,
     ) as key_table:
-        return delete_missing(f"_id NOT IN (SELECT _id FROM {key_table})")
+        return delete_missing(
+            "_id NOT IN (SELECT _id FROM "
+            f"{key_table} FOR VALID_TIME ALL FOR SYSTEM_TIME ALL)"
+        )
 
 
 def _xtdb_dropout_close_time(

@@ -531,7 +531,8 @@ class XtdbStagingOps:
                 existing = dataframe_ops.from_raw_sql(
                     "WITH occupied AS ("
                     f"SELECT t.{physical_target} AS {target_column} "
-                    f"FROM {table_name} AS t JOIN {candidate_table} AS q "
+                    f"FROM {table_name} AS t JOIN {candidate_table} "
+                    "FOR VALID_TIME ALL FOR SYSTEM_TIME ALL AS q "
                     f"ON t.{physical_target} = q.{target_column}"
                     "), bounds AS ("
                     f"SELECT MIN(t.{physical_target}) AS {minimum_column} "

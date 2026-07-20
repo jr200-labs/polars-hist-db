@@ -418,7 +418,8 @@ def test_xtdb_dataframe_ops_chunks_table_query(monkeypatch):
         "UNION ALL" not in call.args[0] for call in ops.from_raw_sql.call_args_list
     )
     assert all(
-        f"JOIN test.__uploaded_keys_{index} AS q" in call.args[0]
+        f"JOIN test.__uploaded_keys_{index} "
+        "FOR VALID_TIME ALL FOR SYSTEM_TIME ALL AS q" in call.args[0]
         for index, call in enumerate(ops.from_raw_sql.call_args_list, 1)
     )
 
@@ -441,6 +442,7 @@ def test_uploaded_xtdb_relation_adds_document_ids_and_erases_on_failure(monkeypa
 
     uploaded = ops.table_insert.call_args.args[0]
     assert uploaded.to_dict(as_series=False) == {"_id": [0, 1], "id": [10, 20]}
+    assert uploaded.schema["_id"] == pl.Int64
     erase.assert_called_once_with(connection, f"ERASE FROM {table_sql}")
 
 

@@ -189,7 +189,8 @@ class XtdbDataframeOps:
                     "SELECT *, _valid_from, _valid_to "
                     f"FROM {table_sql}{valid_time_clause}"
                     ") AS t "
-                    f"JOIN {query_table} AS q "
+                    f"JOIN {query_table} "
+                    "FOR VALID_TIME ALL FOR SYSTEM_TIME ALL AS q "
                     f"ON {join_clause}"
                 )
                 chunks.append(self.from_raw_sql(query, schema_overrides))
@@ -405,7 +406,9 @@ def _uploaded_xtdb_relation(
     }
     upload_df = df.rename(physical_columns)
     if "_id" not in upload_df.columns:
-        upload_df = upload_df.with_row_index("_id")
+        upload_df = upload_df.with_row_index("_id").with_columns(
+            pl.col("_id").cast(pl.Int64)
+        )
 
     failed = False
     try:
