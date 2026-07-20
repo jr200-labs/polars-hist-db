@@ -29,6 +29,61 @@ async def test_pipeline_acks_only_after_transaction_finishes(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_pipeline_does_not_ack_when_transaction_fails(monkeypatch):
+    events = []
+
+    def fail(*args):
+        events.append("failed")
+        raise RuntimeError("commit failed")
+
+    async def ack():
+        events.append("acked")
+
+    monkeypatch.setattr(
+        "polars_hist_db.dataset.scrape._run_pipeline_as_transaction", fail
+    )
+
+    with pytest.raises(RuntimeError, match="commit failed"):
+        await try_run_pipeline_as_transaction(
+            [],
+            object(),
+            object(),
+            object(),
+            BatchFinalizer(ack_after_commit=ack),
+            num_retries=1,
+        )
+
+    assert events == ["failed"]
+
+
+@pytest.mark.asyncio
+async def test_pipeline_surfaces_ack_failure_without_rerunning_transaction(monkeypatch):
+    events = []
+
+    def run_batch(*args):
+        events.append("committed")
+
+    async def fail_ack():
+        events.append("ack_failed")
+        raise RuntimeError("ack failed")
+
+    monkeypatch.setattr(
+        "polars_hist_db.dataset.scrape._run_pipeline_as_transaction", run_batch
+    )
+
+    with pytest.raises(RuntimeError, match="ack failed"):
+        await try_run_pipeline_as_transaction(
+            [],
+            object(),
+            object(),
+            object(),
+            BatchFinalizer(ack_after_commit=fail_ack),
+        )
+
+    assert events == ["committed", "ack_failed"]
+
+
+@pytest.mark.asyncio
 async def test_pipeline_raises_final_retry_error(monkeypatch):
     attempts = 0
 
