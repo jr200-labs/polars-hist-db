@@ -252,6 +252,11 @@ def test_sync_is_idempotent_and_returns_only_affected_projection() -> None:
 
     assert first.revision == replay.revision == 1
     assert first.acknowledgements["status"].to_pylist() == ["accepted"]
+    assert first.operations_delta.num_rows == 1
+    validate_arrow_override_operations(first.operations_delta, authority="committed")
+    assert first.operations_delta["operation_id"].to_pylist() == [
+        proposal["operation_id"][0].as_py()
+    ]
     assert replay.acknowledgements["status"].to_pylist() == ["duplicate"]
     assert first.projection_delta.num_rows == 1
     assert first.projection_delta["frontier_state"].to_pylist() == ["clean"]
