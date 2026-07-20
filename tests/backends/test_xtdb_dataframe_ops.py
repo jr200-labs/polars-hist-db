@@ -1,4 +1,5 @@
 import builtins
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
@@ -9,11 +10,13 @@ import pyarrow as pa
 import pytest
 
 from polars_hist_db.backends.xtdb import (
+    XtdbAdbcDataframeOps,
     XtdbDataframeOps,
     XtdbTableConfigOps,
     _execute_xtdb_dml,
     _execute_xtdb_arrow_copy,
 )
+from polars_hist_db.backends.xtdb_dataframe import _uploaded_xtdb_relation
 from polars_hist_db.config import TableColumnConfig, TableConfig
 from polars_hist_db.core import TimeHint
 from polars_hist_db.types import TypeContractError
@@ -389,6 +392,17 @@ def test_xtdb_dataframe_ops_chunks_table_query(monkeypatch):
             pl.DataFrame({"id": [5]}),
         ]
     )
+    uploaded = []
+
+    @contextmanager
+    def uploaded_relation(dataframe_ops, df, table_schema):
+        uploaded.append(df)
+        yield f"{table_schema}.__uploaded_keys_{len(uploaded)}"
+
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb_dataframe._uploaded_xtdb_relation",
+        uploaded_relation,
+    )
 
     result = ops.table_query(
         "test",
@@ -399,13 +413,50 @@ def test_xtdb_dataframe_ops_chunks_table_query(monkeypatch):
 
     assert result.to_dict(as_series=False) == {"id": [1, 2, 3, 4, 5]}
     assert ops.from_raw_sql.call_count == 3
+    assert [chunk.height for chunk in uploaded] == [2, 2, 1]
     assert all(
-        "UNION ALL" in call.args[0] for call in ops.from_raw_sql.call_args_list[:2]
+        "UNION ALL" not in call.args[0] for call in ops.from_raw_sql.call_args_list
     )
-    assert "UNION ALL" not in ops.from_raw_sql.call_args_list[2].args[0]
-    assert ops.from_raw_sql.call_args_list[0].args[2] == {
-        "parameters": {"q_0_0": 1, "q_1_0": 2}
-    }
+    assert all(
+        f"JOIN test.__uploaded_keys_{index} "
+        "FOR VALID_TIME ALL FOR SYSTEM_TIME ALL AS q" in call.args[0]
+        for index, call in enumerate(ops.from_raw_sql.call_args_list, 1)
+    )
+
+
+def test_uploaded_xtdb_relation_adds_document_ids_and_erases_on_failure(monkeypatch):
+    connection = Mock()
+    ops = XtdbDataframeOps(connection)
+    ops.table_insert = Mock(return_value=2)  # type: ignore[method-assign]
+    erase = Mock()
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb_dataframe._execute_xtdb_dml", erase
+    )
+
+    with pytest.raises(RuntimeError, match="query failed"):
+        with _uploaded_xtdb_relation(
+            ops, pl.DataFrame({"id": [10, 20]}), "test"
+        ) as table_sql:
+            assert table_sql.startswith("test.__polars_hist_db_keys_")
+            raise RuntimeError("query failed")
+
+    uploaded = ops.table_insert.call_args.args[0]
+    assert uploaded.to_dict(as_series=False) == {"_id": [0, 1], "id": [10, 20]}
+    assert uploaded.schema["_id"] == pl.Int64
+    erase.assert_called_once_with(connection, f"ERASE FROM {table_sql}")
+
+
+def test_uploaded_xtdb_relation_uses_adbc_for_upload_and_cleanup():
+    connection = MagicMock()
+    ops = XtdbAdbcDataframeOps(connection)
+    ops.table_insert = Mock(return_value=1)  # type: ignore[method-assign]
+
+    with _uploaded_xtdb_relation(ops, pl.DataFrame({"_id": [10]}), "test") as table_sql:
+        assert table_sql.startswith("test.__polars_hist_db_keys_")
+
+    connection.cursor.return_value.__enter__.return_value.execute.assert_called_once_with(
+        f"ERASE FROM {table_sql}"
+    )
 
 
 def test_xtdb_arrow_copy_writes_one_arrow_stream_transaction():

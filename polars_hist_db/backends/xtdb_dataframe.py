@@ -1,5 +1,8 @@
+from contextlib import contextmanager
 from datetime import datetime
-from typing import Any, Mapping, Optional, cast
+import logging
+from typing import Any, Iterator, Mapping, Optional, cast
+from uuid import uuid4
 
 import polars as pl
 
@@ -19,6 +22,7 @@ from .xtdb_transport import (
 
 
 _XTDB_QUERY_ROWS_PER_CHUNK = 10_000
+LOGGER = logging.getLogger(__name__)
 
 
 def _table_config_ops(connection: Any) -> Any:
@@ -107,7 +111,6 @@ class XtdbDataframeOps:
             _xtdb_table_query_target_column,
             _xtdb_temporal_basis_clause,
             _xtdb_valid_time_clause,
-            _xtdb_values_cte,
         )
 
         if table_config is None:
@@ -171,30 +174,26 @@ class XtdbDataframeOps:
         chunk_size = self.max_rows_per_insert or _XTDB_QUERY_ROWS_PER_CHUNK
         chunks = []
         for query_chunk in query_df.iter_slices(chunk_size):
-            values_cte, parameters = _xtdb_values_cte("query_df", query_chunk)
             join_clause = " AND ".join(
                 "t."
                 f"{_xtdb_table_query_target_column(column, table_config)} = "
                 f"q.{_xtdb_column_identifier(column)}"
                 for column in query_chunk.columns
             )
-            query = (
-                f"WITH {values_cte} "
-                f"SELECT {select_sql} "
-                "FROM ("
-                "SELECT *, _valid_from, _valid_to "
-                f"FROM {table_sql}{valid_time_clause}"
-                ") AS t "
-                "JOIN query_df AS q "
-                f"ON {join_clause}"
-            )
-            chunks.append(
-                self.from_raw_sql(
-                    query,
-                    schema_overrides,
-                    {"parameters": parameters},
+            with _uploaded_xtdb_relation(
+                self, query_chunk, table_schema
+            ) as query_table:
+                query = (
+                    f"SELECT {select_sql} "
+                    "FROM ("
+                    "SELECT *, _valid_from, _valid_to "
+                    f"FROM {table_sql}{valid_time_clause}"
+                    ") AS t "
+                    f"JOIN {query_table} "
+                    "FOR VALID_TIME ALL FOR SYSTEM_TIME ALL AS q "
+                    f"ON {join_clause}"
                 )
-            )
+                chunks.append(self.from_raw_sql(query, schema_overrides))
         df = pl.concat(chunks, how="vertical_relaxed")
         for temporal_column in ["__valid_from", "__valid_to"]:
             if (
@@ -387,3 +386,55 @@ class XtdbAdbcDataframeOps:
                     db_schema_name=table_schema,
                 )
         return df.height
+
+
+@contextmanager
+def _uploaded_xtdb_relation(
+    dataframe_ops: XtdbDataframeOps | XtdbAdbcDataframeOps,
+    df: pl.DataFrame,
+    table_schema: str,
+) -> Iterator[str]:
+    from .xtdb_arrow import _xtdb_physical_column_name
+    from .xtdb_transport import _is_xtdb_table_not_found_error
+
+    table_name = f"__polars_hist_db_keys_{uuid4().hex}"
+    table_sql = _qualified_table_name(table_schema, table_name)
+    physical_columns = {
+        column: _xtdb_physical_column_name(column)
+        for column in df.columns
+        if column != _xtdb_physical_column_name(column)
+    }
+    upload_df = df.rename(physical_columns)
+    if "_id" not in upload_df.columns:
+        upload_df = upload_df.with_row_index("_id").with_columns(
+            pl.col("_id").cast(pl.Int64)
+        )
+
+    failed = False
+    try:
+        dataframe_ops.table_insert(upload_df, table_schema, table_name)
+        yield table_sql
+    except BaseException:
+        failed = True
+        raise
+    finally:
+        try:
+            if isinstance(dataframe_ops, XtdbAdbcDataframeOps):
+                with dataframe_ops.connection.cursor() as cursor:
+                    cursor.execute(f"ERASE FROM {table_sql}")
+            else:
+                _execute_xtdb_dml(
+                    dataframe_ops.connection,
+                    f"ERASE FROM {table_sql}",
+                )
+        except Exception as exc:
+            if _is_xtdb_table_not_found_error(exc):
+                pass
+            elif failed:
+                LOGGER.warning(
+                    "Failed to erase XTDB uploaded key relation %s",
+                    table_sql,
+                    exc_info=True,
+                )
+            else:
+                raise

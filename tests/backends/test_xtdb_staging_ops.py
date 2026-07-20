@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from unittest.mock import Mock
@@ -28,6 +29,19 @@ def _empty_numeric_key_occupancy():
     return pl.DataFrame(
         {"id": [None], "__xtdb_minimum_id": [None]},
         schema={"id": pl.Int64, "__xtdb_minimum_id": pl.Int64},
+    )
+
+
+@contextmanager
+def _uploaded_keys(dataframe_ops, df, table_schema):
+    yield f"{table_schema}.__uploaded_keys"
+
+
+@pytest.fixture(autouse=True)
+def _mock_uploaded_keys(monkeypatch):
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb_staging._uploaded_xtdb_relation",
+        _uploaded_keys,
     )
 
 

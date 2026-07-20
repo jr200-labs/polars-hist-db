@@ -16,8 +16,12 @@ from ..config import (
 from ..pipeline_projection import project_staged_pipeline_item_dataframe
 from ..types import PolarsType
 from .xtdb_arrow import _xtdb_json_safe_key_value
-from .xtdb_query import _xtdb_table_query_target_column, _xtdb_values_cte
-from .xtdb_dataframe import XtdbAdbcDataframeOps, XtdbDataframeOps
+from .xtdb_query import _xtdb_table_query_target_column
+from .xtdb_dataframe import (
+    _uploaded_xtdb_relation,
+    XtdbAdbcDataframeOps,
+    XtdbDataframeOps,
+)
 from .xtdb_transport import (
     _is_xtdb_adbc_ingest_unavailable,
     _normalize_xtdb_timestamp_columns,
@@ -516,29 +520,31 @@ class XtdbStagingOps:
                 continue
 
             candidates = resolved.select(target).unique(maintain_order=True)
-            values_cte, parameters = _xtdb_values_cte("candidate_keys", candidates)
             target_column = _xtdb_column_identifier(target)
             physical_target = _xtdb_table_query_target_column(target, table_config)
             table_name = _qualified_table_name(table_config.schema, table_config.name)
             minimum_column = "__xtdb_minimum_id"
-            existing = self._dataframes().from_raw_sql(
-                f"WITH {values_cte}, "
-                "occupied AS ("
-                f"SELECT t.{physical_target} AS {target_column} "
-                f"FROM {table_name} AS t JOIN candidate_keys AS q "
-                f"ON t.{physical_target} = q.{target_column}"
-                "), bounds AS ("
-                f"SELECT MIN(t.{physical_target}) AS {minimum_column} "
-                f"FROM {table_name} AS t"
-                ") "
-                f"SELECT occupied.{target_column}, bounds.{minimum_column} "
-                "FROM bounds LEFT JOIN occupied ON TRUE",
-                {
-                    target: resolved.schema[target],
-                    minimum_column: resolved.schema[target],
-                },
-                {"parameters": parameters},
-            )
+            dataframe_ops = self._dataframes()
+            with _uploaded_xtdb_relation(
+                dataframe_ops, candidates, table_config.schema
+            ) as candidate_table:
+                existing = dataframe_ops.from_raw_sql(
+                    "WITH occupied AS ("
+                    f"SELECT t.{physical_target} AS {target_column} "
+                    f"FROM {table_name} AS t JOIN {candidate_table} "
+                    "FOR VALID_TIME ALL FOR SYSTEM_TIME ALL AS q "
+                    f"ON t.{physical_target} = q.{target_column}"
+                    "), bounds AS ("
+                    f"SELECT MIN(t.{physical_target}) AS {minimum_column} "
+                    f"FROM {table_name} AS t"
+                    ") "
+                    f"SELECT occupied.{target_column}, bounds.{minimum_column} "
+                    "FROM bounds LEFT JOIN occupied ON TRUE",
+                    {
+                        target: resolved.schema[target],
+                        minimum_column: resolved.schema[target],
+                    },
+                )
             occupied = set(existing.get_column(target).drop_nulls().to_list())
             minimum_values = existing.get_column(minimum_column).drop_nulls()
             database_minimum = (

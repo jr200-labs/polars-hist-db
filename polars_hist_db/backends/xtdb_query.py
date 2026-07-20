@@ -1,15 +1,10 @@
 from datetime import datetime
-from typing import Any, Optional
-
-import polars as pl
+from typing import Optional
 
 from ..config import TableConfig
 from ..core import TimeHint
-from .xtdb_arrow import _xtdb_cast_type_from_polars
 from .xtdb_transport import (
-    _validate_identifier,
     _xtdb_column_identifier,
-    _xtdb_parameter_value,
     _xtdb_timestamp_literal,
 )
 
@@ -97,27 +92,3 @@ def _xtdb_table_query_target_column(column: str, table_config: TableConfig) -> s
     if _xtdb_single_primary_key_alias(table_config) == column:
         return "_id"
     return _xtdb_column_identifier(column)
-
-
-def _xtdb_values_cte(name: str, df: pl.DataFrame) -> tuple[str, dict[str, Any]]:
-    if df.is_empty():
-        raise ValueError("XTDB table_query requires at least one query row")
-
-    cte_name = _validate_identifier(name)
-    columns = [_xtdb_column_identifier(column) for column in df.columns]
-    casts = [_xtdb_cast_type_from_polars(dtype) for dtype in df.schema.values()]
-    parameters = {}
-    row_queries = []
-    for row_index, row in enumerate(df.rows()):
-        projections = []
-        for column_index, (value, cast_type) in enumerate(zip(row, casts, strict=True)):
-            parameter = f"q_{row_index}_{column_index}"
-            parameters[parameter] = _xtdb_parameter_value(value, cast_type)
-            projections.append(
-                f"CAST(:{parameter} AS {cast_type}) AS {columns[column_index]}"
-            )
-        row_queries.append(f"SELECT {', '.join(projections)}")
-    return (
-        f"{cte_name} AS ({' UNION ALL '.join(row_queries)})",
-        parameters,
-    )
