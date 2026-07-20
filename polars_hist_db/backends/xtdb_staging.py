@@ -15,7 +15,6 @@ from ..config import (
 )
 from ..pipeline_projection import project_staged_pipeline_item_dataframe
 from ..types import PolarsType
-from .xtdb_arrow import _xtdb_json_safe_key_value
 from .xtdb_query import _xtdb_table_query_target_column
 from .xtdb_dataframe import (
     _uploaded_xtdb_relation,
@@ -232,21 +231,6 @@ def _xtdb_deduced_numeric_foreign_key_ids(payloads: pl.Series, bits: int) -> pl.
     )
 
 
-def _xtdb_parent_row_cache_key(
-    table_config: TableConfig,
-    columns: Iterable[str],
-    row: dict[str, Any],
-) -> tuple[str, str, str]:
-    encoded_parts = [
-        [column, _xtdb_json_safe_key_value(row[column])] for column in columns
-    ]
-    return (
-        table_config.schema,
-        table_config.name,
-        json.dumps(encoded_parts, separators=(",", ":"), ensure_ascii=False),
-    )
-
-
 def _xtdb_fk_needs_generated_values(stage_df: pl.DataFrame, source_column: str) -> bool:
     return (
         source_column not in stage_df.columns
@@ -299,7 +283,7 @@ class XtdbStagingOps:
         self.adbc_connection = adbc_connection
         self.max_rows_per_insert = max_rows_per_insert
         self._stage_run_cache: dict[str, pl.DataFrame] = {}
-        self._inserted_parent_row_cache: set[tuple[str, str, str]] = set()
+        self._inserted_parent_row_cache: dict[tuple[str, str], pl.DataFrame] = {}
         self._projected_parent_row_cache: set[str] = set()
 
     def _dataframes(self) -> XtdbDataframeOps:
@@ -756,23 +740,15 @@ class XtdbStagingOps:
         ).unique(maintain_order=True)
         if not parent_rows_to_insert.is_empty():
             insert_columns = [*fk_targets, *value_targets]
-            rows_to_insert = []
-            new_parent_keys = set()
-            for row in parent_rows_to_insert.iter_rows(named=True):
-                parent_key = _xtdb_parent_row_cache_key(
-                    table_config,
-                    insert_columns,
-                    row,
+            parent_key = (table_config.schema, table_config.name)
+            inserted_parent_rows = self._inserted_parent_row_cache.get(parent_key)
+            if inserted_parent_rows is not None:
+                parent_rows_to_insert = parent_rows_to_insert.join(
+                    inserted_parent_rows,
+                    on=insert_columns,
+                    how="anti",
+                    nulls_equal=True,
                 )
-                if parent_key in self._inserted_parent_row_cache:
-                    continue
-                rows_to_insert.append(row)
-                new_parent_keys.add(parent_key)
-
-            parent_rows_to_insert = pl.DataFrame(
-                rows_to_insert,
-                schema=parent_rows_to_insert.schema,
-            )
         if not parent_rows_to_insert.is_empty():
             self._bulk_table_insert(
                 parent_rows_to_insert,
@@ -780,7 +756,11 @@ class XtdbStagingOps:
                 table_config.name,
                 table_config=table_config,
             )
-            self._inserted_parent_row_cache.update(new_parent_keys)
+            self._inserted_parent_row_cache[parent_key] = (
+                parent_rows_to_insert
+                if inserted_parent_rows is None
+                else inserted_parent_rows.vstack(parent_rows_to_insert)
+            )
 
         resolver = joined.select([*value_targets, *fk_targets]).rename(
             {
