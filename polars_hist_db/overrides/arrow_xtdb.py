@@ -8,7 +8,10 @@ import polars as pl
 import pyarrow as pa
 from sqlalchemy import text
 
-from polars_hist_db.backends.xtdb import _execute_xtdb_transaction
+from polars_hist_db.backends.xtdb import (
+    _execute_xtdb_transaction,
+    _xtdb_table_exists,
+)
 from polars_hist_db.backends.xtdb_transport import _xtdb_column_identifier
 
 from .arrow import (
@@ -44,24 +47,31 @@ class XtdbArrowOverrideRepository:
         if generation < 1:
             raise ArrowOverrideContractError("generation must be positive")
         layer = _literal(layer_id.bytes, "BINARY(16)")
+        statements = []
+        if self._exists(self.heads):
+            statements.append(
+                f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.heads)} "
+                f"WHERE layer_id = {layer}), 'layer already exists'"
+            )
+        statements.append(
+            _insert_statement(
+                self.heads,
+                {
+                    "layer_id": layer_id.bytes,
+                    "generation": generation,
+                    "revision": 0,
+                    "updated_at": datetime.now(timezone.utc),
+                },
+            )
+        )
         _execute_xtdb_transaction(
             self.connection,
-            [
-                f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.heads)} "
-                f"WHERE layer_id = {layer}), 'layer already exists'",
-                _insert_statement(
-                    self.heads,
-                    {
-                        "layer_id": layer_id.bytes,
-                        "generation": generation,
-                        "revision": 0,
-                        "updated_at": datetime.now(timezone.utc),
-                    },
-                ),
-            ],
+            statements,
         )
 
     def head(self, layer_id: UUID) -> ArrowOverrideLayerHead | None:
+        if not self._exists(self.heads):
+            return None
         rows = self._read(
             f"SELECT generation, revision FROM {_table_name(self.heads)} "
             f"WHERE layer_id = {_literal(layer_id.bytes, 'BINARY(16)')}"
@@ -75,7 +85,7 @@ class XtdbArrowOverrideRepository:
     def operations_by_ids(
         self, layer_id: UUID, generation: int, operation_ids: set[bytes]
     ) -> pa.Table:
-        if not operation_ids:
+        if not operation_ids or not self._exists(self.operations):
             return empty_arrow_override_operations()
         ids = ", ".join(
             _literal(operation_id, "BINARY(16)") for operation_id in operation_ids
@@ -93,6 +103,8 @@ class XtdbArrowOverrideRepository:
         after_revision: int,
         through_revision: int,
     ) -> set[tuple[str, str, str]]:
+        if not self._exists(self.operations):
+            return set()
         rows = self._read(
             "SELECT DISTINCT feed_id, entity_id, field_path FROM "
             f"{_table_name(self.operations)} WHERE "
@@ -161,18 +173,26 @@ class XtdbArrowOverrideRepository:
             *(self._guard_assertion(guard) for guard in guards),
             f"ASSERT EXISTS (SELECT 1 FROM {_table_name(self.heads)} WHERE "
             f"{expected}), 'layer revision changed'",
-            f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.operations)} "
-            f"WHERE operation_id IN ({operation_ids})), 'immutable operation conflict'",
-            f"UPDATE {_table_name(self.heads)} SET "
-            f"revision = {expected_revision + 1}::BIGINT, "
-            f"updated_at = {_literal(updated_at, 'TIMESTAMP WITH TIME ZONE')} "
-            f"WHERE {expected}",
-            *self._insert_frames(
-                (self.operations, operation_rows),
-                (self.references, reference_rows),
-                (self.string_lists, string_list_rows),
-            ),
         ]
+        if self._exists(self.operations):
+            statements.append(
+                f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.operations)} "
+                f"WHERE operation_id IN ({operation_ids})), "
+                "'immutable operation conflict'"
+            )
+        statements.extend(
+            [
+                f"UPDATE {_table_name(self.heads)} SET "
+                f"revision = {expected_revision + 1}::BIGINT, "
+                f"updated_at = {_literal(updated_at, 'TIMESTAMP WITH TIME ZONE')} "
+                f"WHERE {expected}",
+                *self._insert_frames(
+                    (self.operations, operation_rows),
+                    (self.references, reference_rows),
+                    (self.string_lists, string_list_rows),
+                ),
+            ]
+        )
         try:
             _execute_xtdb_transaction(self.connection, statements)
         except Exception as exc:
@@ -217,24 +237,35 @@ class XtdbArrowOverrideRepository:
             f"layer_id = {layer} AND generation = {head.generation}::BIGINT "
             f"AND revision = {head.revision}::BIGINT"
         )
-        _execute_xtdb_transaction(
-            self.connection,
-            [
-                f"ASSERT EXISTS (SELECT 1 FROM {_table_name(self.heads)} WHERE "
-                f"{expected}), 'layer revision changed'",
-                f"ERASE FROM {_table_name(self.references)} WHERE operation_id "
-                f"IN ({operation_ids})",
-                f"ERASE FROM {_table_name(self.string_lists)} WHERE operation_id "
-                f"IN ({operation_ids})",
-                f"ERASE FROM {_table_name(self.operations)} WHERE layer_id = {layer}",
-                f"UPDATE {_table_name(self.heads)} SET "
-                f"generation = {generation}::BIGINT, revision = 0::BIGINT, "
-                f"updated_at = {_literal(datetime.now(timezone.utc), 'TIMESTAMP WITH TIME ZONE')} "
-                f"WHERE {expected}",
-            ],
+        statements = [
+            f"ASSERT EXISTS (SELECT 1 FROM {_table_name(self.heads)} WHERE "
+            f"{expected}), 'layer revision changed'"
+        ]
+        if self._exists(self.operations):
+            if self._exists(self.references):
+                statements.append(
+                    f"ERASE FROM {_table_name(self.references)} WHERE operation_id "
+                    f"IN ({operation_ids})"
+                )
+            if self._exists(self.string_lists):
+                statements.append(
+                    f"ERASE FROM {_table_name(self.string_lists)} WHERE operation_id "
+                    f"IN ({operation_ids})"
+                )
+            statements.append(
+                f"ERASE FROM {_table_name(self.operations)} WHERE layer_id = {layer}"
+            )
+        statements.append(
+            f"UPDATE {_table_name(self.heads)} SET "
+            f"generation = {generation}::BIGINT, revision = 0::BIGINT, "
+            f"updated_at = {_literal(datetime.now(timezone.utc), 'TIMESTAMP WITH TIME ZONE')} "
+            f"WHERE {expected}"
         )
+        _execute_xtdb_transaction(self.connection, statements)
 
     def _read_operations(self, predicate: str) -> pa.Table:
+        if not self._exists(self.operations):
+            return empty_arrow_override_operations()
         operation_rows = self._read(
             f"SELECT {self._columns(self.operations)} "
             f"FROM {_table_name(self.operations)} WHERE {predicate}"
@@ -244,16 +275,24 @@ class XtdbArrowOverrideRepository:
         selected = (
             f"SELECT operation_id FROM {_table_name(self.operations)} WHERE {predicate}"
         )
-        reference_rows = self._read(
-            f"SELECT {self._columns(self.references)} "
-            f"FROM {_table_name(self.references)} WHERE operation_id IN ({selected})"
-        )
-        string_list_rows = self._read(
-            f"SELECT {self._columns(self.string_lists)} "
-            f"FROM {_table_name(self.string_lists)} WHERE operation_id IN ({selected})"
-        )
         _, empty_references, empty_string_lists = arrow_override_storage_frames(
             empty_arrow_override_operations()
+        )
+        reference_rows = (
+            self._read(
+                f"SELECT {self._columns(self.references)} "
+                f"FROM {_table_name(self.references)} WHERE operation_id IN ({selected})"
+            )
+            if self._exists(self.references)
+            else empty_references
+        )
+        string_list_rows = (
+            self._read(
+                f"SELECT {self._columns(self.string_lists)} "
+                f"FROM {_table_name(self.string_lists)} WHERE operation_id IN ({selected})"
+            )
+            if self._exists(self.string_lists)
+            else empty_string_lists
         )
         return arrow_override_operations_from_storage(
             operation_rows,
@@ -263,6 +302,9 @@ class XtdbArrowOverrideRepository:
 
     def _read(self, query: str) -> pl.DataFrame:
         return pl.read_database(text(query), self.connection)
+
+    def _exists(self, config: Any) -> bool:
+        return _xtdb_table_exists(self.connection, config.schema, config.name)
 
     @staticmethod
     def _columns(config: Any) -> str:
