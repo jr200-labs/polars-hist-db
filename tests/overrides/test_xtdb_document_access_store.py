@@ -8,6 +8,7 @@ from polars_hist_db.overrides import (
     DocumentAccessStoreConfig,
     XtdbDocumentAccessStore,
 )
+from polars_hist_db.overrides.pagination import encode_cursor
 
 
 def test_xtdb_access_create_submits_one_asserted_transaction(monkeypatch):
@@ -66,6 +67,23 @@ def test_xtdb_access_get_uses_logical_key_not_native_id(monkeypatch):
 
     assert "WHERE document_id =" in queries[0]
     assert "WHERE _id =" not in queries[0]
+
+
+def test_xtdb_access_lists_use_keyset_pagination(monkeypatch):
+    queries: list[str] = []
+    store = XtdbDocumentAccessStore(object(), DocumentAccessStoreConfig())
+    monkeypatch.setattr(store, "_rows", lambda sql: queries.append(sql) or [])
+    cursor = encode_cursor(
+        (datetime(2026, 7, 12, 11, tzinfo=timezone.utc), "document-1")
+    )
+
+    page = store.list_all(cursor=cursor, limit=7)
+
+    assert page.items == ()
+    assert page.next_cursor is None
+    assert "created_at >" in queries[0]
+    assert "document_id > 'document-1'" in queries[0]
+    assert "LIMIT 8" in queries[0]
 
 
 def test_xtdb_access_create_reports_the_assertion_that_conflicted(monkeypatch):

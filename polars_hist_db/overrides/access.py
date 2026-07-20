@@ -8,6 +8,7 @@ from typing import Iterable
 
 from .config import build_document_access_table_configs
 from .crdt import RowGuard
+from .pagination import Page, paginate
 from .types import DocumentAccessStoreConfig
 
 
@@ -124,7 +125,7 @@ class InMemoryDocumentAccessStore:
         if existing is not None and allow_existing:
             return _existing_result(
                 existing,
-                self.grants(existing.document_id),
+                self._all_grants(existing.document_id),
                 owning_group,
             )
         if document_id in self._documents:
@@ -172,29 +173,65 @@ class InMemoryDocumentAccessStore:
         return updated
 
     def list_for_groups(
-        self, groups: Iterable[str], *, include_archived: bool = False
-    ) -> list[AccessDocument]:
+        self,
+        groups: Iterable[str],
+        *,
+        include_archived: bool = False,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[AccessDocument]:
         group_set = set(groups)
         document_ids = {
             grant.document_id
             for grant in self._grants.values()
             if grant.active and grant.group_name in group_set
         }
-        return [
-            doc
-            for doc in self._documents.values()
-            if doc.document_id in document_ids
-            and (include_archived or doc.status == "active")
-        ]
+        return paginate(
+            (
+                doc
+                for doc in self._documents.values()
+                if doc.document_id in document_ids
+                and (include_archived or doc.status == "active")
+            ),
+            _document_page_key,
+            cursor=cursor,
+            limit=limit,
+        )
 
-    def list_all(self, *, include_archived: bool = False) -> list[AccessDocument]:
-        return [
-            doc
-            for doc in self._documents.values()
-            if include_archived or doc.status == "active"
-        ]
+    def list_all(
+        self,
+        *,
+        include_archived: bool = False,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[AccessDocument]:
+        return paginate(
+            (
+                doc
+                for doc in self._documents.values()
+                if include_archived or doc.status == "active"
+            ),
+            _document_page_key,
+            cursor=cursor,
+            limit=limit,
+        )
 
     def grants(
+        self,
+        document_id: str,
+        *,
+        include_revoked: bool = False,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[AccessGrant]:
+        return paginate(
+            self._all_grants(document_id, include_revoked=include_revoked),
+            _grant_page_key,
+            cursor=cursor,
+            limit=limit,
+        )
+
+    def _all_grants(
         self, document_id: str, *, include_revoked: bool = False
     ) -> tuple[AccessGrant, ...]:
         return tuple(
@@ -221,7 +258,7 @@ class InMemoryDocumentAccessStore:
         _require_time(recorded_at)
         if any(
             item.active and item.group_name == grant.group_name
-            for item in self.grants(document_id)
+            for item in self._all_grants(document_id)
         ):
             raise DocumentAccessError("group already has an active grant")
         document = self._advance(document)
@@ -250,7 +287,7 @@ class InMemoryDocumentAccessStore:
         grant = next(
             (
                 item
-                for item in self.grants(document_id)
+                for item in self._all_grants(document_id)
                 if item.group_name == group_name
             ),
             None,
@@ -340,7 +377,7 @@ class InMemoryDocumentAccessStore:
     ) -> AccessMutationResult:
         result = AccessMutationResult(
             document,
-            self.grants(document.document_id, include_revoked=True),
+            self._all_grants(document.document_id, include_revoked=True),
             accepted=True,
         )
         self._commands[idempotency_key] = (payload, result)
@@ -352,6 +389,14 @@ def _normalized(value: str) -> str:
     if not normalized:
         raise DocumentAccessError("name is required")
     return normalized
+
+
+def _document_page_key(document: AccessDocument) -> tuple[datetime, str]:
+    return document.created_at, document.document_id
+
+
+def _grant_page_key(grant: AccessGrant) -> tuple[datetime, str]:
+    return grant.granted_at, grant.grant_id
 
 
 def _create_payload(

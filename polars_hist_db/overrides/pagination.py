@@ -30,14 +30,28 @@ def paginate(
     ordered = sorted(items, key=key)
     keys = [key(item) for item in ordered]
     start = bisect_right(keys, decode_cursor(cursor)) if cursor else 0
-    selected = ordered[start : start + limit + 1]
+    return page_from_items(ordered[start : start + limit + 1], key, limit)
+
+
+def page_from_items(
+    items: Iterable[T],
+    key: Callable[[T], tuple[datetime, str]],
+    limit: int,
+) -> Page[T]:
+    validate_limit(limit)
+    selected = list(items)
     page = selected[:limit]
     next_cursor = encode_cursor(key(page[-1])) if len(selected) > len(page) else None
     return Page(tuple(page), next_cursor)
 
 
 def validate_limit(limit: int) -> None:
-    if isinstance(limit, bool) or limit < 1 or limit > 500:
+    if (
+        not isinstance(limit, int)
+        or isinstance(limit, bool)
+        or limit < 1
+        or limit > 500
+    ):
         raise ValueError("limit must be between 1 and 500")
 
 

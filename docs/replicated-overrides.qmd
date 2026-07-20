@@ -334,9 +334,11 @@ store = backend.document_access(connection, config)
 store.create(document_id, name, description, actor_id, recorded_at,
              initial_grants=(), idempotency_key=command_id)
 store.get(document_id)
-store.list_for_groups(groups, include_archived=False)
-store.list_all(include_archived=False)
-store.grants(document_id, include_revoked=False)
+page = store.list_for_groups(groups, include_archived=False, limit=100)
+page.items
+next_page = store.list_for_groups(groups, cursor=page.next_cursor, limit=100)
+store.list_all(include_archived=False, limit=100)
+store.grants(document_id, include_revoked=False, limit=100)
 store.grant(document_id, grant_id, group, role, actor_id, recorded_at,
             expected_revision, idempotency_key=command_id)
 store.revoke(document_id, group, actor_id, recorded_at, expected_revision,
@@ -345,6 +347,10 @@ store.archive(document_id, actor_id, recorded_at, expected_revision,
               idempotency_key=command_id)
 store.guard(document_id, expected_revision) -> RowGuard
 ```
+
+List and history APIs return a `Page`: an immutable `items` tuple and an opaque
+`next_cursor`. Pass that cursor back unchanged to read the next page. Page sizes
+must be between 1 and 500.
 
 `create`, `grant`, `revoke`, and `archive` return `AccessMutationResult` with
 the authoritative document, active grants, and one of `accepted` or

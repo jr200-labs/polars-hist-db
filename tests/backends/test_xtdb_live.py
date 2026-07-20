@@ -184,7 +184,7 @@ def test_xtdb_live_document_access_create():
                 owning_group="group-2",
                 allow_existing=True,
             )
-            documents = store.list_all()
+            documents = store.list_all().items
             loaded = store.get(document_id)
 
     assert result.accepted is True
