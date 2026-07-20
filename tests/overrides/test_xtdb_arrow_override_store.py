@@ -5,8 +5,11 @@ import pyarrow as pa
 
 from polars_hist_db.overrides import (
     ArrowOverrideStoreConfig,
+    DocumentAccessStoreConfig,
+    RowGuard,
     XtdbArrowOverrideRepository,
     arrow_override_operation_schema,
+    build_document_access_table_configs,
     finalize_arrow_override_operations,
 )
 
@@ -59,6 +62,7 @@ def test_xtdb_append_is_one_asserted_typed_transaction(monkeypatch) -> None:
     layer_id = uuid4()
     committed = _committed(layer_id)
     repository = XtdbArrowOverrideRepository(object(), ArrowOverrideStoreConfig())
+    access = build_document_access_table_configs(DocumentAccessStoreConfig())[0]
 
     assert repository.append_if_revision(
         layer_id,
@@ -66,11 +70,19 @@ def test_xtdb_append_is_one_asserted_typed_transaction(monkeypatch) -> None:
         0,
         committed,
         datetime(2026, 7, 19, 2, tzinfo=timezone.utc),
+        (
+            RowGuard(
+                access,
+                {"document_id": str(layer_id)},
+                {"status": "active", "revision": 1},
+            ),
+        ),
     )
     statements = transactions[0]
 
-    assert statements[0].startswith("ASSERT EXISTS")
-    assert statements[1].startswith("ASSERT NOT EXISTS")
-    assert statements[2].startswith("UPDATE")
+    assert "document_access" in statements[0]
+    assert statements[1].startswith("ASSERT EXISTS")
+    assert statements[2].startswith("ASSERT NOT EXISTS")
+    assert statements[3].startswith("UPDATE")
     assert "::VARBINARY" in "\n".join(statements)
     assert "::TIMESTAMP WITH TIME ZONE" in "\n".join(statements)

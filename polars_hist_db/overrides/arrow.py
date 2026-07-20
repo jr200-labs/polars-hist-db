@@ -9,16 +9,20 @@ import math
 import struct
 import time
 from threading import RLock
-from typing import Callable, Literal, Protocol, cast
+from typing import Callable, Literal, Mapping, Protocol, Sequence, cast
 from uuid import UUID
 
 import pyarrow as pa
 import polars as pl
 
+from polars_hist_db.config import TableConfig
+
 from polars_hist_db.observability import (
     arrow_override_sync_span,
     record_arrow_override_sync,
 )
+
+from .crdt import RowGuard
 
 LOGGER = logging.getLogger(__name__)
 
@@ -139,6 +143,10 @@ class ArrowOverrideRevisionConflict(ArrowOverrideContractError):
     pass
 
 
+class ArrowOverridePreconditionFailed(ArrowOverrideContractError):
+    pass
+
+
 @dataclass(frozen=True)
 class ArrowOverrideSyncResult:
     generation: int
@@ -159,6 +167,7 @@ class ArrowOverrideOperationStore(Protocol):
         actor_display_name: str | None,
         recorded_at: datetime,
         valid_at: datetime | None = None,
+        guards: Sequence[RowGuard] = (),
     ) -> ArrowOverrideSyncResult: ...
 
 
@@ -206,6 +215,7 @@ class ArrowOverrideRepository(Protocol):
         expected_revision: int,
         committed: pa.Table,
         updated_at: datetime,
+        guards: Sequence[RowGuard] = (),
     ) -> bool: ...
 
     def reset_generation(self, layer_id: UUID, generation: int) -> None: ...
@@ -233,6 +243,7 @@ class RepositoryArrowOverrideOperationStore:
         actor_display_name: str | None,
         recorded_at: datetime,
         valid_at: datetime | None = None,
+        guards: Sequence[RowGuard] = (),
     ) -> ArrowOverrideSyncResult:
         backend = str(getattr(self.repository, "backend", "custom"))
         started = time.perf_counter()
@@ -249,6 +260,7 @@ class RepositoryArrowOverrideOperationStore:
                     actor_display_name=actor_display_name,
                     recorded_at=recorded_at,
                     valid_at=valid_at,
+                    guards=guards,
                 )
             except Exception:
                 duration = time.perf_counter() - started
@@ -319,6 +331,7 @@ class RepositoryArrowOverrideOperationStore:
         actor_display_name: str | None,
         recorded_at: datetime,
         valid_at: datetime | None = None,
+        guards: Sequence[RowGuard] = (),
     ) -> ArrowOverrideSyncResult:
         validate_arrow_override_operations(pending, authority="client")
         _require_utc(recorded_at, "recorded_at")
@@ -367,6 +380,7 @@ class RepositoryArrowOverrideOperationStore:
                     head.revision,
                     committed,
                     recorded_at,
+                    guards,
                 ):
                     continue
             else:
@@ -905,6 +919,9 @@ class InMemoryArrowOverrideRepository:
         self.backend = "memory"
         self._heads: dict[bytes, ArrowOverrideLayerHead] = {}
         self._operations: dict[tuple[bytes, int], pa.Table] = {}
+        self._guard_rows: dict[
+            tuple[str, str, tuple[tuple[str, object], ...]], dict[str, object]
+        ] = {}
         self._lock = RLock()
 
     def create_layer(self, layer_id: UUID, *, generation: int = 1) -> None:
@@ -972,10 +989,12 @@ class InMemoryArrowOverrideRepository:
         expected_revision: int,
         committed: pa.Table,
         updated_at: datetime,
+        guards: Sequence[RowGuard] = (),
     ) -> bool:
         del updated_at
         validate_arrow_override_operations(committed, authority="committed")
         with self._lock:
+            self._validate_guards(guards)
             head = self._heads.get(layer_id.bytes)
             if head != ArrowOverrideLayerHead(generation, expected_revision):
                 return False
@@ -993,6 +1012,37 @@ class InMemoryArrowOverrideRepository:
                 generation, next_revision
             )
             return True
+
+    def seed_guard_row(
+        self, table_config: TableConfig, row: Mapping[str, object]
+    ) -> None:
+        with self._lock:
+            self._guard_rows[self._guard_key(table_config, row)] = dict(row)
+
+    def _validate_guards(self, guards: Sequence[RowGuard]) -> None:
+        for guard in guards:
+            row = self._guard_rows.get(
+                self._guard_key(guard.table_config, guard.key_values)
+            )
+            if row is None or any(
+                row.get(name) != value for name, value in guard.expected_values.items()
+            ):
+                raise ArrowOverridePreconditionFailed(
+                    "override commit guard no longer matches"
+                )
+
+    @staticmethod
+    def _guard_key(
+        table_config: TableConfig, row: Mapping[str, object]
+    ) -> tuple[str, str, tuple[tuple[str, object], ...]]:
+        keys = tuple(table_config.primary_keys)
+        if not keys or any(name not in row for name in keys):
+            raise ValueError("guard rows require every configured primary key")
+        return (
+            table_config.schema,
+            table_config.name,
+            tuple((name, row[name]) for name in keys),
+        )
 
     def reset_generation(self, layer_id: UUID, generation: int) -> None:
         with self._lock:

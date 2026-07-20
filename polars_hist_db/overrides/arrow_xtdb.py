@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Sequence
 from uuid import UUID
 
 import polars as pl
@@ -15,14 +15,16 @@ from .arrow import (
     ArrowOverrideContractError,
     ArrowOverrideLayerHead,
     ArrowOverrideLayerNotFound,
+    ArrowOverridePreconditionFailed,
     arrow_override_operations_from_storage,
     arrow_override_storage_frames,
     empty_arrow_override_operations,
     validate_arrow_override_operations,
 )
+from .crdt import RowGuard
 from .config import build_arrow_override_table_configs
 from .types import ArrowOverrideStoreConfig
-from .xtdb import _insert_statement, _literal, _table_name
+from .xtdb import _insert_statement, _literal, _table_name, _where
 
 
 class XtdbArrowOverrideRepository:
@@ -140,6 +142,7 @@ class XtdbArrowOverrideRepository:
         expected_revision: int,
         committed: pa.Table,
         updated_at: datetime,
+        guards: Sequence[RowGuard] = (),
     ) -> bool:
         validate_arrow_override_operations(committed, authority="committed")
         operation_rows, reference_rows, string_list_rows = (
@@ -155,6 +158,7 @@ class XtdbArrowOverrideRepository:
             for value in operation_rows["operation_id"].to_list()
         )
         statements = [
+            *(self._guard_assertion(guard) for guard in guards),
             f"ASSERT EXISTS (SELECT 1 FROM {_table_name(self.heads)} WHERE "
             f"{expected}), 'layer revision changed'",
             f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.operations)} "
@@ -171,13 +175,32 @@ class XtdbArrowOverrideRepository:
         ]
         try:
             _execute_xtdb_transaction(self.connection, statements)
-        except Exception:
+        except Exception as exc:
+            if any(not self._guard_matches(guard) for guard in guards):
+                raise ArrowOverridePreconditionFailed(
+                    "override commit guard no longer matches"
+                ) from exc
             if self.head(layer_id) != ArrowOverrideLayerHead(
                 generation, expected_revision
             ):
                 return False
             raise
         return True
+
+    def _guard_assertion(self, guard: RowGuard) -> str:
+        values = {**guard.key_values, **guard.expected_values}
+        return (
+            f"ASSERT EXISTS (SELECT 1 FROM {_table_name(guard.table_config)} "
+            f"WHERE {_where(guard.table_config, values)}), "
+            "'override commit guard failed'"
+        )
+
+    def _guard_matches(self, guard: RowGuard) -> bool:
+        values = {**guard.key_values, **guard.expected_values}
+        return not self._read(
+            f"SELECT 1 FROM {_table_name(guard.table_config)} "
+            f"WHERE {_where(guard.table_config, values)}"
+        ).is_empty()
 
     def reset_generation(self, layer_id: UUID, generation: int) -> None:
         head = self.head(layer_id)

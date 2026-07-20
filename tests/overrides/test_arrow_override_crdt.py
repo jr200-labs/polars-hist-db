@@ -1,6 +1,7 @@
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from contextlib import nullcontext
+from typing import Sequence
 from uuid import UUID, uuid4
 
 import pyarrow as pa
@@ -11,12 +12,16 @@ from polars_hist_db.overrides import (
     ArrowOverrideContractError,
     ArrowOverrideGenerationChanged,
     ArrowOverrideLayerNotFound,
+    ArrowOverridePreconditionFailed,
+    DocumentAccessStoreConfig,
     InMemoryArrowOverrideRepository,
     InMemoryArrowOverrideOperationStore,
     RepositoryArrowOverrideOperationStore,
+    RowGuard,
     arrow_override_operation_schema,
     arrow_override_operations_from_storage,
     arrow_override_storage_frames,
+    build_document_access_table_configs,
     decode_arrow_override_operations,
     decode_arrow_override_acknowledgements,
     decode_arrow_override_projection,
@@ -261,6 +266,38 @@ def test_sync_is_idempotent_and_returns_only_affected_projection() -> None:
     ).equals(first.projection_delta)
 
 
+def test_sync_atomically_rejects_a_stale_external_guard() -> None:
+    store = InMemoryArrowOverrideOperationStore()
+    layer_id = uuid4()
+    store.create_layer(layer_id)
+    table = build_document_access_table_configs(DocumentAccessStoreConfig())[0]
+    store.in_memory_repository.seed_guard_row(
+        table, {"document_id": str(layer_id), "status": "active", "revision": 2}
+    )
+
+    with pytest.raises(ArrowOverridePreconditionFailed, match="guard"):
+        store.sync(
+            layer_id=layer_id,
+            generation=1,
+            known_revision=0,
+            pending=_proposal(),
+            actor_subject="subject-1",
+            actor_display_name=None,
+            recorded_at=datetime(2026, 7, 19, 2, tzinfo=UTC),
+            guards=(
+                RowGuard(
+                    table,
+                    {"document_id": str(layer_id)},
+                    {"status": "active", "revision": 1},
+                ),
+            ),
+        )
+
+    head = store.in_memory_repository.head(layer_id)
+    assert head is not None
+    assert head.revision == 0
+
+
 def test_sync_emits_low_cardinality_telemetry(monkeypatch) -> None:
     measurements: list[dict[str, object]] = []
 
@@ -471,6 +508,7 @@ def test_revision_compare_and_swap_is_retried_without_duplicate_commit() -> None
             expected_revision: int,
             committed: pa.Table,
             updated_at: datetime,
+            guards: Sequence[RowGuard] = (),
         ) -> bool:
             self.attempts += 1
             if self.attempts == 1:
@@ -481,6 +519,7 @@ def test_revision_compare_and_swap_is_retried_without_duplicate_commit() -> None
                 expected_revision,
                 committed,
                 updated_at,
+                guards,
             )
 
     repository = RacingRepository()

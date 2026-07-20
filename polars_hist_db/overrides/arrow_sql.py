@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Sequence
 from uuid import UUID
 
 import polars as pl
@@ -15,11 +15,13 @@ from .arrow import (
     ArrowOverrideContractError,
     ArrowOverrideLayerHead,
     ArrowOverrideLayerNotFound,
+    ArrowOverridePreconditionFailed,
     arrow_override_operations_from_storage,
     arrow_override_storage_frames,
     empty_arrow_override_operations,
     validate_arrow_override_operations,
 )
+from .crdt import RowGuard
 from .config import build_arrow_override_table_configs
 from .types import ArrowOverrideStoreConfig
 
@@ -156,6 +158,7 @@ class MariaDbArrowOverrideRepository:
         expected_revision: int,
         committed: pa.Table,
         updated_at: datetime,
+        guards: Sequence[RowGuard] = (),
     ) -> bool:
         validate_arrow_override_operations(committed, authority="committed")
         operations_frame, references_frame, string_lists_frame = (
@@ -164,6 +167,7 @@ class MariaDbArrowOverrideRepository:
         heads, operations, references, string_lists = self._tables()
         try:
             with self.connection.begin_nested():
+                self._check_guards(guards)
                 result = self.connection.execute(
                     heads.update()
                     .where(
@@ -183,6 +187,27 @@ class MariaDbArrowOverrideRepository:
                 "immutable operation storage conflict"
             ) from exc
         return True
+
+    def _check_guards(self, guards: Sequence[RowGuard]) -> None:
+        for guard in guards:
+            table = Table(
+                guard.table_config.name,
+                MetaData(schema=guard.table_config.schema),
+                *guard.table_config.build_sqlalchemy_columns(is_delta_table=False),
+            )
+            predicates = [
+                table.c[name] == value
+                for name, value in {**guard.key_values, **guard.expected_values}.items()
+            ]
+            if (
+                self.connection.execute(
+                    select(table).where(and_(*predicates)).with_for_update()
+                ).first()
+                is None
+            ):
+                raise ArrowOverridePreconditionFailed(
+                    "override commit guard no longer matches"
+                )
 
     def reset_generation(self, layer_id: UUID, generation: int) -> None:
         heads, operations, references, string_lists = self._tables()
