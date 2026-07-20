@@ -134,7 +134,13 @@ class JetStreamInputSource(InputSource[JetStreamInputConfig]):
     async def _heartbeat(self, msgs: list[Any]) -> None:
         while True:
             await asyncio.sleep(self.config.jetstream.fetch.heartbeat_interval)
-            await asyncio.gather(*(msg.in_progress() for msg in msgs))
+            results = await asyncio.gather(
+                *(msg.in_progress() for msg in msgs),
+                return_exceptions=True,
+            )
+            for result in results:
+                if isinstance(result, Exception):
+                    LOGGER.warning("JetStream heartbeat failed: %s", result)
 
     async def next_df(
         self, engine: Engine
