@@ -11,7 +11,8 @@ from sqlalchemy import text
 
 from polars_hist_db.backends.xtdb_arrow import (
     _xtdb_cast_type,
-    _xtdb_composite_document_id,
+    _xtdb_document_id_cast_type,
+    _xtdb_document_id_value,
 )
 from polars_hist_db.backends.xtdb_transport import (
     _execute_xtdb_transaction,
@@ -1088,9 +1089,7 @@ def _insert_statement(
     document_id = _document_id(config, row)
     values = {"_id": document_id, **row}
     types = {
-        "_id": (
-            columns[primary_keys[0]].data_type if len(primary_keys) == 1 else "TEXT"
-        ),
+        "_id": _xtdb_document_id_cast_type(config),
         **{name: column.data_type for name, column in columns.items()},
     }
     if valid_from is not None:
@@ -1122,10 +1121,7 @@ def _update_statement(update: AtomicUpdate) -> str:
 
 
 def _document_id(config: TableConfig, row: Mapping[str, object]) -> object:
-    keys = list(config.primary_keys)
-    if len(keys) == 1:
-        return row[keys[0]]
-    return _xtdb_composite_document_id(keys, tuple(row[key] for key in keys))
+    return _xtdb_document_id_value(config, row)
 
 
 def _where(config: TableConfig, values: Mapping[str, object]) -> str:

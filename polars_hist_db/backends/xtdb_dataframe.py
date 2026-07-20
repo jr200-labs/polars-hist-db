@@ -101,7 +101,7 @@ class XtdbDataframeOps:
         basis_time: datetime | None = None,
     ) -> pl.DataFrame:
         from .xtdb_arrow import (
-            _xtdb_document_id_columns,
+            _xtdb_document_id_cast_type,
             _xtdb_polars_type_or_none,
         )
         from .xtdb_query import (
@@ -130,22 +130,10 @@ class XtdbDataframeOps:
             if dtype is not None:
                 schema_overrides[column.name] = dtype
         if "_id" in output_columns:
-            document_id_columns = _xtdb_document_id_columns(table_config)
-            if len(document_id_columns) > 1:
-                schema_overrides["_id"] = pl.String()
-            else:
-                id_config = next(
-                    (
-                        column
-                        for column in table_config.columns
-                        if column.name == document_id_columns[0]
-                    ),
-                    None,
-                )
-                if id_config is not None:
-                    schema_overrides["_id"] = (
-                        _xtdb_polars_type_or_none(id_config.data_type) or pl.String()
-                    )
+            schema_overrides["_id"] = (
+                _xtdb_polars_type_or_none(_xtdb_document_id_cast_type(table_config))
+                or pl.String()
+            )
         for temporal_column in ["__valid_from", "__valid_to"]:
             if temporal_column in output_columns:
                 schema_overrides[temporal_column] = pl.Datetime("us")

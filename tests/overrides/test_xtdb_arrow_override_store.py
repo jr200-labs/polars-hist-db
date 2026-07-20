@@ -107,4 +107,6 @@ def test_xtdb_schema_on_write_does_not_query_a_missing_table(monkeypatch) -> Non
     assert len(transactions[0]) == 1
     assert transactions[0][0].startswith("INSERT")
     assert "(_id, layer_id" in transactions[0][0]
+    assert "xtdb-pk-v1" in transactions[0][0]
+    assert "::TEXT" in transactions[0][0]
     assert "::VARBINARY" in transactions[0][0]

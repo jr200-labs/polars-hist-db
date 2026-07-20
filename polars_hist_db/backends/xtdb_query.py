@@ -3,6 +3,7 @@ from typing import Optional
 
 from ..config import TableConfig
 from ..core import TimeHint
+from .xtdb_arrow import _xtdb_document_id_is_encoded
 from .xtdb_transport import (
     _xtdb_column_identifier,
     _xtdb_timestamp_literal,
@@ -47,6 +48,8 @@ def _xtdb_valid_time_clause(time_hint: Optional[TimeHint]) -> str:
 
 
 def _xtdb_single_primary_key_alias(table_config: TableConfig) -> str | None:
+    if _xtdb_document_id_is_encoded(table_config):
+        return None
     primary_keys = list(table_config.primary_keys)
     if len(primary_keys) != 1:
         return None

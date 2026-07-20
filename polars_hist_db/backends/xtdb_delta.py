@@ -8,7 +8,9 @@ from ..config import DeltaConfig, TableConfig, ValidTimeConfig
 from ..types import PolarsType
 from .xtdb_arrow import (
     _prepare_xtdb_insert_dataframe,
+    _xtdb_document_id_cast_type,
     _xtdb_document_id_columns,
+    _xtdb_document_id_is_encoded,
 )
 from .xtdb_query import _xtdb_temporal_basis_clause
 from .xtdb_dataframe import (
@@ -260,7 +262,9 @@ def _xtdb_dropout_close_time(
 
 def _xtdb_value_compare_dtypes(table_config: TableConfig) -> dict[str, pl.DataType]:
     document_id_columns = _xtdb_document_id_columns(table_config)
-    uses_single_source_key = len(document_id_columns) == 1
+    uses_single_source_key = len(
+        document_id_columns
+    ) == 1 and not _xtdb_document_id_is_encoded(table_config)
     dtypes = {}
     for column in table_config.columns:
         target_name = (
@@ -269,6 +273,8 @@ def _xtdb_value_compare_dtypes(table_config: TableConfig) -> dict[str, pl.DataTy
             else column.name
         )
         dtypes[target_name] = PolarsType.from_sql(column.data_type)
+    if uses_single_source_key and document_id_columns != ["_id"]:
+        dtypes["_id"] = PolarsType.from_sql(_xtdb_document_id_cast_type(table_config))
     return dtypes
 
 
