@@ -23,7 +23,7 @@ def _is_xtdb_connection(connection: Any) -> bool:
 
 
 def _xtdb_table_config_ops(connection: Any) -> Any:
-    from ..backends.xtdb import XtdbTableConfigOps
+    from ..backends.xtdb_schema import XtdbTableConfigOps
 
     return XtdbTableConfigOps(connection)
 

@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 import json
+import math
 import re
 from typing import Any, Iterable, Mapping, Optional, cast
 
@@ -22,8 +23,7 @@ _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _table_config_ops(connection: Any) -> Any:
-    # Imported lazily because xtdb.py re-exports this transport module.
-    from .xtdb import XtdbTableConfigOps
+    from .xtdb_schema import XtdbTableConfigOps
 
     return XtdbTableConfigOps(connection)
 
@@ -50,6 +50,32 @@ def _xtdb_physical_column_name(column_name: str) -> str:
 
 def _xtdb_column_identifier(column_name: str) -> str:
     return _quote_identifier(_xtdb_physical_column_name(column_name))
+
+
+def _xtdb_sql_literal(value: Any, cast_type: str) -> str:
+    if value is None:
+        return f"NULL::{cast_type}"
+    if isinstance(value, bool):
+        return f"{'TRUE' if value else 'FALSE'}::{cast_type}"
+    if isinstance(value, int):
+        return f"{value}::{cast_type}"
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("XTDB insert does not support non-finite float values")
+        return f"{value}::{cast_type}"
+    if isinstance(value, Decimal):
+        return f"{value}::{cast_type}"
+    if isinstance(value, datetime):
+        escaped = value.isoformat().replace("'", "''")
+        return f"'{escaped}'::{cast_type}"
+    if isinstance(value, date):
+        escaped = value.isoformat().replace("'", "''")
+        return f"'{escaped}'::{cast_type}"
+    if isinstance(value, bytes):
+        return f"X('{value.hex()}')::{cast_type}"
+
+    escaped = str(value).replace("'", "''")
+    return f"'{escaped}'::{cast_type}"
 
 
 def _xtdb_physical_column_map(table_config: TableConfig) -> dict[str, str]:
