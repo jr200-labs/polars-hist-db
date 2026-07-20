@@ -15,7 +15,6 @@ from ..config import (
 )
 from ..pipeline_projection import project_staged_pipeline_item_dataframe
 from ..types import PolarsType
-from .xtdb_arrow import _xtdb_json_safe_key_value
 from .xtdb_query import _xtdb_table_query_target_column
 from .xtdb_dataframe import (
     _uploaded_xtdb_relation,
@@ -232,21 +231,6 @@ def _xtdb_deduced_numeric_foreign_key_ids(payloads: pl.Series, bits: int) -> pl.
     )
 
 
-def _xtdb_parent_row_cache_key(
-    table_config: TableConfig,
-    columns: Iterable[str],
-    row: dict[str, Any],
-) -> tuple[str, str, str]:
-    encoded_parts = [
-        [column, _xtdb_json_safe_key_value(row[column])] for column in columns
-    ]
-    return (
-        table_config.schema,
-        table_config.name,
-        json.dumps(encoded_parts, separators=(",", ":"), ensure_ascii=False),
-    )
-
-
 def _xtdb_fk_needs_generated_values(stage_df: pl.DataFrame, source_column: str) -> bool:
     return (
         source_column not in stage_df.columns
@@ -299,8 +283,8 @@ class XtdbStagingOps:
         self.adbc_connection = adbc_connection
         self.max_rows_per_insert = max_rows_per_insert
         self._stage_run_cache: dict[str, pl.DataFrame] = {}
-        self._inserted_parent_row_cache: set[tuple[str, str, str]] = set()
-        self._projected_parent_row_cache: set[tuple[str, str, str]] = set()
+        self._inserted_parent_row_cache: dict[tuple[str, str], pl.DataFrame] = {}
+        self._projected_parent_row_cache: set[str] = set()
 
     def _dataframes(self) -> XtdbDataframeOps:
         return XtdbDataframeOps(
@@ -484,24 +468,28 @@ class XtdbStagingOps:
             for column in [*fk_map.values(), *value_map.values()]
             if column in projected_df.columns
         ]
-        rows_to_return = []
-        new_parent_keys = set()
-        for row in projected_df.iter_rows(named=True):
-            parent_key = _xtdb_parent_row_cache_key(
+        cache_key = "__xtdb_parent_cache_key"
+        key_expr = (
+            _xtdb_deduced_foreign_key_payload(
                 table_config,
                 parent_columns,
-                row,
+                projected_df.schema,
             )
-            if (
-                parent_key in self._projected_parent_row_cache
-                or parent_key in new_parent_keys
-            ):
-                continue
-            rows_to_return.append(row)
-            new_parent_keys.add(parent_key)
+            if parent_columns
+            else pl.lit(f"xtdb-fk-v1:{table_config.schema}.{table_config.name}:[]")
+        )
+        keyed = projected_df.with_columns(key_expr.alias(cache_key)).unique(
+            subset=cache_key, keep="first", maintain_order=True
+        )
+        if self._projected_parent_row_cache:
+            cached = pl.Series(
+                list(self._projected_parent_row_cache),
+                dtype=pl.String,
+            )
+            keyed = keyed.filter(~pl.col(cache_key).is_in(cached.implode()))
 
-        self._projected_parent_row_cache.update(new_parent_keys)
-        return pl.DataFrame(rows_to_return, schema=projected_df.schema)
+        self._projected_parent_row_cache.update(keyed.get_column(cache_key).to_list())
+        return keyed.drop(cache_key)
 
     def _resolve_numeric_foreign_key_collisions(
         self,
@@ -545,7 +533,7 @@ class XtdbStagingOps:
                         minimum_column: resolved.schema[target],
                     },
                 )
-            occupied = set(existing.get_column(target).drop_nulls().to_list())
+            occupied = existing.get_column(target).drop_nulls()
             minimum_values = existing.get_column(minimum_column).drop_nulls()
             database_minimum = (
                 cast(int, minimum_values.min())
@@ -553,31 +541,35 @@ class XtdbStagingOps:
                 else None
             )
 
-            used: set[int] = set()
-            values: list[int] = []
-            minimum = _xtdb_integer_min(table_config, target)
-            for row in resolved.select([target, marker]).iter_rows(named=True):
-                value = int(row[target])
-                generated = bool(row[marker])
-                if value in occupied or value in used:
-                    if not generated:
-                        raise ValueError(
-                            f"Foreign key {table_config.name}.{target} is already in use"
-                        )
-                    lower_values = [*used]
-                    if database_minimum is not None:
-                        lower_values.append(database_minimum)
-                    floor = min(lower_values)
-                    if floor <= minimum:
-                        raise ValueError(
-                            f"No generated foreign keys remain for "
-                            f"{table_config.name}.{target}"
-                        )
-                    value = floor - 1
-                used.add(value)
-                values.append(value)
+            collision = "__xtdb_key_collision"
+            resolved = resolved.with_columns(
+                (
+                    pl.col(target).is_in(occupied.implode())
+                    | (pl.col(target).cum_count().over(target) > 1)
+                ).alias(collision)
+            )
+            if resolved.select((pl.col(collision) & ~pl.col(marker)).any()).item():
+                raise ValueError(
+                    f"Foreign key {table_config.name}.{target} is already in use"
+                )
 
-            resolved = resolved.with_columns(pl.Series(target, values))
+            collision_count = cast(int, resolved.get_column(collision).sum())
+            # Keep replacements below every database and batch ID so they cannot
+            # collide with candidates that appear later in the frame.
+            floor = cast(int, resolved.get_column(target).min())
+            if database_minimum is not None:
+                floor = min(floor, database_minimum)
+            minimum = _xtdb_integer_min(table_config, target)
+            if floor - collision_count < minimum:
+                raise ValueError(
+                    f"No generated foreign keys remain for {table_config.name}.{target}"
+                )
+            resolved = resolved.with_columns(
+                pl.when(collision)
+                .then(pl.lit(floor) - pl.col(collision).cast(pl.Int64).cum_sum())
+                .otherwise(pl.col(target))
+                .alias(target)
+            ).drop(collision)
 
         return resolved
 
@@ -748,23 +740,15 @@ class XtdbStagingOps:
         ).unique(maintain_order=True)
         if not parent_rows_to_insert.is_empty():
             insert_columns = [*fk_targets, *value_targets]
-            rows_to_insert = []
-            new_parent_keys = set()
-            for row in parent_rows_to_insert.iter_rows(named=True):
-                parent_key = _xtdb_parent_row_cache_key(
-                    table_config,
-                    insert_columns,
-                    row,
+            parent_key = (table_config.schema, table_config.name)
+            inserted_parent_rows = self._inserted_parent_row_cache.get(parent_key)
+            if inserted_parent_rows is not None:
+                parent_rows_to_insert = parent_rows_to_insert.join(
+                    inserted_parent_rows,
+                    on=insert_columns,
+                    how="anti",
+                    nulls_equal=True,
                 )
-                if parent_key in self._inserted_parent_row_cache:
-                    continue
-                rows_to_insert.append(row)
-                new_parent_keys.add(parent_key)
-
-            parent_rows_to_insert = pl.DataFrame(
-                rows_to_insert,
-                schema=parent_rows_to_insert.schema,
-            )
         if not parent_rows_to_insert.is_empty():
             self._bulk_table_insert(
                 parent_rows_to_insert,
@@ -772,7 +756,11 @@ class XtdbStagingOps:
                 table_config.name,
                 table_config=table_config,
             )
-            self._inserted_parent_row_cache.update(new_parent_keys)
+            self._inserted_parent_row_cache[parent_key] = (
+                parent_rows_to_insert
+                if inserted_parent_rows is None
+                else inserted_parent_rows.vstack(parent_rows_to_insert)
+            )
 
         resolver = joined.select([*value_targets, *fk_targets]).rename(
             {
