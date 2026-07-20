@@ -38,6 +38,34 @@ def _is_xtdb_adbc_ingest_unavailable(exc: Exception) -> bool:
     )
 
 
+def _is_xtdb_table_not_found_error(exc: Exception) -> bool:
+    return "Table not found:" in str(exc)
+
+
+def _execute_xtdb_transaction(connection: Any, statements: Iterable[str]) -> None:
+    """Submit one serialized XTDB DML transaction."""
+
+    driver_connection = _driver_connection(connection)
+    if driver_connection is None:
+        raise ValueError("XTDB transactions require a live DBAPI connection")
+    _rollback_xtdb_connection(connection)
+    autocommit = getattr(driver_connection, "autocommit", None)
+    if autocommit is not None:
+        driver_connection.autocommit = True
+
+    driver_connection.execute("BEGIN READ WRITE")
+    try:
+        for statement in statements:
+            driver_connection.execute(statement)
+        driver_connection.execute("COMMIT")
+    except Exception:
+        driver_connection.execute("ROLLBACK")
+        raise
+    finally:
+        if autocommit is not None:
+            driver_connection.autocommit = autocommit
+
+
 def _validate_identifier(identifier: str) -> str:
     if not _IDENTIFIER_RE.match(identifier):
         raise ValueError(f"Unsupported XTDB identifier: {identifier!r}")

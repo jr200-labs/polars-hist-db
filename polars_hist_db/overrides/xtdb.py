@@ -9,11 +9,9 @@ from typing import Any, Mapping, Sequence
 
 from sqlalchemy import text
 
-from polars_hist_db.backends.xtdb import (
+from polars_hist_db.backends.xtdb_transport import (
     _execute_xtdb_transaction,
     _is_xtdb_table_not_found_error,
-)
-from polars_hist_db.backends.xtdb_transport import (
     _qualified_table_name,
     _rollback_xtdb_connection,
     _xtdb_cast_type,

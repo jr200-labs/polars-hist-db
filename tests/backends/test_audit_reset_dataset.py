@@ -82,7 +82,7 @@ def test_xtdb_reset_dataset_erases_target_and_audit(monkeypatch):
         _TableConfigOps,
     )
     monkeypatch.setattr(
-        "polars_hist_db.backends.xtdb._execute_xtdb_dml",
+        "polars_hist_db.backends.xtdb_transport._execute_xtdb_dml",
         lambda connection, query, *a, **k: executed.append(query),
     )
 
