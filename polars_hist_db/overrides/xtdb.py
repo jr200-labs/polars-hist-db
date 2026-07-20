@@ -1081,13 +1081,16 @@ def _insert_statement(
     valid_to: object | None = None,
 ) -> str:
     columns = {column.name: column for column in config.columns}
-    missing_keys = [key for key in config.primary_keys if key not in row]
+    primary_keys = tuple(config.primary_keys)
+    missing_keys = [key for key in primary_keys if key not in row]
     if missing_keys:
         raise ValueError("atomic rows require every configured primary key")
     document_id = _document_id(config, row)
     values = {"_id": document_id, **row}
     types = {
-        "_id": "TEXT",
+        "_id": (
+            columns[primary_keys[0]].data_type if len(primary_keys) == 1 else "TEXT"
+        ),
         **{name: column.data_type for name, column in columns.items()},
     }
     if valid_from is not None:
