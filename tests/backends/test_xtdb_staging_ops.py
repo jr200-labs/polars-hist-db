@@ -1117,14 +1117,14 @@ def test_xtdb_staging_does_not_insert_same_generated_parent_twice(
 ):
     stage_df = pl.DataFrame(
         {
-            "stage_run_id": ["stage-1"],
-            "stage_row_index": [0],
-            "origin_location_id": [None],
-            "origin_name": ["#Unspecified"],
-            "origin_country": ["#Unspecified"],
-            "destination_location_id": [None],
-            "destination_name": ["#Unspecified"],
-            "destination_country": ["#Unspecified"],
+            "stage_run_id": ["stage-1", "stage-1"],
+            "stage_row_index": [0, 1],
+            "origin_location_id": [None, None],
+            "origin_name": ["#Unspecified", "#Unspecified"],
+            "origin_country": ["#Unspecified", "#Unspecified"],
+            "destination_location_id": [None, None],
+            "destination_name": ["#Unspecified", "#Unspecified"],
+            "destination_country": ["#Unspecified", "#Unspecified"],
         },
         schema={
             "stage_run_id": pl.String,

@@ -300,7 +300,7 @@ class XtdbStagingOps:
         self.max_rows_per_insert = max_rows_per_insert
         self._stage_run_cache: dict[str, pl.DataFrame] = {}
         self._inserted_parent_row_cache: set[tuple[str, str, str]] = set()
-        self._projected_parent_row_cache: set[tuple[str, str, str]] = set()
+        self._projected_parent_row_cache: set[str] = set()
 
     def _dataframes(self) -> XtdbDataframeOps:
         return XtdbDataframeOps(
@@ -484,24 +484,28 @@ class XtdbStagingOps:
             for column in [*fk_map.values(), *value_map.values()]
             if column in projected_df.columns
         ]
-        rows_to_return = []
-        new_parent_keys = set()
-        for row in projected_df.iter_rows(named=True):
-            parent_key = _xtdb_parent_row_cache_key(
+        cache_key = "__xtdb_parent_cache_key"
+        key_expr = (
+            _xtdb_deduced_foreign_key_payload(
                 table_config,
                 parent_columns,
-                row,
+                projected_df.schema,
             )
-            if (
-                parent_key in self._projected_parent_row_cache
-                or parent_key in new_parent_keys
-            ):
-                continue
-            rows_to_return.append(row)
-            new_parent_keys.add(parent_key)
+            if parent_columns
+            else pl.lit(f"xtdb-fk-v1:{table_config.schema}.{table_config.name}:[]")
+        )
+        keyed = projected_df.with_columns(key_expr.alias(cache_key)).unique(
+            subset=cache_key, keep="first", maintain_order=True
+        )
+        if self._projected_parent_row_cache:
+            cached = pl.Series(
+                list(self._projected_parent_row_cache),
+                dtype=pl.String,
+            )
+            keyed = keyed.filter(~pl.col(cache_key).is_in(cached.implode()))
 
-        self._projected_parent_row_cache.update(new_parent_keys)
-        return pl.DataFrame(rows_to_return, schema=projected_df.schema)
+        self._projected_parent_row_cache.update(keyed.get_column(cache_key).to_list())
+        return keyed.drop(cache_key)
 
     def _resolve_numeric_foreign_key_collisions(
         self,
