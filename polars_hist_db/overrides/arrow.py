@@ -149,9 +149,13 @@ class ArrowOverridePreconditionFailed(ArrowOverrideContractError):
 
 @dataclass(frozen=True)
 class ArrowOverrideSyncResult:
+    """Typed acknowledgement plus complete operation history for changed scopes."""
+
     generation: int
     revision: int
     acknowledgements: pa.Table
+    # Includes prior operations needed to reconstruct each changed CRDT frontier.
+    operations_delta: pa.Table
     projection_delta: pa.Table
 
 
@@ -411,7 +415,7 @@ class RepositoryArrowOverrideOperationStore:
                 revision=revision,
             )
             return ArrowOverrideSyncResult(
-                generation, revision, acknowledgements, projection
+                generation, revision, acknowledgements, operations, projection
             )
         raise ArrowOverrideRevisionConflict(
             "layer revision changed repeatedly during override commit"
