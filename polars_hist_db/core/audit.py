@@ -23,13 +23,13 @@ def _is_xtdb_connection(connection: Any) -> bool:
 
 
 def _xtdb_table_config_ops(connection: Any) -> Any:
-    from ..backends.xtdb import XtdbTableConfigOps
+    from ..backends.xtdb_schema import XtdbTableConfigOps
 
     return XtdbTableConfigOps(connection)
 
 
 def _xtdb_dataframe_ops(connection: Any) -> Any:
-    from ..backends.xtdb import XtdbDataframeOps
+    from ..backends.xtdb_dataframe import XtdbDataframeOps
 
     return XtdbDataframeOps(connection)
 
@@ -161,7 +161,7 @@ class AuditOps:
         """
         target_fqtn = f"{self.schema}.{target_table_name}"
         if _is_xtdb_connection(connection):
-            from ..backends.xtdb import _execute_xtdb_dml
+            from ..backends.xtdb_transport import _execute_xtdb_dml
 
             self.create(connection)
             _execute_xtdb_dml(connection, f"ERASE FROM {target_fqtn} WHERE TRUE")
@@ -217,7 +217,7 @@ class AuditOps:
                 f"WHERE table_name = {_sql_literal(target_table_name)} "
                 f"AND data_source_ts {operator} {_sql_literal(timestamp)}"
             )
-            from ..backends.xtdb import _execute_xtdb_dml
+            from ..backends.xtdb_transport import _execute_xtdb_dml
 
             _execute_xtdb_dml(connection, query)
             return 0

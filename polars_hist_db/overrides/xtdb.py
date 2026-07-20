@@ -9,17 +9,17 @@ from typing import Any, Mapping, Sequence
 
 from sqlalchemy import text
 
-from polars_hist_db.backends.xtdb import (
-    _execute_xtdb_transaction,
-    _is_xtdb_table_not_found_error,
-    _xtdb_sql_literal,
+from polars_hist_db.backends.xtdb_arrow import (
+    _xtdb_cast_type,
+    _xtdb_composite_document_id,
 )
 from polars_hist_db.backends.xtdb_transport import (
+    _execute_xtdb_transaction,
+    _is_xtdb_table_not_found_error,
     _qualified_table_name,
     _rollback_xtdb_connection,
-    _xtdb_cast_type,
     _xtdb_column_identifier,
-    _xtdb_composite_document_id,
+    _xtdb_sql_literal,
 )
 from polars_hist_db.config import TableConfig
 

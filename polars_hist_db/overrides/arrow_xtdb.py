@@ -8,11 +8,11 @@ import polars as pl
 import pyarrow as pa
 from sqlalchemy import text
 
-from polars_hist_db.backends.xtdb import (
+from polars_hist_db.backends.xtdb_schema import _xtdb_table_exists
+from polars_hist_db.backends.xtdb_transport import (
     _execute_xtdb_transaction,
-    _xtdb_table_exists,
+    _xtdb_column_identifier,
 )
-from polars_hist_db.backends.xtdb_transport import _xtdb_column_identifier
 
 from .arrow import (
     ArrowOverrideContractError,

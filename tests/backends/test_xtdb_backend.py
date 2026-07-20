@@ -940,7 +940,7 @@ def test_xtdb_table_config_ops_drop_all_erases_configured_tables(monkeypatch):
     executed = []
 
     monkeypatch.setattr(
-        "polars_hist_db.backends.xtdb._execute_xtdb_dml",
+        "polars_hist_db.backends.xtdb_schema._execute_xtdb_dml",
         lambda _connection, sql, **_kwargs: executed.append(sql),
     )
 
@@ -967,7 +967,7 @@ def test_xtdb_table_config_ops_drop_removes_metadata_without_data_table(monkeypa
     executed = []
 
     monkeypatch.setattr(
-        "polars_hist_db.backends.xtdb._execute_xtdb_dml",
+        "polars_hist_db.backends.xtdb_schema._execute_xtdb_dml",
         lambda _connection, sql, **_kwargs: executed.append(sql),
     )
 
