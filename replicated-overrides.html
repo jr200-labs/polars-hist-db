@@ -714,16 +714,19 @@ arrow_override_string_list_values</code></pre>
 <span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>store.create(document_id, name, description, actor_id, recorded_at,</span>
 <span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>             initial_grants<span class="op">=</span>(), idempotency_key<span class="op">=</span>command_id)</span>
 <span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>store.get(document_id)</span>
-<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>store.list_for_groups(groups, include_archived<span class="op">=</span><span class="va">False</span>)</span>
-<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>store.list_all(include_archived<span class="op">=</span><span class="va">False</span>)</span>
-<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>store.grants(document_id, include_revoked<span class="op">=</span><span class="va">False</span>)</span>
-<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>store.grant(document_id, grant_id, group, role, actor_id, recorded_at,</span>
-<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>            expected_revision, idempotency_key<span class="op">=</span>command_id)</span>
-<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>store.revoke(document_id, group, actor_id, recorded_at, expected_revision,</span>
-<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>             idempotency_key<span class="op">=</span>command_id)</span>
-<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>store.archive(document_id, actor_id, recorded_at, expected_revision,</span>
-<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>              idempotency_key<span class="op">=</span>command_id)</span>
-<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a>store.guard(document_id, expected_revision) <span class="op">-&gt;</span> RowGuard</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>page <span class="op">=</span> store.list_for_groups(groups, include_archived<span class="op">=</span><span class="va">False</span>, limit<span class="op">=</span><span class="dv">100</span>)</span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>page.items</span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>next_page <span class="op">=</span> store.list_for_groups(groups, cursor<span class="op">=</span>page.next_cursor, limit<span class="op">=</span><span class="dv">100</span>)</span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>store.list_all(include_archived<span class="op">=</span><span class="va">False</span>, limit<span class="op">=</span><span class="dv">100</span>)</span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>store.grants(document_id, include_revoked<span class="op">=</span><span class="va">False</span>, limit<span class="op">=</span><span class="dv">100</span>)</span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>store.grant(document_id, grant_id, group, role, actor_id, recorded_at,</span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>            expected_revision, idempotency_key<span class="op">=</span>command_id)</span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>store.revoke(document_id, group, actor_id, recorded_at, expected_revision,</span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>             idempotency_key<span class="op">=</span>command_id)</span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a>store.archive(document_id, actor_id, recorded_at, expected_revision,</span>
+<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a>              idempotency_key<span class="op">=</span>command_id)</span>
+<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a>store.guard(document_id, expected_revision) <span class="op">-&gt;</span> RowGuard</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>List and history APIs return a <code>Page</code>: an immutable <code>items</code> tuple and an opaque <code>next_cursor</code>. Pass that cursor back unchanged to read the next page. Page sizes must be between 1 and 500.</p>
 <p><code>create</code>, <code>grant</code>, <code>revoke</code>, and <code>archive</code> return <code>AccessMutationResult</code> with the authoritative document, active grants, and one of <code>accepted</code> or <code>duplicate</code>. Exact command retries return the original result. Reusing an idempotency key with different content raises <code>IdempotencyConflict</code>. Unknown documents, archived documents, stale revisions, and missing active grants raise distinct typed errors. Applications map those errors to non-disclosing transport responses.</p>
 <p>The application supplies actor identity only after token verification and uses its authoritative clock for <code>recorded_at</code>; no mutation accepts actor or audit fields inside an opaque payload. The application also validates names, allowed role values, caller permissions, and group naming policy. The store validates required identifiers, timezone-aware audit timestamps, status transitions, uniqueness, and expected revisions.</p>
 <p><code>list_all</code> is intentionally authorization-neutral. It exists for applications whose verified global administrators or auditors are not represented by a document grant. Calling it before application authorization is a security bug.</p>
