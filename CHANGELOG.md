@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.12.69](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.68...v0.12.69) (2026-07-20)
+
+
+### Bug Fixes
+
+* **xtdb:** encode unsupported document IDs ([#280](https://github.com/jr200-labs/polars-hist-db/issues/280)) ([7e55e5f](https://github.com/jr200-labs/polars-hist-db/commit/7e55e5fae8836edc5099be044e3fbbb295ba5a96))
+
+
+### Performance Improvements
+
+* cache reflected table metadata ([#277](https://github.com/jr200-labs/polars-hist-db/issues/277)) ([40f9757](https://github.com/jr200-labs/polars-hist-db/commit/40f9757b629c9192764d31addfaacd037d5658e3))
+* **xtdb:** remove duplicate parent resolution joins ([#282](https://github.com/jr200-labs/polars-hist-db/issues/282)) ([dcff343](https://github.com/jr200-labs/polars-hist-db/commit/dcff343f2de8c7a22478ebe1bc433e9cbabbd365))
+* **xtdb:** upload key relations for joins ([#279](https://github.com/jr200-labs/polars-hist-db/issues/279)) ([204235d](https://github.com/jr200-labs/polars-hist-db/commit/204235df44b1fd5b3d16fc6599b1b33a0f405c32))
+
 ## [0.12.68](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.67...v0.12.68) (2026-07-20)
 
 
