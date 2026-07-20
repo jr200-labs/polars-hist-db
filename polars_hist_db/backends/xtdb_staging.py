@@ -545,7 +545,7 @@ class XtdbStagingOps:
                         minimum_column: resolved.schema[target],
                     },
                 )
-            occupied = set(existing.get_column(target).drop_nulls().to_list())
+            occupied = existing.get_column(target).drop_nulls()
             minimum_values = existing.get_column(minimum_column).drop_nulls()
             database_minimum = (
                 cast(int, minimum_values.min())
@@ -553,31 +553,35 @@ class XtdbStagingOps:
                 else None
             )
 
-            used: set[int] = set()
-            values: list[int] = []
-            minimum = _xtdb_integer_min(table_config, target)
-            for row in resolved.select([target, marker]).iter_rows(named=True):
-                value = int(row[target])
-                generated = bool(row[marker])
-                if value in occupied or value in used:
-                    if not generated:
-                        raise ValueError(
-                            f"Foreign key {table_config.name}.{target} is already in use"
-                        )
-                    lower_values = [*used]
-                    if database_minimum is not None:
-                        lower_values.append(database_minimum)
-                    floor = min(lower_values)
-                    if floor <= minimum:
-                        raise ValueError(
-                            f"No generated foreign keys remain for "
-                            f"{table_config.name}.{target}"
-                        )
-                    value = floor - 1
-                used.add(value)
-                values.append(value)
+            collision = "__xtdb_key_collision"
+            resolved = resolved.with_columns(
+                (
+                    pl.col(target).is_in(occupied.implode())
+                    | (pl.col(target).cum_count().over(target) > 1)
+                ).alias(collision)
+            )
+            if resolved.select((pl.col(collision) & ~pl.col(marker)).any()).item():
+                raise ValueError(
+                    f"Foreign key {table_config.name}.{target} is already in use"
+                )
 
-            resolved = resolved.with_columns(pl.Series(target, values))
+            collision_count = cast(int, resolved.get_column(collision).sum())
+            # Keep replacements below every database and batch ID so they cannot
+            # collide with candidates that appear later in the frame.
+            floor = cast(int, resolved.get_column(target).min())
+            if database_minimum is not None:
+                floor = min(floor, database_minimum)
+            minimum = _xtdb_integer_min(table_config, target)
+            if floor - collision_count < minimum:
+                raise ValueError(
+                    f"No generated foreign keys remain for {table_config.name}.{target}"
+                )
+            resolved = resolved.with_columns(
+                pl.when(collision)
+                .then(pl.lit(floor) - pl.col(collision).cast(pl.Int64).cum_sum())
+                .otherwise(pl.col(target))
+                .alias(target)
+            ).drop(collision)
 
         return resolved
 

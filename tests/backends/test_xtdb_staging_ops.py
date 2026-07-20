@@ -1414,8 +1414,8 @@ def test_xtdb_staging_resolves_generated_numeric_key_collisions(monkeypatch):
     )
     rows = pl.DataFrame(
         {
-            "id": [-42, -42],
-            "__xtdb_generated_id": [True, True],
+            "id": [-42, -42, -43],
+            "__xtdb_generated_id": [True, True, True],
         }
     )
 
@@ -1425,8 +1425,58 @@ def test_xtdb_staging_resolves_generated_numeric_key_collisions(monkeypatch):
         ["id"],
     )
 
-    assert result.get_column("id").to_list() == [-42, -43]
+    assert result.get_column("id").to_list() == [-42, -44, -43]
     assert from_raw_sql.call_count == 1
+
+
+def test_xtdb_staging_rejects_explicit_numeric_key_collisions(monkeypatch):
+    table_config = TableConfig(
+        schema="ref",
+        name="parents",
+        primary_keys=["id"],
+        columns=[TableColumnConfig("parents", "id", "INT", nullable=False)],
+    )
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_raw_sql",
+        Mock(return_value=pl.DataFrame({"id": [-42], "__xtdb_minimum_id": [-42]})),
+    )
+    rows = pl.DataFrame({"id": [-42], "__xtdb_generated_id": [False]})
+
+    with pytest.raises(ValueError, match="parents.id is already in use"):
+        XtdbStagingOps(object())._resolve_numeric_foreign_key_collisions(
+            rows,
+            table_config,
+            ["id"],
+        )
+
+
+def test_xtdb_staging_rejects_exhausted_numeric_keys(monkeypatch):
+    table_config = TableConfig(
+        schema="ref",
+        name="parents",
+        primary_keys=["id"],
+        columns=[TableColumnConfig("parents", "id", "TINYINT", nullable=False)],
+    )
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb.XtdbDataframeOps.from_raw_sql",
+        Mock(
+            return_value=pl.DataFrame(
+                {"id": [None], "__xtdb_minimum_id": [None]},
+                schema={"id": pl.Int8, "__xtdb_minimum_id": pl.Int8},
+            )
+        ),
+    )
+    rows = pl.DataFrame(
+        {"id": [-128, -128], "__xtdb_generated_id": [True, True]},
+        schema={"id": pl.Int8, "__xtdb_generated_id": pl.Boolean},
+    )
+
+    with pytest.raises(ValueError, match="No generated foreign keys remain"):
+        XtdbStagingOps(object())._resolve_numeric_foreign_key_collisions(
+            rows,
+            table_config,
+            ["id"],
+        )
 
 
 def test_xtdb_staging_avoids_existing_generated_numeric_key(monkeypatch):
