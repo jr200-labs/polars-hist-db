@@ -7,6 +7,7 @@ import json
 from typing import Iterable, Literal
 from uuid import UUID
 
+from .pagination import Page, paginate
 from .types import OverrideTypedValue
 
 ReplicatedOverrideOperationType = Literal["set", "remove"]
@@ -84,15 +85,26 @@ class InMemoryReplicatedOverrideLedger:
         return results
 
     def history_for_entity(
-        self, layer_id: str, feed_id: str, entity_id: str
-    ) -> list[ReplicatedOverrideOperation]:
-        return [
-            operation
-            for operation in self._operations.values()
-            if operation.layer_id == layer_id
-            and operation.feed_id == feed_id
-            and operation.entity_id == entity_id
-        ]
+        self,
+        layer_id: str,
+        feed_id: str,
+        entity_id: str,
+        *,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[ReplicatedOverrideOperation]:
+        return paginate(
+            (
+                operation
+                for operation in self._operations.values()
+                if operation.layer_id == layer_id
+                and operation.feed_id == feed_id
+                and operation.entity_id == entity_id
+            ),
+            lambda operation: (operation.recorded_at, operation.operation_id),
+            cursor=cursor,
+            limit=limit,
+        )
 
 
 def finalize_replicated_override_operation(

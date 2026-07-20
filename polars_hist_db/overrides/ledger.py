@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Protocol
 from uuid import uuid4
 
+from .pagination import Page, paginate
 from .types import OverrideOperation, OverrideOperationType, OverrideTypedValue
 
 
@@ -12,8 +13,14 @@ class OverrideLedgerStore(Protocol):
     def append(self, operation: OverrideOperation) -> None: ...
 
     def history_for_entity(
-        self, owner_user_id: str, feed_id: str, entity_id: str
-    ) -> list[OverrideOperation]: ...
+        self,
+        owner_user_id: str,
+        feed_id: str,
+        entity_id: str,
+        *,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[OverrideOperation]: ...
 
 
 class InMemoryOverrideLedgerStore:
@@ -24,15 +31,26 @@ class InMemoryOverrideLedgerStore:
         self._operations.append(operation)
 
     def history_for_entity(
-        self, owner_user_id: str, feed_id: str, entity_id: str
-    ) -> list[OverrideOperation]:
-        return [
-            operation
-            for operation in self._operations
-            if operation.owner_user_id == owner_user_id
-            and operation.feed_id == feed_id
-            and operation.entity_id == entity_id
-        ]
+        self,
+        owner_user_id: str,
+        feed_id: str,
+        entity_id: str,
+        *,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[OverrideOperation]:
+        return paginate(
+            (
+                operation
+                for operation in self._operations
+                if operation.owner_user_id == owner_user_id
+                and operation.feed_id == feed_id
+                and operation.entity_id == entity_id
+            ),
+            _operation_page_key,
+            cursor=cursor,
+            limit=limit,
+        )
 
 
 class OverrideLedger:
@@ -139,7 +157,7 @@ class OverrideLedger:
         self, owner_user_id: str, feed_id: str, entity_id: str
     ) -> list[OverrideOperation]:
         active: dict[str, OverrideOperation] = {}
-        for operation in self.history_for_entity(owner_user_id, feed_id, entity_id):
+        for operation in self._all_history(owner_user_id, feed_id, entity_id):
             if operation.operation_type == "set":
                 active[operation.field_path] = operation
             elif operation.operation_type in {"close", "system_close"}:
@@ -155,14 +173,32 @@ class OverrideLedger:
         return None
 
     def history_for_entity(
-        self, owner_user_id: str, feed_id: str, entity_id: str
-    ) -> list[OverrideOperation]:
-        return self.store.history_for_entity(owner_user_id, feed_id, entity_id)
+        self,
+        owner_user_id: str,
+        feed_id: str,
+        entity_id: str,
+        *,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[OverrideOperation]:
+        return self.store.history_for_entity(
+            owner_user_id,
+            feed_id,
+            entity_id,
+            cursor=cursor,
+            limit=limit,
+        )
 
     def projected_history_for_entity(
-        self, owner_user_id: str, feed_id: str, entity_id: str
-    ) -> list[OverrideOperation]:
-        history = self.history_for_entity(owner_user_id, feed_id, entity_id)
+        self,
+        owner_user_id: str,
+        feed_id: str,
+        entity_id: str,
+        *,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> Page[OverrideOperation]:
+        history = self._all_history(owner_user_id, feed_id, entity_id)
         projected: list[OverrideOperation] = []
         open_sets: dict[str, int] = {}
         for operation in history:
@@ -176,7 +212,25 @@ class OverrideLedger:
                         valid_to=operation.valid_from,
                     )
             projected.append(operation)
-        return projected
+        return paginate(projected, _operation_page_key, cursor=cursor, limit=limit)
+
+    def _all_history(
+        self, owner_user_id: str, feed_id: str, entity_id: str
+    ) -> tuple[OverrideOperation, ...]:
+        operations: list[OverrideOperation] = []
+        cursor = None
+        while True:
+            page = self.history_for_entity(
+                owner_user_id,
+                feed_id,
+                entity_id,
+                cursor=cursor,
+                limit=500,
+            )
+            operations.extend(page.items)
+            if page.next_cursor is None:
+                return tuple(operations)
+            cursor = page.next_cursor
 
     def _operation(
         self,
@@ -244,3 +298,7 @@ class OverrideLedger:
     def _require_timezone(value: datetime, name: str) -> None:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError(f"{name} must be timezone-aware")
+
+
+def _operation_page_key(operation: OverrideOperation) -> tuple[datetime, str]:
+    return operation.recorded_at or operation.valid_from, operation.operation_id
