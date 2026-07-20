@@ -28,6 +28,16 @@ def _table_config_ops(connection: Any) -> Any:
     return XtdbTableConfigOps(connection)
 
 
+def _is_xtdb_adbc_ingest_unavailable(exc: Exception) -> bool:
+    message = str(exc).lower()
+    class_name = exc.__class__.__name__
+    return (
+        class_name in {"NotImplementedError", "NotSupportedError"}
+        and "executeingest" in message
+        and ("not implemented" in message or "not_implemented" in message)
+    )
+
+
 def _validate_identifier(identifier: str) -> str:
     if not _IDENTIFIER_RE.match(identifier):
         raise ValueError(f"Unsupported XTDB identifier: {identifier!r}")
