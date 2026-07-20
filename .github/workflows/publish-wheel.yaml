@@ -11,6 +11,15 @@ on:
     types: [release-published]
   workflow_dispatch:
     inputs:
+      runner:
+        description: Runner pool
+        required: false
+        type: choice
+        default: configured
+        options:
+          - configured
+          - self-hosted
+          - github-hosted
       checkout-ref:
         description: "checkout ref"
         required: false
@@ -26,11 +35,13 @@ jobs:
     with:
       event_name: ${{ toJson(github.event_name) }}
       event: ${{ toJson(github.event) }}
+      runner: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.runner == 'self-hosted' && 'self-hosted' || github.event_name == 'workflow_dispatch' && github.event.inputs.runner == 'github-hosted' && 'ubuntu-latest' || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
 
   main:
     needs: configure
     uses: jr200-labs/github-action-templates/.github/workflows/publish_uv_pypi.yaml@master
     with:
       checkout-ref: ${{ fromJson(needs.configure.outputs.context).checkout-ref }}
+      runner: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.runner == 'self-hosted' && 'self-hosted' || github.event_name == 'workflow_dispatch' && github.event.inputs.runner == 'github-hosted' && 'ubuntu-latest' || fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
     secrets:
       pypi_api_token: ${{ secrets.PYPI_API_TOKEN }}
