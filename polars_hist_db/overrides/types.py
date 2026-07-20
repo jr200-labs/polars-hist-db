@@ -76,3 +76,12 @@ class LayerCompositionStoreConfig:
 class OverridePurgeStoreConfig:
     schema: str = "overrides"
     metadata_table: str = "override_purge_metadata"
+
+
+@dataclass(frozen=True)
+class ArrowOverrideStoreConfig:
+    schema: str = "overrides"
+    heads_table: str = "arrow_override_layer_heads"
+    operations_table: str = "arrow_override_operations"
+    references_table: str = "arrow_override_operation_references"
+    string_list_values_table: str = "arrow_override_string_list_values"

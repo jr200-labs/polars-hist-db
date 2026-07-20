@@ -16,19 +16,20 @@ The concrete signal wired today is `record_uploader_batch`, called from
 * `uploader_rows_dropped_total{table, subject}` — derived: received minus
   written. Emitted separately so an alert can key on it directly.
 
-Alerts consuming these counters live in `private_consumer-iac` (PrometheusRule).
-The canonical "uploader stuck" shape is `rate(received) > 0 AND
-rate(written) == 0`.
+Deployment-specific alerting belongs outside this reusable library. A canonical
+"uploader stuck" signal is `rate(received) > 0 AND rate(written) == 0`.
 """
 
 from __future__ import annotations
 
 import logging
+from contextlib import AbstractContextManager, nullcontext
 from typing import Any
 
 LOGGER = logging.getLogger(__name__)
 
 _COUNTERS: dict[str, Any] = {}
+_HISTOGRAMS: dict[str, Any] = {}
 
 
 def _get_counter(name: str, description: str) -> Any | None:
@@ -55,6 +56,89 @@ def _get_counter(name: str, description: str) -> Any | None:
 def clear_counters() -> None:
     """Reset the counter cache (used by tests)."""
     _COUNTERS.clear()
+    _HISTOGRAMS.clear()
+
+
+def _get_histogram(name: str, description: str, unit: str) -> Any | None:
+    if name in _HISTOGRAMS:
+        return _HISTOGRAMS[name]
+    try:
+        from opentelemetry import metrics
+
+        histogram = metrics.get_meter("polars_hist_db.overrides").create_histogram(
+            name, description=description, unit=unit
+        )
+    except Exception:  # noqa: BLE001 - telemetry is best-effort
+        histogram = None
+    _HISTOGRAMS[name] = histogram
+    return histogram
+
+
+def arrow_override_sync_span(
+    *, backend: str, pending_rows: int
+) -> AbstractContextManager[Any]:
+    try:
+        from opentelemetry import trace
+
+        return trace.get_tracer("polars_hist_db.overrides").start_as_current_span(
+            "override.arrow.sync",
+            attributes={
+                "override.backend": backend,
+                "override.pending_rows": pending_rows,
+            },
+        )
+    except Exception:  # noqa: BLE001 - telemetry is best-effort
+        return nullcontext(None)
+
+
+def record_arrow_override_sync(
+    *,
+    backend: str,
+    outcome: str,
+    duration_seconds: float,
+    pending: int,
+    accepted: int,
+    duplicates: int,
+    projection_rows: int,
+    conflicts: int,
+) -> None:
+    attrs = {"backend": backend, "outcome": outcome}
+    measurements = (
+        (
+            "override_arrow_sync_duration_seconds",
+            duration_seconds,
+            "Arrow override synchronization latency.",
+            "s",
+        ),
+        (
+            "override_arrow_pending_operations",
+            pending,
+            "Operations presented to an Arrow override synchronization.",
+            "{operation}",
+        ),
+        (
+            "override_arrow_projection_rows",
+            projection_rows,
+            "Projection rows returned by an Arrow override synchronization.",
+            "{row}",
+        ),
+    )
+    counters = (
+        ("override_arrow_operations_accepted_total", accepted),
+        ("override_arrow_operations_duplicate_total", duplicates),
+        ("override_arrow_conflicts_total", conflicts),
+    )
+    try:
+        for name, value, description, unit in measurements:
+            instrument = _get_histogram(name, description, unit)
+            if instrument is not None:
+                instrument.record(value, attributes=attrs)
+        for name, value in counters:
+            instrument = _get_counter(name, "Arrow override synchronization outcomes.")
+            if instrument is not None:
+                instrument.add(value, attributes=attrs)
+    except Exception:  # noqa: BLE001, S110 - telemetry is best-effort
+        pass
 
 
 def record_uploader_batch(

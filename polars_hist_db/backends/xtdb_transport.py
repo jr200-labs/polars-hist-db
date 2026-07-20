@@ -143,6 +143,8 @@ def _xtdb_document_id_columns(table_config: TableConfig) -> list[str]:
 
 
 def _xtdb_json_safe_key_value(value: Any) -> Any:
+    if isinstance(value, bytes):
+        return {"binary_hex": value.hex()}
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, date):
@@ -169,6 +171,8 @@ def _xtdb_composite_document_id(
 
 def _xtdb_cast_type(data_type: str) -> str:
     normalized = data_type.upper()
+    if normalized.startswith(("BINARY", "VARBINARY")) or normalized.endswith("BLOB"):
+        return "VARBINARY"
     if normalized.startswith(("VARCHAR", "CHAR")) or "TEXT" in normalized:
         return "TEXT"
     if normalized in {"JSON", "JSONB"}:
@@ -221,6 +225,8 @@ def _xtdb_cast_type_from_polars(dtype: pl.DataType) -> str:
         )
     if isinstance(dtype, pl.Decimal):
         return f"DECIMAL({dtype.precision},{dtype.scale})"
+    if dtype == pl.Binary:
+        return "VARBINARY"
     if is_polars_type(dtype, pl.String, pl.Utf8, pl.Categorical):
         return "TEXT"
     raise ValueError(

@@ -4,7 +4,7 @@ Examples:
     uv run python benchmarks/xtdb_delta.py
     uv run python benchmarks/xtdb_delta.py --target-rows 50000,5000000
     XTDB_BENCHMARK_DSN=postgresql://... uv run python benchmarks/xtdb_delta.py \
-        --remote-table spire.vessel_info --remote-limit 50000
+        --remote-table example.records --remote-limit 50000
 """
 
 from argparse import ArgumentParser
@@ -19,8 +19,10 @@ from statistics import median
 from time import perf_counter
 from types import SimpleNamespace
 from typing import Any
+from uuid import UUID
 
 import polars as pl
+import pyarrow as pa
 
 from polars_hist_db.backends.xtdb import (
     XtdbStagingOps,
@@ -29,6 +31,12 @@ from polars_hist_db.backends.xtdb import (
 from polars_hist_db.config import DatasetConfig, TableColumnConfig, TableConfig
 from polars_hist_db.config.dataset import TimePartition
 from polars_hist_db.loaders.dsv_input_source import DsvCrawlerInputSource
+from polars_hist_db.overrides import (
+    InMemoryArrowOverrideOperationStore,
+    arrow_override_operation_schema,
+    decode_arrow_override_operations,
+    encode_arrow_override_operations,
+)
 
 
 @dataclass
@@ -294,6 +302,99 @@ def benchmark_time_partitions(
     return median(timings), rows.estimated_size("mb"), partition_count
 
 
+def synthetic_arrow_override_operations(
+    operation_rows: int, scope_count: int
+) -> pa.Table:
+    """Build a deterministic typed operation batch for repeatable CRDT benchmarks."""
+    if operation_rows < 1:
+        raise ValueError("operation rows must be positive")
+    if not 1 <= scope_count <= operation_rows:
+        raise ValueError("scope count must be between one and operation rows")
+    value_fields: dict[str, object] = {
+        field.name: None
+        for field in arrow_override_operation_schema().field("value").type
+    }
+    value_fields["kind"] = "integer"
+    rows = []
+    for index in range(operation_rows):
+        value = {**value_fields, "integer_value": index}
+        rows.append(
+            {
+                "format_version": 1,
+                "operation_id": UUID(int=index + 1).bytes,
+                "change_set_id": UUID(int=operation_rows + index + 1).bytes,
+                "layer_id": None,
+                "generation": None,
+                "layer_revision": None,
+                "feed_id": "benchmark",
+                "entity_id": f"record-{index % scope_count}",
+                "field_path": "value",
+                "operation_type": "set",
+                "value": value,
+                "unit": None,
+                "supersedes_ids": [],
+                "removes_ids": [],
+                "valid_from": datetime(2026, 1, 1, tzinfo=timezone.utc),
+                "valid_to": None,
+                "observed_value": None,
+                "source_drift": False,
+                "comment": None,
+                "actor_subject": None,
+                "actor_display_name": None,
+                "recorded_at": None,
+                "payload_hash": None,
+            }
+        )
+    return pa.Table.from_pylist(rows, schema=arrow_override_operation_schema())
+
+
+def benchmark_arrow_override_crdt(
+    operation_rows: int, scope_count: int, repeats: int
+) -> tuple[float, float, float, int, int]:
+    """Measure typed IPC and authoritative sync/projection independently."""
+    proposed = synthetic_arrow_override_operations(operation_rows, scope_count)
+    layer_id = UUID(int=(1 << 128) - 1)
+    ipc_timings: list[float] = []
+    sync_timings: list[float] = []
+    encoded_bytes = 0
+    projection_rows = 0
+    conflicts = 0
+    for _ in range(repeats):
+        gc.collect()
+        started = perf_counter()
+        encoded = encode_arrow_override_operations(proposed)
+        decoded = decode_arrow_override_operations(encoded)
+        ipc_timings.append(perf_counter() - started)
+        assert decoded.equals(proposed)
+        encoded_bytes = len(encoded)
+
+        store = InMemoryArrowOverrideOperationStore()
+        store.create_layer(layer_id)
+        started = perf_counter()
+        result = store.sync(
+            layer_id=layer_id,
+            generation=1,
+            known_revision=0,
+            pending=decoded,
+            actor_subject="benchmark-subject",
+            actor_display_name=None,
+            recorded_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+        )
+        sync_timings.append(perf_counter() - started)
+        projection_rows = result.projection_delta.num_rows
+        conflicts = (
+            result.projection_delta["frontier_state"].to_pylist().count("conflict")
+        )
+        assert projection_rows == scope_count
+    return (
+        median(ipc_timings),
+        median(sync_timings),
+        encoded_bytes / (1024 * 1024),
+        projection_rows,
+        conflicts,
+    )
+
+
 def benchmark_remote_sample(dsn: str, table: str, limit: int) -> None:
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*", table):
         raise ValueError("remote table must be an unquoted schema.table identifier")
@@ -322,6 +423,11 @@ def main() -> None:
     parser.add_argument("--fk-match-fractions", default="0,0.5,1")
     parser.add_argument("--partition-rows", type=int, default=500_000)
     parser.add_argument("--partition-buckets", type=int, default=365)
+    parser.add_argument(
+        "--override-cases",
+        default="1000:1000,10000:10000,10000:1000",
+        help="comma-separated operation_rows:scope_count cases",
+    )
     parser.add_argument("--remote-table")
     parser.add_argument("--remote-limit", type=int, default=50_000)
     parser.add_argument("--json-output")
@@ -408,6 +514,40 @@ def main() -> None:
             "value": partition_elapsed,
         }
     )
+
+    print(
+        "override_rows,scope_count,ipc_mb,ipc_roundtrip_seconds,"
+        "sync_projection_seconds,projection_rows,conflicts"
+    )
+    for case in args.override_cases.split(","):
+        operation_rows, scope_count = (int(value) for value in case.split(":"))
+        ipc_elapsed, sync_elapsed, ipc_mb, projected, conflicts = (
+            benchmark_arrow_override_crdt(operation_rows, scope_count, args.repeats)
+        )
+        print(
+            f"{operation_rows},{scope_count},{ipc_mb:.2f},{ipc_elapsed:.3f},"
+            f"{sync_elapsed:.3f},{projected},{conflicts}"
+        )
+        results.extend(
+            [
+                {
+                    "name": (
+                        f"Arrow override IPC {operation_rows} operations / "
+                        f"{scope_count} scopes"
+                    ),
+                    "unit": "seconds",
+                    "value": ipc_elapsed,
+                },
+                {
+                    "name": (
+                        f"Arrow override sync {operation_rows} operations / "
+                        f"{scope_count} scopes"
+                    ),
+                    "unit": "seconds",
+                    "value": sync_elapsed,
+                },
+            ]
+        )
 
     if args.remote_table:
         dsn = os.environ.get("XTDB_BENCHMARK_DSN")

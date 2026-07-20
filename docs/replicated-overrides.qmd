@@ -1,21 +1,93 @@
 ---
-title: "Yjs-compatible replicated documents and overrides"
+title: "Replicated documents and Arrow-native overrides"
 ---
 
 ## Scope
 
-`polars-hist-db` provides backend-independent persistence for Yjs-compatible
-document updates and snapshots, plus a reusable immutable operation model for
-valid-time overrides. An optional access registry persists document lifecycle
-and opaque group-to-role grants. Applications own authentication,
-authorization policy, transport, field declarations, and business conflict
-policy.
+`polars-hist-db` provides Yjs-compatible documents for collaborative drafts and
+an Arrow-native immutable operation-set CRDT for typed valid-time overrides.
+The Arrow operation stream is the recommended override data plane. Arrow is the
+canonical in-process and wire representation; normalized native database
+columns are the durable representation. JSON is not an intermediate override
+representation.
+
+An optional access registry persists document lifecycle and opaque
+group-to-role grants. Applications own authentication, authorization policy,
+transport, field declarations, and business conflict policy.
 
 The implementation uses the maintained Yjs/Yrs ecosystem instead of
 implementing a CRDT algorithm. Browser clients use Yjs. Python services use
 `pycrdt`, whose Yrs updates are binary-compatible with Yjs. Binary updates are
 commutative, associative, and idempotent, so every backend stores the same
 protocol rather than implementing its own merge rules.
+
+## Recommended typed operation data plane
+
+The Arrow contract is an observed-remove operation set. Each client proposal
+has a UUID operation id and change-set id, typed value, valid-time interval,
+and explicit references to operations it supersedes or removes. The accepting
+service supplies the layer, generation, monotonic layer revision, verified
+actor snapshot, authoritative recorded time, and a SHA-256 hash over canonical
+typed content. Replaying the same id and content is a duplicate; reusing an id
+for different content is rejected.
+
+Values use a closed Arrow struct with dedicated slots for strings, booleans,
+integers, decimals, UTC timestamps, dates, durations, binary values, and
+string lists. Versioned extension values carry an explicit schema id and binary
+payload. Exactly one slot must be populated. Type conversion is therefore
+explicit at the application boundary rather than inferred during persistence.
+
+Synchronization returns Arrow acknowledgement and effective-projection tables.
+Acknowledgements contain accepted or duplicate operation ids, authoritative
+revisions, and payload hashes. The projection contains only scopes changed
+since the caller's known revision. Projection groups the operation set once by
+`(feed_id, entity_id, field_path)` and removes explicit supersessions and
+removals at the requested valid time. No remaining value is `none`, one
+distinct value is `clean`, and several distinct values are `conflict`. Arrival
+order and database row order never choose a winner.
+
+Each layer has an independent generation and revision head. A compliance
+rebuild advances the generation and physically removes the previous
+generation. Old clients fail with `generation_changed`. An atomic
+compare-and-swap advances the revision exactly once for an accepted batch.
+MariaDB uses a transaction and conditional head update. XTDB uses one
+transaction containing `ASSERT`, native typed inserts, and the head update. The
+in-memory implementation follows the same repository contract.
+
+Durable storage is normalized into four configurable tables:
+
+```text
+arrow_override_layer_heads
+arrow_override_operations
+arrow_override_operation_references
+arrow_override_string_list_values
+```
+
+UUIDs and hashes use fixed binary columns. Temporal, decimal, boolean, binary,
+and numeric values use native database types. References and repeated strings
+use child rows with stable ordinals. Reconstructing canonical Arrow uses typed
+Polars frames and Arrow casts; operation rows are never round-tripped through
+JSON dictionaries.
+
+Repository reads are bounded by operation ids, revisions, and changed scopes.
+The projector indexes scopes in one pass. Benchmarks track typed IPC and full
+synchronization for clean and conflicting frontiers. Optional telemetry records
+low-cardinality backend, outcome, duration, row-count, duplicate, and conflict
+measurements. Logs and spans exclude values, comments, identities, tokens,
+group membership, and layer identifiers.
+
+The public entry point is `backend.arrow_overrides(connection, config)`. Every
+backend shares the canonical schemas, validator, hasher, projector,
+acknowledgement format, and repository contract. Transport adapters carry Arrow
+IPC bytes and do not reinterpret values.
+
+## Yjs compatibility path
+
+The document model below remains supported for collaborative document state
+and existing operation-map integrations. New typed override flows should keep
+mutable draft text in Yjs and publish immutable changes into the Arrow operation
+data plane. This prevents Yjs/JSON scalar encoding from becoming authoritative
+for database value types while preserving offline draft editing.
 
 ## Document model
 

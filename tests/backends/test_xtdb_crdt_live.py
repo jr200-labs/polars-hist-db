@@ -12,14 +12,18 @@ from sqlalchemy import Engine, text
 
 from polars_hist_db.backends import DbEngineConfig, XtdbBackend
 from polars_hist_db.overrides import (
+    ArrowOverrideStoreConfig,
     CrdtDocumentStoreConfig,
     OverrideLedgerConfig,
     build_crdt_document_table_config,
     build_crdt_update_table_config,
     build_override_table_config,
+    build_arrow_override_table_configs,
+    arrow_override_operation_schema,
     override_recorded_order_sql,
     prepare_crdt_update,
 )
+import pyarrow as pa
 
 pytestmark = pytest.mark.integration
 
@@ -182,3 +186,62 @@ def test_xtdb_override_bulk_write_uses_native_timestamp_instants():
     assert all(
         ":instant" in str(data_type) for data_type in timestamp_types.values()
     ), timestamp_types
+
+
+def test_xtdb_arrow_override_repository_roundtrip() -> None:
+    suffix = uuid4().hex
+    config = ArrowOverrideStoreConfig(
+        schema="public",
+        heads_table=f"arrow_heads_{suffix}",
+        operations_table=f"arrow_operations_{suffix}",
+        references_table=f"arrow_references_{suffix}",
+        string_list_values_table=f"arrow_lists_{suffix}",
+    )
+    value = {
+        field.name: "ready"
+        if field.name == "string_value"
+        else "string"
+        if field.name == "kind"
+        else None
+        for field in arrow_override_operation_schema().field("value").type
+    }
+    proposal = pa.Table.from_pylist(
+        [
+            {
+                "format_version": 1,
+                "operation_id": uuid4().bytes,
+                "change_set_id": uuid4().bytes,
+                "feed_id": "records",
+                "entity_id": "record-1",
+                "field_path": "status",
+                "operation_type": "set",
+                "value": value,
+                "supersedes_ids": [],
+                "removes_ids": [],
+                "valid_from": datetime.now(timezone.utc) - timedelta(seconds=1),
+                "source_drift": False,
+            }
+        ],
+        schema=arrow_override_operation_schema(),
+    )
+    layer_id = uuid4()
+    with _xtdb_engine() as engine:
+        with engine.connect() as connection:
+            backend = XtdbBackend()
+            for table_config in build_arrow_override_table_configs(config):
+                backend.table_configs(connection).create(table_config)
+            store = backend.arrow_overrides(connection, config)
+            store.repository.create_layer(layer_id)
+            result = store.sync(
+                layer_id=layer_id,
+                generation=1,
+                known_revision=0,
+                pending=proposal,
+                actor_subject="subject-1",
+                actor_display_name="Verified Name",
+                recorded_at=datetime.now(timezone.utc),
+            )
+
+    assert result.revision == 1
+    assert result.projection_delta["frontier_state"].to_pylist() == ["clean"]
+    assert result.projection_delta["value"][0].as_py()["string_value"] == "ready"

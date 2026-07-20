@@ -67,12 +67,14 @@ from .xtdb_transport import (
 
 if TYPE_CHECKING:
     from ..overrides import (
+        ArrowOverrideStoreConfig,
         CrdtDocumentStoreConfig,
         DocumentAccessStoreConfig,
         LayerCompositionStoreConfig,
         OverrideLedgerConfig,
     )
     from ..overrides.xtdb import XtdbDocumentAccessStore
+    from ..overrides.arrow import RepositoryArrowOverrideOperationStore
     from ..overrides.xtdb import XtdbLayerCompositionStore
     from ..overrides.xtdb import XtdbCrdtDocumentStore
 
@@ -704,6 +706,8 @@ def _xtdb_sql_literal(value: Any, cast_type: str) -> str:
     if isinstance(value, date):
         escaped = value.isoformat().replace("'", "''")
         return f"'{escaped}'::{cast_type}"
+    if isinstance(value, bytes):
+        return f"X('{value.hex()}')::{cast_type}"
 
     escaped = str(value).replace("'", "''")
     return f"'{escaped}'::{cast_type}"
@@ -1892,6 +1896,16 @@ class XtdbBackend:
         from ..overrides.xtdb import XtdbCrdtDocumentStore
 
         return XtdbCrdtDocumentStore(connection, document_store, projection)
+
+    def arrow_overrides(
+        self, connection: Any, config: "ArrowOverrideStoreConfig"
+    ) -> "RepositoryArrowOverrideOperationStore":
+        from ..overrides.arrow import RepositoryArrowOverrideOperationStore
+        from ..overrides.arrow_xtdb import XtdbArrowOverrideRepository
+
+        return RepositoryArrowOverrideOperationStore(
+            XtdbArrowOverrideRepository(connection, config)
+        )
 
     def document_access(
         self, connection: Any, config: "DocumentAccessStoreConfig"

@@ -21,12 +21,14 @@ if TYPE_CHECKING:
     from ..overrides import (
         CrdtDocumentStoreConfig,
         DocumentAccessStoreConfig,
+        ArrowOverrideStoreConfig,
         LayerCompositionStoreConfig,
         OverrideLedgerConfig,
     )
     from ..overrides.sql import MariaDbDocumentAccessStore
     from ..overrides.sql import MariaDbLayerCompositionStore
     from ..overrides.sql import MariaDbCrdtDocumentStore
+    from ..overrides.arrow import RepositoryArrowOverrideOperationStore
 
 
 @dataclass(frozen=True)
@@ -81,6 +83,16 @@ class MariaDbBackend:
         from ..overrides.sql import MariaDbCrdtDocumentStore
 
         return MariaDbCrdtDocumentStore(connection, document_store, projection)
+
+    def arrow_overrides(
+        self, connection: Any, config: "ArrowOverrideStoreConfig"
+    ) -> "RepositoryArrowOverrideOperationStore":
+        from ..overrides.arrow import RepositoryArrowOverrideOperationStore
+        from ..overrides.arrow_sql import MariaDbArrowOverrideRepository
+
+        return RepositoryArrowOverrideOperationStore(
+            MariaDbArrowOverrideRepository(connection, config)
+        )
 
     def document_access(
         self, connection: Any, config: "DocumentAccessStoreConfig"

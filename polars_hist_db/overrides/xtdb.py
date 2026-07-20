@@ -1168,6 +1168,8 @@ def _generation(prepared: PreparedCrdtCommit) -> int:
 
 def _bootstrap_value(data_type: str) -> object:
     normalized = data_type.upper()
+    if normalized.startswith(("BINARY", "VARBINARY")) or normalized.endswith("BLOB"):
+        return b""
     if normalized.startswith(
         (
             "BIGINT",
