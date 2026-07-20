@@ -139,6 +139,7 @@ class TableConfigOps:
         if tbo.table_exists():
             tbl = tbo.get_table_metadata()
             tbl.drop(self.connection, checkfirst=True)
+            TableOps.invalidate_metadata(self.connection, table_schema, table_name)
             LOGGER.info("dropped table %s", table_name)
 
     def _create_temporal(
@@ -179,6 +180,9 @@ class TableConfigOps:
                     f"ALTER TABLE {tbo.table_schema}.{tbo.table_name} "
                     f"ADD COLUMN {column_sql}"
                 ),
+            )
+            TableOps.invalidate_metadata(
+                self.connection, tbo.table_schema, tbo.table_name
             )
 
     def _create_nontemporal(
@@ -252,6 +256,7 @@ class TableConfigOps:
         DbOps(self.connection).execute_sqlalchemy(
             f"sql.base.table_create.{table_name}", create_stmt
         )
+        TableOps.invalidate_metadata(self.connection, tbo.table_schema, tbo.table_name)
 
         LOGGER.debug("created table %s.%s", tbo.table_schema, tbo.table_name)
 
