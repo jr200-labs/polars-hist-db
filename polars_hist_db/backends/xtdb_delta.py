@@ -8,11 +8,14 @@ from ..config import DeltaConfig, TableConfig, ValidTimeConfig
 from ..types import PolarsType
 from .xtdb_arrow import (
     _prepare_xtdb_insert_dataframe,
-    _xtdb_cast_type,
     _xtdb_document_id_columns,
 )
 from .xtdb_query import _xtdb_temporal_basis_clause
-from .xtdb_dataframe import XtdbAdbcDataframeOps, XtdbDataframeOps
+from .xtdb_dataframe import (
+    _uploaded_xtdb_relation,
+    XtdbAdbcDataframeOps,
+    XtdbDataframeOps,
+)
 from .xtdb_staging import _fill_xtdb_defaults, _materialize_xtdb_missing_columns
 from .xtdb_transport import (
     _execute_xtdb_dml,
@@ -20,7 +23,6 @@ from .xtdb_transport import (
     _is_xtdb_table_not_found_error,
     _qualified_table_name,
     _rollback_xtdb_connection,
-    _xtdb_sql_literal,
     _xtdb_timestamp_literal,
 )
 
@@ -167,17 +169,6 @@ def _apply_xtdb_duplicate_policy(
     return indexed_df.join(selected_rows, on=row_index, how="inner").drop(row_index)
 
 
-def _xtdb_document_id_cast_type(table_config: TableConfig) -> str:
-    document_id_columns = _xtdb_document_id_columns(table_config)
-    if len(document_id_columns) > 1:
-        return "TEXT"
-    source_key = document_id_columns[0]
-    for column in table_config.columns:
-        if column.name == source_key:
-            return _xtdb_cast_type(column.data_type)
-    return "TEXT"
-
-
 def _delete_xtdb_missing_rows(
     df: pl.DataFrame,
     table_schema: str,
@@ -192,41 +183,49 @@ def _delete_xtdb_missing_rows(
         df.select(document_id_columns).unique(maintain_order=True),
         table_config,
     ).get_column("_id")
-    id_cast_type = _xtdb_document_id_cast_type(table_config)
-    ids_sql = ", ".join(
-        _xtdb_sql_literal(value, id_cast_type) for value in incoming_ids
-    )
-    missing_predicate = f"_id NOT IN ({ids_sql})" if ids_sql else "TRUE"
     table_sql = _qualified_table_name(table_schema, table_name)
-    try:
-        missing_count = int(
-            dataframe_ops.from_raw_sql(
-                "SELECT COUNT(*) AS missing_count FROM "
-                f"{table_sql}{_xtdb_temporal_basis_clause(update_time)} "
-                f"WHERE {missing_predicate}"
-            ).item()
-        )
-    except Exception as exc:
-        if _is_xtdb_table_not_found_error(exc):
-            _rollback_xtdb_connection(dataframe_ops.connection)
+
+    def delete_missing(missing_predicate: str) -> int:
+        try:
+            missing_count = int(
+                dataframe_ops.from_raw_sql(
+                    "SELECT COUNT(*) AS missing_count FROM "
+                    f"{table_sql}{_xtdb_temporal_basis_clause(update_time)} "
+                    f"WHERE {missing_predicate}"
+                ).item()
+            )
+        except Exception as exc:
+            if _is_xtdb_table_not_found_error(exc):
+                _rollback_xtdb_connection(dataframe_ops.connection)
+                return 0
+            raise
+        if missing_count == 0:
             return 0
-        raise
-    if missing_count == 0:
-        return 0
-    valid_time_clause = ""
-    close_time = _xtdb_dropout_close_time(df, dropout_close_time, update_time)
-    if close_time is not None:
-        valid_time_clause = (
-            " FOR PORTION OF VALID_TIME FROM "
-            f"{_xtdb_timestamp_literal(close_time)} TO NULL"
+        valid_time_clause = ""
+        close_time = _xtdb_dropout_close_time(df, dropout_close_time, update_time)
+        if close_time is not None:
+            valid_time_clause = (
+                " FOR PORTION OF VALID_TIME FROM "
+                f"{_xtdb_timestamp_literal(close_time)} TO NULL"
+            )
+        delete_sql = (
+            f"DELETE FROM {table_sql}{valid_time_clause} WHERE {missing_predicate}"
         )
-    delete_sql = f"DELETE FROM {table_sql}{valid_time_clause} WHERE {missing_predicate}"
-    _execute_xtdb_dml(
-        dataframe_ops.connection,
-        delete_sql,
-        system_time=update_time,
-    )
-    return missing_count
+        _execute_xtdb_dml(
+            dataframe_ops.connection,
+            delete_sql,
+            system_time=update_time,
+        )
+        return missing_count
+
+    if incoming_ids.is_empty():
+        return delete_missing("TRUE")
+    with _uploaded_xtdb_relation(
+        dataframe_ops,
+        pl.DataFrame({"_id": incoming_ids}),
+        table_schema,
+    ) as key_table:
+        return delete_missing(f"_id NOT IN (SELECT _id FROM {key_table})")
 
 
 def _xtdb_dropout_close_time(

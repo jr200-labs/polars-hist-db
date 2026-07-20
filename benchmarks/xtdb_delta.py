@@ -43,6 +43,16 @@ from polars_hist_db.overrides import (
 class CurrentRows:
     frame: pl.DataFrame
 
+    @property
+    def connection(self) -> "CurrentRows":
+        return self
+
+    def table_insert(self, df: pl.DataFrame, *_args: Any, **_kwargs: Any) -> int:
+        return len(df)
+
+    def execute(self, *_args: Any, **_kwargs: Any) -> None:
+        pass
+
     def from_raw_sql(self, sql: str, *_args: Any) -> pl.DataFrame:
         if "__xtdb_minimum_id" in sql:
             return pl.DataFrame(

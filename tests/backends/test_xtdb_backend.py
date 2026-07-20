@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from unittest.mock import Mock
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
@@ -29,6 +30,11 @@ from polars_hist_db.config import (
 from polars_hist_db.overrides import CrdtDocumentStoreConfig, OverrideLedgerConfig
 
 _NON_TEMPORAL_VALID_FROM = _XTDB_NON_TEMPORAL_VALID_FROM
+
+
+@contextmanager
+def _uploaded_keys(dataframe_ops, df, table_schema):
+    yield f"{table_schema}.__uploaded_keys"
 
 
 def test_xtdb_casts_mediumtext_as_text():
@@ -187,7 +193,10 @@ def test_xtdb_temporal_upsert_rejects_manual_finality():
         )
 
 
-def test_xtdb_temporal_upsert_dropout_deletes_missing_current_keys():
+def test_xtdb_temporal_upsert_dropout_deletes_missing_current_keys(monkeypatch):
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb_delta._uploaded_xtdb_relation", _uploaded_keys
+    )
     backend = XtdbBackend()
     driver_connection = Mock()
     connection = Mock()
@@ -217,13 +226,13 @@ def test_xtdb_temporal_upsert_dropout_deletes_missing_current_keys():
     assert result == 2
     assert ops.from_raw_sql.call_args.args[0] == (
         "SELECT COUNT(*) AS missing_count FROM test.records "
-        "WHERE _id NOT IN (1::BIGINT)"
+        "WHERE _id NOT IN (SELECT _id FROM test.__uploaded_keys)"
     )
     executed_sql = [call.args[0] for call in driver_connection.execute.call_args_list]
     assert executed_sql[1] == (
         "DELETE FROM test.records FOR PORTION OF VALID_TIME FROM "
         "TIMESTAMP WITH TIME ZONE '1970-01-01T00:00:00+00:00' TO NULL "
-        "WHERE _id NOT IN (1::BIGINT)"
+        "WHERE _id NOT IN (SELECT _id FROM test.__uploaded_keys)"
     )
     insert_call = driver_connection.cursor.return_value.executemany.call_args
     assert insert_call.args[0] == (
@@ -234,7 +243,10 @@ def test_xtdb_temporal_upsert_dropout_deletes_missing_current_keys():
     assert insert_call.args[1] == [(1, 1, "Alpha", _NON_TEMPORAL_VALID_FROM)]
 
 
-def test_xtdb_temporal_upsert_dropout_closes_missing_keys_at_valid_time():
+def test_xtdb_temporal_upsert_dropout_closes_missing_keys_at_valid_time(monkeypatch):
+    monkeypatch.setattr(
+        "polars_hist_db.backends.xtdb_delta._uploaded_xtdb_relation", _uploaded_keys
+    )
     backend = XtdbBackend()
     driver_connection = Mock()
     connection = Mock()
@@ -272,7 +284,7 @@ def test_xtdb_temporal_upsert_dropout_closes_missing_keys_at_valid_time():
     assert executed_sql[1] == (
         "DELETE FROM test.records FOR PORTION OF VALID_TIME FROM "
         "TIMESTAMP WITH TIME ZONE '2030-01-02T00:00:00+00:00' TO NULL "
-        "WHERE _id NOT IN (1::BIGINT)"
+        "WHERE _id NOT IN (SELECT _id FROM test.__uploaded_keys)"
     )
 
 
