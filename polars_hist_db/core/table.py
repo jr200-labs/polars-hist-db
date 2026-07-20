@@ -20,6 +20,7 @@ from .db import DbOps
 
 
 LOGGER = logging.getLogger(__name__)
+_TABLE_METADATA_CACHE_ATTR = "_polars_hist_db_table_metadata_cache"
 
 
 class TableOps:
@@ -27,6 +28,20 @@ class TableOps:
         self.connection = connection
         self.table_schema = table_schema
         self.table_name = table_name
+
+    @staticmethod
+    def invalidate_metadata(
+        connection: Connection,
+        table_schema: str | None = None,
+        table_name: str | None = None,
+    ) -> None:
+        cache = getattr(connection, _TABLE_METADATA_CACHE_ATTR, None)
+        if not isinstance(cache, dict):
+            return
+        if table_schema is None or table_name is None:
+            cache.clear()
+            return
+        cache.pop((table_schema, table_name), None)
 
     def enable_system_versioning(
         self,
@@ -46,6 +61,7 @@ class TableOps:
         result = DbOps(self.connection).execute_sqlalchemy(
             "sql.op.enable_system_versioning", text(sql)
         )
+        self.invalidate_metadata(self.connection, self.table_schema, self.table_name)
         LOGGER.debug("enabled system versioning %s", result)
 
     def get_table_metadata(
@@ -56,6 +72,15 @@ class TableOps:
         if not autoload_metadata:
             return Table(self.table_name, metadata)
 
+        cache = getattr(self.connection, _TABLE_METADATA_CACHE_ATTR, None)
+        if not isinstance(cache, dict):
+            cache = {}
+            setattr(self.connection, _TABLE_METADATA_CACHE_ATTR, cache)
+        cache_key = (self.table_schema, self.table_name)
+        cached = cache.get(cache_key)
+        if isinstance(cached, Table):
+            return cached
+
         with warnings.catch_warnings():
             # skip this annoying SQLAlchemy warning:
             # SAWarning: Unknown schema content: '  PERIOD FOR SYSTEM_TIME (`__valid_from`, `__valid_to`),'
@@ -64,6 +89,7 @@ class TableOps:
 
             tbl = Table(self.table_name, metadata, autoload_with=self.connection)
 
+        cache[cache_key] = tbl
         return tbl
 
     def row_count(self) -> int:
