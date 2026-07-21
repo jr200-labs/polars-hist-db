@@ -16,6 +16,7 @@ from .xtdb_transport import (
     _execute_xtdb_dml,
     _qualified_table_name,
     _validate_identifier,
+    _xtdb_buffering_paused,
     _xtdb_column_identifier,
     _xtdb_parameter_value,
 )
@@ -398,31 +399,32 @@ def _uploaded_xtdb_relation(
             pl.col("_id").cast(pl.Int64)
         )
 
-    failed = False
-    try:
-        dataframe_ops.table_insert(upload_df, table_schema, table_name)
-        yield table_sql
-    except BaseException:
-        failed = True
-        raise
-    finally:
+    with _xtdb_buffering_paused(dataframe_ops.connection):
+        failed = False
         try:
-            if isinstance(dataframe_ops, XtdbAdbcDataframeOps):
-                with dataframe_ops.connection.cursor() as cursor:
-                    cursor.execute(f"ERASE FROM {table_sql}")
-            else:
-                _execute_xtdb_dml(
-                    dataframe_ops.connection,
-                    f"ERASE FROM {table_sql}",
-                )
-        except Exception as exc:
-            if _is_xtdb_table_not_found_error(exc):
-                pass
-            elif failed:
-                LOGGER.warning(
-                    "Failed to erase XTDB uploaded key relation %s",
-                    table_sql,
-                    exc_info=True,
-                )
-            else:
-                raise
+            dataframe_ops.table_insert(upload_df, table_schema, table_name)
+            yield table_sql
+        except BaseException:
+            failed = True
+            raise
+        finally:
+            try:
+                if isinstance(dataframe_ops, XtdbAdbcDataframeOps):
+                    with dataframe_ops.connection.cursor() as cursor:
+                        cursor.execute(f"ERASE FROM {table_sql}")
+                else:
+                    _execute_xtdb_dml(
+                        dataframe_ops.connection,
+                        f"ERASE FROM {table_sql}",
+                    )
+            except Exception as exc:
+                if _is_xtdb_table_not_found_error(exc):
+                    pass
+                elif failed:
+                    LOGGER.warning(
+                        "Failed to erase XTDB uploaded key relation %s",
+                        table_sql,
+                        exc_info=True,
+                    )
+                else:
+                    raise

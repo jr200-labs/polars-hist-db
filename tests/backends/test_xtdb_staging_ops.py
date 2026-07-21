@@ -10,6 +10,8 @@ from polars_hist_db.backends.xtdb import (
     XtdbBackend,
     XtdbStagingOps,
     _xtdb_deduced_foreign_key_payload,
+    _xtdb_deduced_numeric_foreign_key_ids,
+    _xtdb_integer_bits,
 )
 from polars_hist_db.config import (
     DatasetConfig,
@@ -35,6 +37,26 @@ def _empty_numeric_key_occupancy():
 @contextmanager
 def _uploaded_keys(dataframe_ops, df, table_schema):
     yield f"{table_schema}.__uploaded_keys"
+
+
+@pytest.mark.parametrize(
+    ("sql_type", "expected_bits"),
+    [("TINYINT", 8), ("SMALLINT", 16), ("INT", 32), ("BIGINT", 64)],
+)
+def test_xtdb_generated_numeric_keys_fit_configured_integer_width(
+    sql_type, expected_bits
+):
+    table = TableConfig(
+        schema="ref",
+        name="parents",
+        columns=[TableColumnConfig("parents", "id", sql_type)],
+    )
+
+    generated = _xtdb_deduced_numeric_foreign_key_ids(
+        pl.Series(["xtdb-fk-v1:test"]), _xtdb_integer_bits(table, "id") - 1
+    ).item()
+
+    assert -(1 << (expected_bits - 1)) <= generated < 0
 
 
 @pytest.fixture(autouse=True)

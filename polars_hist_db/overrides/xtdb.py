@@ -666,9 +666,11 @@ class XtdbDocumentAccessStore:
         if allow_existing:
             existing = self._by_group_and_name(owning_group, normalized_name)
             if existing is not None:
-                return _existing_result(
+                return self._record_existing(
+                    idempotency_key,
+                    payload,
+                    recorded_at,
                     existing,
-                    self._all_grants(existing.document_id),
                     owning_group,
                 )
         if len({grant.grant_id for grant in grants}) != len(grants) or len(
@@ -718,9 +720,11 @@ class XtdbDocumentAccessStore:
             if allow_existing and str(exc) == "document name already exists":
                 existing = self._by_group_and_name(owning_group, normalized_name)
                 if existing is not None:
-                    return _existing_result(
+                    return self._record_existing(
+                        idempotency_key,
+                        payload,
+                        recorded_at,
                         existing,
-                        self._all_grants(existing.document_id),
                         owning_group,
                     )
             raise
@@ -913,6 +917,31 @@ class XtdbDocumentAccessStore:
 
     def _command_assertion(self, key: str) -> str:
         return f"ASSERT NOT EXISTS (SELECT 1 FROM {_table_name(self.commands)} WHERE idempotency_key = {_literal(key, 'VARCHAR(128)')}), 'idempotency key already exists'"
+
+    def _record_existing(
+        self,
+        key: str,
+        payload: str,
+        recorded_at: datetime,
+        document: AccessDocument,
+        owning_group: str | None,
+    ) -> AccessMutationResult:
+        result = _existing_result(
+            document,
+            self._all_grants(document.document_id),
+            owning_group,
+        )
+        duplicate = self._run(
+            [
+                self._command_assertion(key),
+                self._command_insert(key, payload, "create", result, recorded_at),
+            ],
+            key,
+            payload,
+            document.document_id,
+            None,
+        )
+        return result if duplicate is None else duplicate
 
     def _active_assertion(self, document_id: str, revision: int) -> str:
         return (

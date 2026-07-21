@@ -41,6 +41,8 @@ from .xtdb_transport import (
     _close_xtdb_adbc_connection,
     _create_xtdb_adbc_connection,
     _create_xtdb_engine,
+    _xtdb_transaction_active,
+    _xtdb_buffered_transaction_scope,
     _xtdb_adbc_uri,
     _xtdb_connection_scope,
 )
@@ -96,6 +98,9 @@ class XtdbBackend:
 
     def connection_scope(self, engine: Engine) -> Any:
         return _xtdb_connection_scope(engine)
+
+    def ingest_transaction(self, connection: Any, system_time: datetime | None) -> Any:
+        return _xtdb_buffered_transaction_scope(connection, system_time)
 
     def adbc_uri(self, config: DbEngineConfig) -> str:
         return _xtdb_adbc_uri(config)
@@ -187,7 +192,9 @@ class XtdbBackend:
         return XtdbStagingOps(
             connection,
             max_rows_per_insert=self.max_rows_per_insert,
-            adbc_connection=ingest_connection,
+            adbc_connection=(
+                None if _xtdb_transaction_active(connection) else ingest_connection
+            ),
         )
 
     def time_hint_clause(self, time_hint: TimeHint) -> str | None:

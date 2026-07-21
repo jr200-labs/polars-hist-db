@@ -1,10 +1,65 @@
 from types import SimpleNamespace
+from threading import Event
+import asyncio
+from contextlib import nullcontext
+from datetime import datetime, timezone
 
 import pytest
 
 from polars_hist_db.loaders.input_source import BatchFinalizer
-from polars_hist_db.dataset.scrape import try_run_pipeline_as_transaction
+from polars_hist_db.dataset.scrape import (
+    _run_pipeline_as_transaction,
+    try_run_pipeline_as_transaction,
+)
+from polars_hist_db.utils import NonRetryableException
 from polars_hist_db.types import TypeContractError
+
+
+@pytest.mark.asyncio
+async def test_pipeline_cancellation_waits_for_started_thread(monkeypatch):
+    started = Event()
+    release = Event()
+
+    def run_batch(*args):
+        started.set()
+        release.wait()
+
+    monkeypatch.setattr(
+        "polars_hist_db.dataset.scrape._run_pipeline_as_transaction", run_batch
+    )
+    task = asyncio.create_task(
+        try_run_pipeline_as_transaction(
+            [], object(), object(), object(), BatchFinalizer()
+        )
+    )
+    assert await asyncio.to_thread(started.wait, 1)
+
+    task.cancel()
+    await asyncio.sleep(0)
+    assert not task.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+def test_xtdb_atomic_batch_rejects_multiple_system_times():
+    backend = SimpleNamespace(
+        name="xtdb", connection_scope=lambda engine: nullcontext(object())
+    )
+    partitions = [
+        (datetime(2026, 1, 1, tzinfo=timezone.utc), object()),
+        (datetime(2026, 1, 2, tzinfo=timezone.utc), object()),
+    ]
+
+    with pytest.raises(NonRetryableException, match="one system-time"):
+        _run_pipeline_as_transaction(
+            partitions,
+            object(),
+            object(),
+            object(),
+            BatchFinalizer(),
+            backend=backend,
+        )
 
 
 @pytest.mark.asyncio

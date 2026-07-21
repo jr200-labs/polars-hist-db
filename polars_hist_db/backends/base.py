@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
+from datetime import datetime
 from dataclasses import dataclass
 import re
 from typing import TYPE_CHECKING, Any, Protocol
@@ -72,6 +73,10 @@ class HistoricalDbBackend(Protocol):
     def connection_scope(self, engine: Any) -> AbstractContextManager[Any]:
         """Open a backend-correct connection and commit successful work."""
         ...
+
+    def ingest_transaction(
+        self, connection: Any, system_time: datetime | None
+    ) -> AbstractContextManager[Any]: ...
 
     def open_ingest_connection(self, config: DbEngineConfig) -> Any | None:
         """Open an optional backend-specific bulk-ingest connection."""

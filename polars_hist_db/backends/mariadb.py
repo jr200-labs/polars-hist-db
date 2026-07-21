@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import nullcontext
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import create_engine, text
@@ -53,6 +55,9 @@ class MariaDbBackend:
     def connection_scope(self, engine: Engine) -> Any:
         """Open one atomic MariaDB unit of work."""
         return engine.begin()
+
+    def ingest_transaction(self, connection: Any, system_time: datetime | None) -> Any:
+        return nullcontext()
 
     def open_ingest_connection(self, config: DbEngineConfig) -> None:
         return None

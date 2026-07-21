@@ -15,6 +15,7 @@ from polars_hist_db.backends.xtdb import (
     XtdbTableConfigOps,
     _execute_xtdb_dml,
     _execute_xtdb_transaction,
+    _xtdb_transaction_scope,
     _xtdb_cast_type,
     _xtdb_declared_columns,
     _xtdb_physical_type_family,
@@ -26,6 +27,10 @@ from polars_hist_db.backends.xtdb_arrow import (
     _xtdb_insert_casts,
 )
 from polars_hist_db.backends.xtdb_query import _xtdb_single_primary_key_alias
+from polars_hist_db.backends.xtdb_transport import (
+    _xtdb_buffered_transaction_scope,
+    _xtdb_buffering_paused,
+)
 from polars_hist_db.config import (
     DeltaConfig,
     TableColumnConfig,
@@ -98,6 +103,88 @@ def test_xtdb_transaction_uses_driver_autocommit_for_explicit_begin():
     assert driver_connection.execute.call_args_list[0].args == ("BEGIN READ WRITE",)
     assert driver_connection.execute.call_args_list[-1].args == ("COMMIT",)
     assert driver_connection.autocommit is False
+
+
+def test_xtdb_transaction_scope_commits_all_dml_together():
+    driver_connection = Mock()
+    driver_connection.autocommit = False
+    connection = Mock()
+    connection.info = {}
+    connection.connection.driver_connection = driver_connection
+
+    with _xtdb_transaction_scope(connection):
+        _execute_xtdb_dml(connection, "INSERT INTO test.x (_id) VALUES ('x')")
+        _execute_xtdb_dml(connection, "INSERT INTO test.y (_id) VALUES ('y')")
+
+    assert [call.args[0] for call in driver_connection.execute.call_args_list] == [
+        "BEGIN READ WRITE",
+        "INSERT INTO test.x (_id) VALUES ('x')",
+        "INSERT INTO test.y (_id) VALUES ('y')",
+        "COMMIT",
+    ]
+
+
+def test_xtdb_buffered_transaction_allows_reads_and_excludes_support_relations():
+    driver_connection = Mock()
+    driver_connection.autocommit = False
+    connection = Mock()
+    connection.info = {}
+    connection.connection.driver_connection = driver_connection
+    connection.in_transaction.return_value = False
+
+    with _xtdb_buffered_transaction_scope(connection):
+        _execute_xtdb_dml(connection, "INSERT INTO test.target (_id) VALUES ('x')")
+        assert driver_connection.execute.call_count == 0
+        with _xtdb_buffering_paused(connection):
+            _execute_xtdb_dml(
+                connection, "INSERT INTO test.lookup (_id) VALUES ('lookup')"
+            )
+        _execute_xtdb_dml(connection, "INSERT INTO test.audit (_id) VALUES ('audit')")
+
+    assert [call.args[0] for call in driver_connection.execute.call_args_list] == [
+        "BEGIN READ WRITE",
+        "INSERT INTO test.lookup (_id) VALUES ('lookup')",
+        "COMMIT",
+        "BEGIN READ WRITE",
+        "INSERT INTO test.target (_id) VALUES ('x')",
+        "INSERT INTO test.audit (_id) VALUES ('audit')",
+        "COMMIT",
+    ]
+
+
+def test_xtdb_buffered_transaction_retries_invalid_system_time_at_commit():
+    driver_connection = Mock()
+    driver_connection.autocommit = False
+    commit_count = 0
+
+    def execute(statement):
+        nonlocal commit_count
+        if statement == "COMMIT":
+            commit_count += 1
+            if commit_count == 1:
+                raise RuntimeError("invalid-system-time: specified system-time older")
+
+    driver_connection.execute.side_effect = execute
+    connection = Mock()
+    connection.info = {}
+    connection.connection.driver_connection = driver_connection
+    connection.in_transaction.return_value = False
+    system_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    with _xtdb_buffered_transaction_scope(connection, system_time):
+        _execute_xtdb_dml(
+            connection,
+            "INSERT INTO test.target (_id) VALUES ('x')",
+            system_time=system_time,
+        )
+
+    statements = [call.args[0] for call in driver_connection.execute.call_args_list]
+    assert (
+        sum(statement.startswith("BEGIN READ WRITE") for statement in statements) == 2
+    )
+    assert statements.count("INSERT INTO test.target (_id) VALUES ('x')") == 2
+    assert statements.count("COMMIT") == 2
+    assert statements.count("ROLLBACK") == 1
 
 
 def test_xtdb_dml_uses_driver_autocommit_for_explicit_begin():

@@ -638,9 +638,11 @@ class MariaDbDocumentAccessStore:
         if allow_existing:
             existing = self._by_group_and_name(owning_group, normalized_name)
             if existing is not None:
-                return _existing_result(
+                return self._record_existing(
+                    idempotency_key,
+                    payload,
+                    recorded_at,
                     existing,
-                    self._all_grants(existing.document_id),
                     owning_group,
                 )
         document = AccessDocument(
@@ -670,9 +672,11 @@ class MariaDbDocumentAccessStore:
                 return duplicate
             existing = self._by_group_and_name(owning_group, normalized_name)
             if existing is not None and allow_existing:
-                return _existing_result(
+                return self._record_existing(
+                    idempotency_key,
+                    payload,
+                    recorded_at,
                     existing,
-                    self._all_grants(existing.document_id),
                     owning_group,
                 )
             raise DocumentAccessError("document or grant already exists") from exc
@@ -895,12 +899,14 @@ class MariaDbDocumentAccessStore:
         kind: str,
         recorded_at: datetime,
         document: AccessDocument,
+        result: AccessMutationResult | None = None,
     ) -> AccessMutationResult:
-        result = AccessMutationResult(
-            document,
-            self._all_grants(document.document_id, include_revoked=True),
-            accepted=True,
-        )
+        if result is None:
+            result = AccessMutationResult(
+                document,
+                self._all_grants(document.document_id, include_revoked=True),
+                accepted=True,
+            )
         self.connection.execute(
             self.commands.insert().values(
                 idempotency_key=key,
@@ -913,6 +919,30 @@ class MariaDbDocumentAccessStore:
             )
         )
         return result
+
+    def _record_existing(
+        self,
+        key: str,
+        payload: str,
+        recorded_at: datetime,
+        document: AccessDocument,
+        owning_group: str | None,
+    ) -> AccessMutationResult:
+        result = _existing_result(
+            document,
+            self._all_grants(document.document_id),
+            owning_group,
+        )
+        try:
+            with self.connection.begin_nested():
+                return self._record(
+                    key, payload, "create", recorded_at, document, result
+                )
+        except IntegrityError:
+            duplicate = self._duplicate(key, payload)
+            if duplicate:
+                return duplicate
+            raise
 
 
 def _access_document(row: Any) -> AccessDocument:

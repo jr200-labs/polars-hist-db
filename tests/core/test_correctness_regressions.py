@@ -132,7 +132,7 @@ def test_latest_audit_entry_keeps_utc_schema_when_empty(monkeypatch):
     )
     empty = pl.DataFrame(
         schema={
-            "audit_id": pl.Int32,
+            "audit_id": pl.String,
             "table_name": pl.String,
             "data_source_type": pl.String,
             "data_source": pl.String,
