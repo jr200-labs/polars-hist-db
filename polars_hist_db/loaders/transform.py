@@ -52,9 +52,11 @@ def enforce_input_schema(
         if df[name].null_count() == df.height
         and any(source.startswith(f"{name}.") for source in sources)
     }
-    unknown = sorted(unknown.difference(null_structural_columns))
-    if unknown:
-        raise InputSchemaError("undeclared input columns: " + ", ".join(unknown))
+    unknown_names = sorted(unknown.difference(null_structural_columns))
+    if unknown_names:
+        raise InputSchemaError(
+            "undeclared input columns: " + ", ".join(unknown_names)
+        )
 
     result = df.drop(null_structural_columns)
     for name, (dtype, required, nullable) in sources.items():
