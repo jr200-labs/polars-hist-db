@@ -18,6 +18,8 @@ from .config import DbEngineConfig
 
 _XTDB_LAST_SYSTEM_TIME_KEY = "polars_hist_db_xtdb_last_system_time"
 _XTDB_ACTIVE_TRANSACTION_KEY = "polars_hist_db_xtdb_active_transaction"
+_XTDB_BUFFERED_TRANSACTION_KEY = "polars_hist_db_xtdb_buffered_transaction"
+_XTDB_BUFFERING_PAUSED_KEY = "polars_hist_db_xtdb_buffering_paused"
 _XTDB_RESERVED_IDENTIFIERS = {"flag", "timestamp"}
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -116,7 +118,61 @@ def _execute_xtdb_transaction(connection: Any, statements: Iterable[str]) -> Non
 
 def _xtdb_transaction_active(connection: Any) -> bool:
     info = getattr(connection, "info", None)
-    return isinstance(info, dict) and _XTDB_ACTIVE_TRANSACTION_KEY in info
+    return isinstance(info, dict) and (
+        _XTDB_ACTIVE_TRANSACTION_KEY in info or _XTDB_BUFFERED_TRANSACTION_KEY in info
+    )
+
+
+@contextmanager
+def _xtdb_buffering_paused(connection: Any) -> Iterator[None]:
+    info = getattr(connection, "info", None)
+    if not isinstance(info, dict) or _XTDB_BUFFERED_TRANSACTION_KEY not in info:
+        yield
+        return
+    info[_XTDB_BUFFERING_PAUSED_KEY] = True
+    try:
+        yield
+    finally:
+        info.pop(_XTDB_BUFFERING_PAUSED_KEY, None)
+
+
+@contextmanager
+def _xtdb_buffered_transaction_scope(
+    connection: Any,
+    system_time: Optional[datetime] = None,
+) -> Iterator[None]:
+    """Buffer ingest DML so reads can finish before one atomic XTDB commit."""
+    info = getattr(connection, "info", None)
+    if not isinstance(info, dict):
+        info = {}
+        connection.info = info
+    if _xtdb_transaction_active(connection):
+        raise ValueError("nested XTDB transactions are not supported")
+
+    operations: list[tuple[str, tuple[Any, ...]]] = []
+    info[_XTDB_BUFFERED_TRANSACTION_KEY] = (system_time, operations)
+    try:
+        yield
+    except BaseException:
+        raise
+    else:
+        if operations:
+            info.pop(_XTDB_BUFFERED_TRANSACTION_KEY, None)
+            with _xtdb_transaction_scope(connection, system_time):
+                for operation, arguments in operations:
+                    if operation == "dml":
+                        sql, rows, operation_time = arguments
+                        _execute_xtdb_dml(
+                            connection, sql, rows, system_time=operation_time
+                        )
+                    else:
+                        table_sql, df, operation_time = arguments
+                        _execute_xtdb_arrow_copy(
+                            connection, table_sql, df, system_time=operation_time
+                        )
+    finally:
+        info.pop(_XTDB_BUFFERED_TRANSACTION_KEY, None)
+        info.pop(_XTDB_BUFFERING_PAUSED_KEY, None)
 
 
 @contextmanager
@@ -309,6 +365,18 @@ def _execute_xtdb_dml(
     *,
     system_time: Optional[datetime] = None,
 ) -> int:
+    info = getattr(connection, "info", None)
+    if (
+        isinstance(info, dict)
+        and _XTDB_BUFFERED_TRANSACTION_KEY in info
+        and _XTDB_BUFFERING_PAUSED_KEY not in info
+    ):
+        transaction_time, operations = info[_XTDB_BUFFERED_TRANSACTION_KEY]
+        if system_time is not None and transaction_time != system_time:
+            raise ValueError("XTDB transaction cannot mix system times")
+        operations.append(("dml", (sql, rows, system_time)))
+        return len(rows) if rows is not None else 0
+
     driver_connection = _driver_connection(connection)
     if driver_connection is None:
         if rows is not None or system_time is not None:
@@ -384,6 +452,18 @@ def _execute_xtdb_arrow_copy(
     *,
     system_time: Optional[datetime] = None,
 ) -> None:
+    info = getattr(connection, "info", None)
+    if (
+        isinstance(info, dict)
+        and _XTDB_BUFFERED_TRANSACTION_KEY in info
+        and _XTDB_BUFFERING_PAUSED_KEY not in info
+    ):
+        transaction_time, operations = info[_XTDB_BUFFERED_TRANSACTION_KEY]
+        if system_time is not None and transaction_time != system_time:
+            raise ValueError("XTDB transaction cannot mix system times")
+        operations.append(("arrow", (table_sql, df, system_time)))
+        return
+
     from .xtdb_arrow import _normalize_xtdb_ingest_arrow
 
     driver_connection = _driver_connection(connection)

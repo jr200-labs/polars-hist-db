@@ -27,6 +27,10 @@ from polars_hist_db.backends.xtdb_arrow import (
     _xtdb_insert_casts,
 )
 from polars_hist_db.backends.xtdb_query import _xtdb_single_primary_key_alias
+from polars_hist_db.backends.xtdb_transport import (
+    _xtdb_buffered_transaction_scope,
+    _xtdb_buffering_paused,
+)
 from polars_hist_db.config import (
     DeltaConfig,
     TableColumnConfig,
@@ -116,6 +120,34 @@ def test_xtdb_transaction_scope_commits_all_dml_together():
         "BEGIN READ WRITE",
         "INSERT INTO test.x (_id) VALUES ('x')",
         "INSERT INTO test.y (_id) VALUES ('y')",
+        "COMMIT",
+    ]
+
+
+def test_xtdb_buffered_transaction_allows_reads_and_excludes_support_relations():
+    driver_connection = Mock()
+    driver_connection.autocommit = False
+    connection = Mock()
+    connection.info = {}
+    connection.connection.driver_connection = driver_connection
+    connection.in_transaction.return_value = False
+
+    with _xtdb_buffered_transaction_scope(connection):
+        _execute_xtdb_dml(connection, "INSERT INTO test.target (_id) VALUES ('x')")
+        assert driver_connection.execute.call_count == 0
+        with _xtdb_buffering_paused(connection):
+            _execute_xtdb_dml(
+                connection, "INSERT INTO test.lookup (_id) VALUES ('lookup')"
+            )
+        _execute_xtdb_dml(connection, "INSERT INTO test.audit (_id) VALUES ('audit')")
+
+    assert [call.args[0] for call in driver_connection.execute.call_args_list] == [
+        "BEGIN READ WRITE",
+        "INSERT INTO test.lookup (_id) VALUES ('lookup')",
+        "COMMIT",
+        "BEGIN READ WRITE",
+        "INSERT INTO test.target (_id) VALUES ('x')",
+        "INSERT INTO test.audit (_id) VALUES ('audit')",
         "COMMIT",
     ]
 
