@@ -581,6 +581,68 @@ def test_xtdb_staging_rejects_missing_required_pipeline_columns(monkeypatch):
         )
 
 
+def test_xtdb_staging_omits_explicitly_inapplicable_rows(caplog):
+    dataset = DatasetConfig(
+        name="record_stream",
+        delta_table_schema="sample",
+        input_config={"type": "dsv", "search_paths": []},
+        pipeline=[
+            {
+                "schema": "sample",
+                "table": "records",
+                "type": "primary",
+                "columns": [
+                    {"source": "record_id", "target": "record_id"},
+                    {
+                        "source": "observed_at",
+                        "target": "observed_at",
+                        "nullable": True,
+                        "omit_row_if_null": True,
+                    },
+                ],
+            }
+        ],
+    )
+    table_config = TableConfig(
+        schema="sample",
+        name="records",
+        primary_keys=["record_id"],
+        columns=[
+            TableColumnConfig("records", "record_id", "INT", nullable=False),
+            TableColumnConfig(
+                "records", "observed_at", "TIMESTAMP WITH TIME ZONE", nullable=False
+            ),
+        ],
+    )
+    stage_df = pl.DataFrame(
+        {
+            "record_id": [1, 2],
+            "observed_at": [
+                datetime(2030, 1, 1, tzinfo=timezone.utc),
+                None,
+            ],
+        }
+    )
+    staging = XtdbStagingOps(object())
+    staging._stage_run_cache["stage-1"] = stage_df
+
+    result = staging.prepare_pipeline_item_dataframe(
+        "stage-1",
+        dataset,
+        0,
+        table_config,
+        valid_time=ValidTimeConfig(
+            schema="sample", table="records", from_column="observed_at"
+        ),
+    )
+
+    assert result.to_dict(as_series=False) == {
+        "record_id": [1],
+        "observed_at": [datetime(2030, 1, 1, tzinfo=timezone.utc)],
+    }
+    assert "omitted 1 pipeline row" in caplog.text
+
+
 def test_xtdb_staging_cleanup_only_discards_memory_cache():
     connection = Mock()
     staging = XtdbStagingOps(connection)

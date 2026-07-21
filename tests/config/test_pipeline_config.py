@@ -19,7 +19,13 @@ def test_pipeline_reuses_cached_lookups():
                 "table": "events",
                 "type": "primary",
                 "columns": [
-                    {"source": "id", "target": "id", "required": True},
+                    {
+                        "source": "id",
+                        "target": "id",
+                        "required": True,
+                        "nullable": True,
+                        "omit_row_if_null": True,
+                    },
                     {"source": "country", "target": "country_id"},
                 ],
             },
@@ -42,7 +48,13 @@ def test_pipeline_reuses_cached_lookups():
     assert pipeline.get_header_map("events") == {"id": "id", "country_id": "country"}
     assert pipeline.extract_items(1) is extract_items
     assert extract_items == (
-        PipelineExtractColumn("events", "id", "id", required=True),
+        PipelineExtractColumn(
+            "events",
+            "id",
+            "id",
+            required=True,
+            omit_row_if_null=True,
+        ),
         PipelineExtractColumn("events", "country", "country_id"),
     )
 
@@ -117,6 +129,7 @@ def test_pipeline_builds_normalized_table_metadata_without_dataframes():
     assert definitions[("ref", "country_id")].deduce_foreign_key is True
     assert definitions[("ref", "country")].target_data_type == "VARCHAR(64)"
     assert definitions[("sample", "id")].required is True
+    assert definitions[("sample", "id")].nullable is False
     assert definitions[("sample", "unused_payload_field")].column_type == "input_only"
     assert definitions[("sample", "raw_date")].column_type == "dsv_only"
     assert definitions[("sample", "raw_date")].table is None
@@ -128,3 +141,44 @@ def test_pipeline_builds_normalized_table_metadata_without_dataframes():
         ("country_id", "INT"),
         ("event_date", "DATE"),
     ]
+
+
+def test_pipeline_input_nullability_can_override_required_target():
+    pipeline = Pipeline(
+        [
+            {
+                "schema": "sample",
+                "table": "records",
+                "type": "primary",
+                "columns": [
+                    {
+                        "source": "observed_at",
+                        "target": "observed_at",
+                        "nullable": True,
+                        "omit_row_if_null": True,
+                    }
+                ],
+            }
+        ]
+    )
+    tables = TableConfigs(
+        items=[
+            {
+                "schema": "sample",
+                "name": "records",
+                "primary_keys": ["observed_at"],
+                "columns": [
+                    {
+                        "name": "observed_at",
+                        "data_type": "TIMESTAMP WITH TIME ZONE",
+                        "nullable": False,
+                    }
+                ],
+            }
+        ]
+    )
+
+    definitions = pipeline.build_ingestion_column_definitions(tables)
+
+    assert definitions[0].nullable is True
+    assert tables["records"].columns[0].nullable is False
