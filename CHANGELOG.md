@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.73](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.72...v0.12.73) (2026-07-21)
+
+
+### Features
+
+* support typed array ingestion columns ([#299](https://github.com/jr200-labs/polars-hist-db/issues/299)) ([234eef6](https://github.com/jr200-labs/polars-hist-db/commit/234eef6f9faddb15b8b9c7f9a9f07c1adbae5f5c))
+
 ## [0.12.72](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.71...v0.12.72) (2026-07-21)
 
 
