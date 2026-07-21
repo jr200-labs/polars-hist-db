@@ -158,18 +158,41 @@ def _xtdb_buffered_transaction_scope(
     else:
         if operations:
             info.pop(_XTDB_BUFFERED_TRANSACTION_KEY, None)
-            with _xtdb_transaction_scope(connection, system_time):
-                for operation, arguments in operations:
-                    if operation == "dml":
-                        sql, rows, operation_time = arguments
-                        _execute_xtdb_dml(
-                            connection, sql, rows, system_time=operation_time
-                        )
-                    else:
-                        table_sql, df, operation_time = arguments
-                        _execute_xtdb_arrow_copy(
-                            connection, table_sql, df, system_time=operation_time
-                        )
+
+            def flush(transaction_time: Optional[datetime]) -> None:
+                with _xtdb_transaction_scope(connection, transaction_time):
+                    for operation, arguments in operations:
+                        if operation == "dml":
+                            sql, rows, operation_time = arguments
+                            _execute_xtdb_dml(
+                                connection,
+                                sql,
+                                rows,
+                                system_time=(
+                                    operation_time
+                                    if transaction_time is not None
+                                    else None
+                                ),
+                            )
+                        else:
+                            table_sql, df, operation_time = arguments
+                            _execute_xtdb_arrow_copy(
+                                connection,
+                                table_sql,
+                                df,
+                                system_time=(
+                                    operation_time
+                                    if transaction_time is not None
+                                    else None
+                                ),
+                            )
+
+            try:
+                flush(system_time)
+            except Exception as exc:
+                if system_time is None or not _is_xtdb_invalid_system_time_error(exc):
+                    raise
+                flush(None)
     finally:
         info.pop(_XTDB_BUFFERED_TRANSACTION_KEY, None)
         info.pop(_XTDB_BUFFERING_PAUSED_KEY, None)

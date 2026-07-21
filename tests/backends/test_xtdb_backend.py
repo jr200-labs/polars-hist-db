@@ -152,6 +152,41 @@ def test_xtdb_buffered_transaction_allows_reads_and_excludes_support_relations()
     ]
 
 
+def test_xtdb_buffered_transaction_retries_invalid_system_time_at_commit():
+    driver_connection = Mock()
+    driver_connection.autocommit = False
+    commit_count = 0
+
+    def execute(statement):
+        nonlocal commit_count
+        if statement == "COMMIT":
+            commit_count += 1
+            if commit_count == 1:
+                raise RuntimeError("invalid-system-time: specified system-time older")
+
+    driver_connection.execute.side_effect = execute
+    connection = Mock()
+    connection.info = {}
+    connection.connection.driver_connection = driver_connection
+    connection.in_transaction.return_value = False
+    system_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    with _xtdb_buffered_transaction_scope(connection, system_time):
+        _execute_xtdb_dml(
+            connection,
+            "INSERT INTO test.target (_id) VALUES ('x')",
+            system_time=system_time,
+        )
+
+    statements = [call.args[0] for call in driver_connection.execute.call_args_list]
+    assert (
+        sum(statement.startswith("BEGIN READ WRITE") for statement in statements) == 2
+    )
+    assert statements.count("INSERT INTO test.target (_id) VALUES ('x')") == 2
+    assert statements.count("COMMIT") == 2
+    assert statements.count("ROLLBACK") == 1
+
+
 def test_xtdb_dml_uses_driver_autocommit_for_explicit_begin():
     driver_connection = Mock()
     driver_connection.autocommit = False
