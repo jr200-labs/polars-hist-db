@@ -72,7 +72,7 @@ def test_xtdb_reset_dataset_erases_target_and_audit(monkeypatch):
             return True
 
         def from_table(self, table_schema, table_name):
-            return AuditOps(table_schema)._table_config()
+            return AuditOps(table_schema)._table_config(xtdb=True)
 
         def create(self, table_config):
             return table_config
@@ -82,16 +82,16 @@ def test_xtdb_reset_dataset_erases_target_and_audit(monkeypatch):
         _TableConfigOps,
     )
     monkeypatch.setattr(
-        "polars_hist_db.backends.xtdb_transport._execute_xtdb_dml",
-        lambda connection, query, *a, **k: executed.append(query),
+        "polars_hist_db.backends.xtdb_transport._execute_xtdb_transaction",
+        lambda connection, statements: executed.append(list(statements)),
     )
 
     AuditOps("fakedata").reset_dataset("records", _XtdbConnection())
 
-    assert len(executed) == 2
-    assert "ERASE FROM fakedata.records WHERE TRUE" in executed[0]
-    assert "ERASE FROM fakedata.__audit_log" in executed[1]
-    assert "WHERE table_name = 'records'" in executed[1]
+    assert len(executed) == 1
+    assert executed[0][0] == "ERASE FROM fakedata.records WHERE TRUE"
+    assert "ERASE FROM fakedata.__audit_log" in executed[0][1]
+    assert "WHERE table_name = 'records'" in executed[0][1]
 
 
 def test_mariadb_reset_dataset_wipes_history_on_temporal_table(monkeypatch):

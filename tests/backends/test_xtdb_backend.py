@@ -15,6 +15,7 @@ from polars_hist_db.backends.xtdb import (
     XtdbTableConfigOps,
     _execute_xtdb_dml,
     _execute_xtdb_transaction,
+    _xtdb_transaction_scope,
     _xtdb_cast_type,
     _xtdb_declared_columns,
     _xtdb_physical_type_family,
@@ -98,6 +99,25 @@ def test_xtdb_transaction_uses_driver_autocommit_for_explicit_begin():
     assert driver_connection.execute.call_args_list[0].args == ("BEGIN READ WRITE",)
     assert driver_connection.execute.call_args_list[-1].args == ("COMMIT",)
     assert driver_connection.autocommit is False
+
+
+def test_xtdb_transaction_scope_commits_all_dml_together():
+    driver_connection = Mock()
+    driver_connection.autocommit = False
+    connection = Mock()
+    connection.info = {}
+    connection.connection.driver_connection = driver_connection
+
+    with _xtdb_transaction_scope(connection):
+        _execute_xtdb_dml(connection, "INSERT INTO test.x (_id) VALUES ('x')")
+        _execute_xtdb_dml(connection, "INSERT INTO test.y (_id) VALUES ('y')")
+
+    assert [call.args[0] for call in driver_connection.execute.call_args_list] == [
+        "BEGIN READ WRITE",
+        "INSERT INTO test.x (_id) VALUES ('x')",
+        "INSERT INTO test.y (_id) VALUES ('y')",
+        "COMMIT",
+    ]
 
 
 def test_xtdb_dml_uses_driver_autocommit_for_explicit_begin():

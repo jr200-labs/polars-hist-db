@@ -188,3 +188,49 @@ def test_allow_existing_idempotency_ignores_generated_identifiers():
 
     assert retried.document == created.document
     assert retried.duplicate is True
+
+
+def test_allow_existing_records_the_idempotency_key():
+    store = InMemoryDocumentAccessStore()
+    store.create(
+        "doc-1",
+        "Analysts",
+        None,
+        "admin",
+        TIME,
+        idempotency_key="create-1",
+        owning_group="analysts",
+    )
+    store.create(
+        "generated-doc",
+        "Analysts",
+        None,
+        "admin",
+        TIME,
+        idempotency_key="ensure-1",
+        owning_group="analysts",
+        allow_existing=True,
+    )
+
+    with pytest.raises(IdempotencyConflict):
+        store.create("doc-2", "Other", None, "admin", TIME, idempotency_key="ensure-1")
+
+
+def test_invalid_initial_grants_do_not_partially_create_document():
+    store = InMemoryDocumentAccessStore()
+
+    with pytest.raises(ValueError, match="initial grants must be unique"):
+        store.create(
+            "doc-1",
+            "Analysts",
+            None,
+            "admin",
+            TIME,
+            initial_grants=[
+                AccessGrantInput("grant-1", "group", "viewer"),
+                AccessGrantInput("grant-2", "GROUP", "editor"),
+            ],
+            idempotency_key="create-1",
+        )
+
+    assert store.get("doc-1") is None

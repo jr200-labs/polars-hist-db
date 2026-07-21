@@ -134,7 +134,7 @@ def test_xtdb_audit_filter_items_queries_only_candidate_sources(monkeypatch):
             return True
 
         def from_table(self, table_schema, table_name):
-            return AuditOps(table_schema)._table_config()
+            return AuditOps(table_schema)._table_config(xtdb=True)
 
     class _DataframeOps:
         def __init__(self, connection):
@@ -320,7 +320,7 @@ def test_xtdb_audit_add_entry_writes_via_backend_dataframe_ops(monkeypatch):
             return True
 
         def from_table(self, table_schema, table_name):
-            return AuditOps(table_schema)._table_config()
+            return AuditOps(table_schema)._table_config(xtdb=True)
 
     class _DataframeOps:
         def __init__(self, connection):
@@ -350,7 +350,8 @@ def test_xtdb_audit_add_entry_writes_via_backend_dataframe_ops(monkeypatch):
     assert table_name == "__audit_log"
     assert table_config.name == "__audit_log"
     assert "audit_id" in inserted_df.columns
-    assert inserted_df.schema["audit_id"] == pl.Int32
+    assert inserted_df.schema["audit_id"] == pl.String
+    assert len(inserted_df["audit_id"].item()) == 64
     assert inserted_df.select("table_name", "data_source").rows() == [
         ("trades", "trades.csv")
     ]

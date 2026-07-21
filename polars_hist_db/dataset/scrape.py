@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import ExitStack
 from datetime import datetime
 import logging
 from random import uniform
@@ -17,6 +18,15 @@ from .extract_item import scrape_extract_item
 from .primary_item import scrape_primary_item
 
 LOGGER = logging.getLogger(__name__)
+
+
+async def _to_thread_joined(function, /, *args):
+    task = asyncio.create_task(asyncio.to_thread(function, *args))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        await task
+        raise
 
 
 def _scrape_pipeline_item(
@@ -89,11 +99,24 @@ def _run_pipeline_as_transaction(
     backend: Any = None,
     ingest_connection: Any = None,
 ):
+    system_times = {timestamp for timestamp, _ in partitions}
+    if backend.name == "xtdb" and len(system_times) > 1:
+        raise NonRetryableException(
+            "XTDB atomic ingestion requires one system-time per batch"
+        )
     main_table_config: TableConfig = tables[dataset.pipeline.get_main_table_name()[1]]
     tbl_to_header_map = dataset.pipeline.get_header_map(main_table_config.name)
     header_keys = [tbl_to_header_map.get(k, k) for k in main_table_config.primary_keys]
 
-    with backend.connection_scope(engine) as connection:
+    with backend.connection_scope(engine) as connection, ExitStack() as stack:
+        ingest_transaction = getattr(backend, "ingest_transaction", None)
+        if ingest_transaction is not None:
+            stack.enter_context(
+                ingest_transaction(
+                    connection,
+                    next(iter(system_times)) if system_times else None,
+                )
+            )
         staging = backend.staging(
             connection,
             ingest_connection=ingest_connection,
@@ -191,7 +214,7 @@ async def try_run_pipeline_as_transaction(
         raise ValueError("retry_jitter must be between 0 and 1")
     for attempt in range(num_retries):
         try:
-            await asyncio.to_thread(
+            await _to_thread_joined(
                 _run_pipeline_as_transaction,
                 partitions,
                 dataset,

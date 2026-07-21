@@ -90,7 +90,7 @@ def test_latest_entry(fixture_with_table):
 
         audit_df_schema = empty_audit_df.schema
         assert len(audit_df_schema) == 6
-        assert audit_df_schema["audit_id"] == pl.Int32
+        assert audit_df_schema["audit_id"] == pl.String
         assert audit_df_schema["table_name"] == pl.Categorical
         assert audit_df_schema["data_source_type"] == pl.Categorical
         assert audit_df_schema["data_source"] == pl.Categorical

@@ -17,6 +17,7 @@ from .config import DbEngineConfig
 
 
 _XTDB_LAST_SYSTEM_TIME_KEY = "polars_hist_db_xtdb_last_system_time"
+_XTDB_ACTIVE_TRANSACTION_KEY = "polars_hist_db_xtdb_active_transaction"
 _XTDB_RESERVED_IDENTIFIERS = {"flag", "timestamp"}
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -108,24 +109,59 @@ def _is_xtdb_table_not_found_error(exc: Exception) -> bool:
 
 def _execute_xtdb_transaction(connection: Any, statements: Iterable[str]) -> None:
     """Submit one serialized XTDB DML transaction."""
+    with _xtdb_transaction_scope(connection) as driver_connection:
+        for statement in statements:
+            driver_connection.execute(statement)
 
+
+def _xtdb_transaction_active(connection: Any) -> bool:
+    info = getattr(connection, "info", None)
+    return isinstance(info, dict) and _XTDB_ACTIVE_TRANSACTION_KEY in info
+
+
+@contextmanager
+def _xtdb_transaction_scope(
+    connection: Any,
+    system_time: Optional[datetime] = None,
+) -> Iterator[Any]:
     driver_connection = _driver_connection(connection)
     if driver_connection is None:
         raise ValueError("XTDB transactions require a live DBAPI connection")
+    info = getattr(connection, "info", None)
+    if not isinstance(info, dict):
+        info = {}
+        connection.info = info
+    if _XTDB_ACTIVE_TRANSACTION_KEY in info:
+        raise ValueError("nested XTDB transactions are not supported")
+
     _rollback_xtdb_connection(connection)
     autocommit = getattr(driver_connection, "autocommit", None)
     if autocommit is not None:
         driver_connection.autocommit = True
-
-    driver_connection.execute("BEGIN READ WRITE")
+    requested_system_time = system_time
+    begin_sql = "BEGIN READ WRITE"
+    if system_time is not None:
+        system_time = _next_xtdb_system_time(connection, system_time)
+        begin_sql += f" WITH (SYSTEM_TIME = {_xtdb_timestamp_literal(system_time)})"
     try:
-        for statement in statements:
-            driver_connection.execute(statement)
+        driver_connection.execute(begin_sql)
+    except Exception as exc:
+        if system_time is None or not _is_xtdb_invalid_system_time_error(exc):
+            if autocommit is not None:
+                driver_connection.autocommit = autocommit
+            raise
+        driver_connection.rollback()
+        driver_connection.execute("BEGIN READ WRITE")
+    info[_XTDB_ACTIVE_TRANSACTION_KEY] = requested_system_time
+    try:
+        yield driver_connection
         driver_connection.execute("COMMIT")
-    except Exception:
+    except BaseException:
         driver_connection.execute("ROLLBACK")
+        driver_connection.rollback()
         raise
     finally:
+        info.pop(_XTDB_ACTIVE_TRANSACTION_KEY, None)
         if autocommit is not None:
             driver_connection.autocommit = autocommit
 
@@ -283,6 +319,24 @@ def _execute_xtdb_dml(
         connection.execute(text(sql))
         return 0
 
+    info = getattr(connection, "info", None)
+    if isinstance(info, dict) and _XTDB_ACTIVE_TRANSACTION_KEY in info:
+        transaction_time = info[_XTDB_ACTIVE_TRANSACTION_KEY]
+        if system_time is not None and transaction_time != system_time:
+            raise ValueError("XTDB transaction cannot mix system times")
+        if rows is None:
+            driver_connection.execute(sql)
+            return 0
+        _configure_xtdb_pgwire_parameter_adapters(driver_connection)
+        cursor = driver_connection.cursor()
+        try:
+            cursor.executemany(sql, rows)
+        finally:
+            close = getattr(cursor, "close", None)
+            if callable(close):
+                close()
+        return len(rows)
+
     _rollback_xtdb_connection(connection)
     autocommit = getattr(driver_connection, "autocommit", None)
     if autocommit is not None:
@@ -336,18 +390,25 @@ def _execute_xtdb_arrow_copy(
     if driver_connection is None:
         raise ValueError("XTDB Arrow COPY requires a live DBAPI connection")
 
-    _rollback_xtdb_connection(connection)
-    autocommit = getattr(driver_connection, "autocommit", None)
-    if autocommit is not None:
-        driver_connection.autocommit = True
+    info = getattr(connection, "info", None)
+    active_transaction = isinstance(info, dict) and _XTDB_ACTIVE_TRANSACTION_KEY in info
+    if active_transaction and system_time is not None:
+        if info[_XTDB_ACTIVE_TRANSACTION_KEY] != system_time:
+            raise ValueError("XTDB transaction cannot mix system times")
 
+    autocommit = None
     begin_sql = "BEGIN READ WRITE"
-    if system_time is not None:
-        system_time = _next_xtdb_system_time(connection, system_time)
-        begin_sql = (
-            "BEGIN READ WRITE WITH "
-            f"(SYSTEM_TIME = {_xtdb_timestamp_literal(system_time)})"
-        )
+    if not active_transaction:
+        _rollback_xtdb_connection(connection)
+        autocommit = getattr(driver_connection, "autocommit", None)
+        if autocommit is not None:
+            driver_connection.autocommit = True
+        if system_time is not None:
+            system_time = _next_xtdb_system_time(connection, system_time)
+            begin_sql = (
+                "BEGIN READ WRITE WITH "
+                f"(SYSTEM_TIME = {_xtdb_timestamp_literal(system_time)})"
+            )
 
     arrow_table = _normalize_xtdb_ingest_arrow(df.to_arrow())
     require_unique_arrow_field_names(
@@ -356,6 +417,19 @@ def _execute_xtdb_arrow_copy(
     sink = pa.BufferOutputStream()
     with pa.ipc.new_stream(sink, arrow_table.schema) as writer:
         writer.write_table(arrow_table)
+
+    if active_transaction:
+        cursor = driver_connection.cursor()
+        try:
+            with cursor.copy(
+                f"COPY {table_sql} FROM STDIN WITH (FORMAT 'arrow-stream')"
+            ) as copy:
+                copy.write(sink.getvalue().to_pybytes())
+        finally:
+            close = getattr(cursor, "close", None)
+            if callable(close):
+                close()
+        return
 
     driver_connection.execute(begin_sql)
     try:

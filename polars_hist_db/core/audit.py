@@ -51,12 +51,12 @@ class AuditOps:
     def drop(self, connection: Connection):
         TableConfigOps(connection).drop(self._table_config())
 
-    def _table_config(self) -> TableConfig:
+    def _table_config(self, *, xtdb: bool = False) -> TableConfig:
         columns = [
             TableColumnConfig(
                 name="audit_id",
-                data_type="INT",
-                autoincrement=True,
+                data_type="VARCHAR(LENGTH=64)" if xtdb else "INT",
+                autoincrement=not xtdb,
                 table=self._table_name,
             ),
             TableColumnConfig(
@@ -115,7 +115,7 @@ class AuditOps:
     def _empty_xtdb_audit_df(self) -> pl.DataFrame:
         return pl.DataFrame(
             schema={
-                "audit_id": pl.Int32,
+                "audit_id": pl.String,
                 "table_name": pl.Utf8,
                 "data_source_type": pl.Utf8,
                 "data_source": pl.Utf8,
@@ -126,12 +126,11 @@ class AuditOps:
 
     def create(self, connection: Connection) -> Table | TableConfig:
         if _is_xtdb_connection(connection):
-            table_config = self._table_config()
+            table_config = self._table_config(xtdb=True)
             table_config_ops = _xtdb_table_config_ops(connection)
             if not table_config_ops.table_exists(self.schema, self._table_name):
                 table_config_ops.create(table_config)
-                return table_config
-            return table_config_ops.from_table(self.schema, self._table_name)
+            return table_config
 
         audit_table_name = str(self._table_name)
         tbo = TableOps(self.schema, audit_table_name, connection)
@@ -161,14 +160,16 @@ class AuditOps:
         """
         target_fqtn = f"{self.schema}.{target_table_name}"
         if _is_xtdb_connection(connection):
-            from ..backends.xtdb_transport import _execute_xtdb_dml
+            from ..backends.xtdb_transport import _execute_xtdb_transaction
 
             self.create(connection)
-            _execute_xtdb_dml(connection, f"ERASE FROM {target_fqtn} WHERE TRUE")
-            _execute_xtdb_dml(
+            _execute_xtdb_transaction(
                 connection,
-                f"ERASE FROM {self._table_sql()} "
-                f"WHERE table_name = {_sql_literal(target_table_name)}",
+                [
+                    f"ERASE FROM {target_fqtn} WHERE TRUE",
+                    f"ERASE FROM {self._table_sql()} "
+                    f"WHERE table_name = {_sql_literal(target_table_name)}",
+                ],
             )
             LOGGER.info("reset dataset %s (data + audit-log erased)", target_fqtn)
             return
@@ -336,7 +337,7 @@ class AuditOps:
                 self._table_name,
                 candidates,
                 ["data_source"],
-                table_config=self._table_config(),
+                table_config=self._table_config(xtdb=True),
             ).with_columns(pl.col("data_source").cast(pl.Utf8))
             data_source_items = self._filter_unprocessed_items(
                 data_source_items, existing_tbl_entries, data_source_col_name
@@ -454,16 +455,8 @@ class AuditOps:
                     data_source_timestamp.isoformat(),
                 ]
             )
-            new_item["audit_id"] = (
-                int(
-                    hashlib.sha256(audit_id_value.encode()).hexdigest()[:8],
-                    16,
-                )
-                & 0x7FFFFFFF
-            )
-            df = pl.DataFrame([new_item]).with_columns(
-                pl.col("audit_id").cast(pl.Int32)
-            )
+            new_item["audit_id"] = hashlib.sha256(audit_id_value.encode()).hexdigest()
+            df = pl.DataFrame([new_item])
             num_rows_changed = _xtdb_dataframe_ops(connection).table_insert(
                 df,
                 self.schema,
@@ -515,6 +508,7 @@ class AuditOps:
                 f"FROM {self._table_sql()} {where_clause}"
                 ") AS ranked WHERE _rn = 1",
                 schema_overrides={
+                    "audit_id": pl.String,
                     "data_source_ts": pl.Datetime("us", "UTC"),
                     "upload_ts": pl.Datetime("us", "UTC"),
                 },

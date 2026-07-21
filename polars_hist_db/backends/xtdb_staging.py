@@ -255,13 +255,13 @@ def _cast_parent_lookup_columns(
     return parent_lookup.with_columns(casts)
 
 
-def _xtdb_integer_min(table_config: TableConfig, column_name: str) -> int:
+def _xtdb_integer_bits(table_config: TableConfig, column_name: str) -> int:
     data_type = next(
         column.data_type.upper()
         for column in table_config.columns
         if column.name == column_name
     )
-    bits = {
+    return {
         "TINYINT": 8,
         "SMALLINT": 16,
         "MEDIUMINT": 24,
@@ -269,7 +269,10 @@ def _xtdb_integer_min(table_config: TableConfig, column_name: str) -> int:
         "INTEGER": 32,
         "BIGINT": 64,
     }[data_type]
-    return -(1 << (bits - 1))
+
+
+def _xtdb_integer_min(table_config: TableConfig, column_name: str) -> int:
+    return -(1 << (_xtdb_integer_bits(table_config, column_name) - 1))
 
 
 class XtdbStagingOps:
@@ -654,15 +657,7 @@ class XtdbStagingOps:
                         if column.name == target_column
                     )
                 )
-                bits = (
-                    63
-                    if any(
-                        column.name == target_column
-                        and column.data_type.upper() == "BIGINT"
-                        for column in table_config.columns
-                    )
-                    else 31
-                )
+                bits = _xtdb_integer_bits(table_config, target_column) - 1
                 generated_value = (
                     generated_payload.map_batches(
                         partial(_xtdb_deduced_numeric_foreign_key_ids, bits=bits),

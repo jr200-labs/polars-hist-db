@@ -123,11 +123,13 @@ class InMemoryDocumentAccessStore:
             None,
         )
         if existing is not None and allow_existing:
-            return _existing_result(
+            result = _existing_result(
                 existing,
                 self._all_grants(existing.document_id),
                 owning_group,
             )
+            self._commands[idempotency_key] = (payload, result)
+            return result
         if document_id in self._documents:
             raise DocumentAccessError("document already exists")
         if existing is not None:
@@ -144,6 +146,12 @@ class InMemoryDocumentAccessStore:
             recorded_at,
             owning_group=owning_group,
         )
+        if len({grant.grant_id for grant in grants}) != len(grants) or len(
+            {grant.group_name.casefold() for grant in grants}
+        ) != len(grants):
+            raise DocumentAccessError("initial grants must be unique")
+        if any(grant.grant_id in self._grants for grant in grants):
+            raise DocumentAccessError("grant already exists")
         self._documents[document_id] = document
         for grant in grants:
             self._insert_grant(document, grant, actor_id, recorded_at)
@@ -257,10 +265,12 @@ class InMemoryDocumentAccessStore:
         document = self._active(document_id, expected_revision)
         _require_time(recorded_at)
         if any(
-            item.active and item.group_name == grant.group_name
+            item.active and item.group_name.casefold() == grant.group_name.casefold()
             for item in self._all_grants(document_id)
         ):
             raise DocumentAccessError("group already has an active grant")
+        if grant.grant_id in self._grants:
+            raise DocumentAccessError("grant already exists")
         document = self._advance(document)
         self._documents[document_id] = document
         self._insert_grant(document, grant, actor_id, recorded_at)

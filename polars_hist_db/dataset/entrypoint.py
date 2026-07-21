@@ -17,7 +17,7 @@ from ..utils.clock import Clock
 from ..config import PolarsHistDbConfig, DatasetConfig, TableConfig, TableConfigs
 from ..config.config import IngestionConfig
 from ..config.input.input_source import InputConfig
-from .scrape import try_run_pipeline_as_transaction
+from .scrape import _to_thread_joined, try_run_pipeline_as_transaction
 
 LOGGER = logging.getLogger(__name__)
 
@@ -56,13 +56,13 @@ async def run_datasets(
     if not selected_datasets:
         LOGGER.error("no datasets processed for %s", dataset_name)
         if owns_engine:
-            await asyncio.to_thread(engine.dispose)
+            await _to_thread_joined(engine.dispose)
         return RunResult(0, 0, ())
 
     ingestion = getattr(config, "ingestion", IngestionConfig())
     errors: list[Optional[Exception]] = [None] * len(selected_datasets)
     try:
-        await asyncio.to_thread(_create_config_tables, engine, config.tables, backend)
+        await _to_thread_joined(_create_config_tables, engine, config.tables, backend)
         await _run_dataset_workers(
             selected_datasets,
             config,
@@ -76,7 +76,7 @@ async def run_datasets(
         )
     finally:
         if owns_engine:
-            await asyncio.to_thread(engine.dispose)
+            await _to_thread_joined(engine.dispose)
 
     failures = tuple(error for error in errors if error is not None)
     return RunResult(len(selected_datasets), len(failures), failures)
@@ -130,7 +130,7 @@ async def _run_dataset_workers(
                     for lock in locks:
                         await lock.acquire()
                         acquired_locks.append(lock)
-                    ingest_connection = await asyncio.to_thread(
+                    ingest_connection = await _to_thread_joined(
                         backend.open_ingest_connection, config.db_config
                     )
                     LOGGER.info("scraping dataset %s", dataset.name)
@@ -146,7 +146,7 @@ async def _run_dataset_workers(
                         raise_on_error=raise_on_error,
                     )
                 finally:
-                    await asyncio.to_thread(
+                    await _to_thread_joined(
                         backend.close_ingest_connection, ingest_connection
                     )
                     for lock in reversed(acquired_locks):
