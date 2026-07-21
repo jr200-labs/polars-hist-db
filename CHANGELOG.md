@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.12.74](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.73...v0.12.74) (2026-07-21)
+
+
+### Features
+
+* **deps:** update astral-sh/setup-uv action to v9 ([#303](https://github.com/jr200-labs/polars-hist-db/issues/303)) ([2d185ff](https://github.com/jr200-labs/polars-hist-db/commit/2d185ff4914b8c49e1686a5be1f013cc50e5a4d1))
+
+
+### Bug Fixes
+
+* **deps:** update dependency polars to &gt;=1.43.0 ([#302](https://github.com/jr200-labs/polars-hist-db/issues/302)) ([763a238](https://github.com/jr200-labs/polars-hist-db/commit/763a238f2f5fb80ba2b35992bf8f951eff6bbc51))
+* **deps:** update quarto-cli digest to c832d2d ([#301](https://github.com/jr200-labs/polars-hist-db/issues/301)) ([9d88647](https://github.com/jr200-labs/polars-hist-db/commit/9d88647141dbc3ed0f00683f4a6109dcf48460ce))
+* support optional rows in typed projections ([#304](https://github.com/jr200-labs/polars-hist-db/issues/304)) ([94ff405](https://github.com/jr200-labs/polars-hist-db/commit/94ff405f304e4683fe455c0ab2539b6c00d85110))
+
 ## [0.12.73](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.72...v0.12.73) (2026-07-21)
 
 
