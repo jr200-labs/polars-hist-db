@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.72](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.71...v0.12.72) (2026-07-21)
+
+
+### Bug Fixes
+
+* accept null flattened structural columns ([#295](https://github.com/jr200-labs/polars-hist-db/issues/295)) ([059c490](https://github.com/jr200-labs/polars-hist-db/commit/059c49047a7c252488a13d6ea0ccffabd53198f5))
+* address repository review findings ([#297](https://github.com/jr200-labs/polars-hist-db/issues/297)) ([94f03b2](https://github.com/jr200-labs/polars-hist-db/commit/94f03b285bd6a17bba6d79e6f58edd237f34e1c5))
+
 ## [0.12.71](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.70...v0.12.71) (2026-07-21)
 
 
