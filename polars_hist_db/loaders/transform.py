@@ -54,9 +54,7 @@ def enforce_input_schema(
     }
     unknown_names = sorted(unknown.difference(null_structural_columns))
     if unknown_names:
-        raise InputSchemaError(
-            "undeclared input columns: " + ", ".join(unknown_names)
-        )
+        raise InputSchemaError("undeclared input columns: " + ", ".join(unknown_names))
 
     result = df.drop(null_structural_columns)
     for name, (dtype, required, nullable) in sources.items():
