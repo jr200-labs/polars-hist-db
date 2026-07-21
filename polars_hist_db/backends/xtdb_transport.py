@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from ..config import TableConfig
+from ..utils.arrow import require_unique_arrow_field_names
 from .config import DbEngineConfig
 
 
@@ -349,6 +350,9 @@ def _execute_xtdb_arrow_copy(
         )
 
     arrow_table = _normalize_xtdb_ingest_arrow(df.to_arrow())
+    require_unique_arrow_field_names(
+        arrow_table.schema, context="XTDB Arrow COPY schema"
+    )
     sink = pa.BufferOutputStream()
     with pa.ipc.new_stream(sink, arrow_table.schema) as writer:
         writer.write_table(arrow_table)

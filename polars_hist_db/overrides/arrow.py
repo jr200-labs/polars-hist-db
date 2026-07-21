@@ -21,6 +21,7 @@ from polars_hist_db.observability import (
     arrow_override_sync_span,
     record_arrow_override_sync,
 )
+from polars_hist_db.utils.arrow import require_unique_arrow_field_names
 
 from .crdt import RowGuard
 
@@ -427,6 +428,9 @@ def empty_arrow_override_operations() -> pa.Table:
 
 
 def encode_arrow_override_operations(table: pa.Table) -> bytes:
+    require_unique_arrow_field_names(
+        table.schema, context="Arrow override operation schema"
+    )
     validate_arrow_override_operations(table, authority="either")
     sink = pa.BufferOutputStream()
     with pa.ipc.new_stream(sink, arrow_override_operation_schema()) as writer:
@@ -439,6 +443,9 @@ def decode_arrow_override_operations(payload: bytes) -> pa.Table:
         table = pa.ipc.open_stream(payload).read_all()
     except pa.ArrowException as exc:
         raise ArrowOverrideContractError("invalid Arrow IPC operation batch") from exc
+    require_unique_arrow_field_names(
+        table.schema, context="Arrow override operation schema"
+    )
     validate_arrow_override_operations(table, authority="either")
     return table
 
@@ -468,6 +475,7 @@ def decode_arrow_override_projection(payload: bytes) -> pa.Table:
 
 
 def _encode_arrow_table(table: pa.Table, schema: pa.Schema) -> bytes:
+    require_unique_arrow_field_names(table.schema, context="Arrow IPC schema")
     sink = pa.BufferOutputStream()
     with pa.ipc.new_stream(sink, schema) as writer:
         writer.write_table(table)
@@ -483,6 +491,9 @@ def _decode_arrow_table(
         raise ArrowOverrideContractError(
             f"invalid Arrow IPC override {description}"
         ) from exc
+    require_unique_arrow_field_names(
+        table.schema, context=f"Arrow {description} schema"
+    )
     if not table.schema.equals(schema, check_metadata=True):
         raise ArrowOverrideContractError(
             f"Arrow override {description} schema mismatch"
