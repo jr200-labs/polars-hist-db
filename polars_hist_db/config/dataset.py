@@ -53,7 +53,8 @@ class PipelineColumn:
     aggregation: Optional[str] = None
     deduce_foreign_key: bool = False
     value_if_missing: Optional[str] = None
-    nullable: bool = True
+    nullable: Optional[bool] = None
+    omit_row_if_null: bool = False
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,7 @@ class PipelineExtractColumn:
     target: str
     required: bool = False
     deduce_foreign_key: bool = False
+    omit_row_if_null: bool = False
 
 
 @dataclass(init=False)
@@ -134,6 +136,7 @@ class Pipeline:
                     target=column.target or "",
                     required=column.required,
                     deduce_foreign_key=column.deduce_foreign_key,
+                    omit_row_if_null=column.omit_row_if_null,
                 )
                 for column in columns
                 if column.pipeline_id == pipeline_id
@@ -180,7 +183,8 @@ class Pipeline:
             aggregation=column.get("aggregation"),
             deduce_foreign_key=bool(column.get("deduce_foreign_key")),
             value_if_missing=column.get("value_if_missing"),
-            nullable=True if column.get("nullable") is None else column["nullable"],
+            nullable=column.get("nullable"),
+            omit_row_if_null=bool(column.get("omit_row_if_null")),
         )
 
     @staticmethod
@@ -237,7 +241,13 @@ class Pipeline:
                         aggregation=column.aggregation,
                         deduce_foreign_key=column.deduce_foreign_key,
                         value_if_missing=column.value_if_missing,
-                        nullable=(table_column.nullable if table_column else None),
+                        nullable=(
+                            column.nullable
+                            if column.nullable is not None
+                            else table_column.nullable
+                            if table_column
+                            else None
+                        ),
                         required=column.required,
                     )
                 )

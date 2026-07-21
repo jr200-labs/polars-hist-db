@@ -1,9 +1,41 @@
-from typing import Any, Optional
+import logging
+from typing import Any, Optional, Sequence
 
 import polars as pl
 
-from .config import TableConfig, ValidTimeConfig
+from .config import PipelineExtractColumn, TableConfig, ValidTimeConfig
 from .types import PolarsType
+
+
+LOGGER = logging.getLogger(__name__)
+
+
+def _omit_inapplicable_rows(
+    stage_df: pl.DataFrame,
+    upload_items: Sequence[PipelineExtractColumn],
+) -> pl.DataFrame:
+    sources = [item.source for item in upload_items if item.omit_row_if_null]
+    if not sources:
+        return stage_df
+
+    missing = sorted(set(sources).difference(stage_df.columns))
+    if missing:
+        raise ValueError(
+            "omit-row mapping references missing source column(s): "
+            + ", ".join(missing)
+        )
+
+    result = stage_df.filter(
+        pl.all_horizontal(pl.col(source).is_not_null() for source in sources)
+    )
+    omitted = stage_df.height - result.height
+    if omitted:
+        LOGGER.warning(
+            "omitted %d pipeline row(s) because %s contained null",
+            omitted,
+            ", ".join(sources),
+        )
+    return result
 
 
 def _include_valid_time_source_columns(
@@ -70,6 +102,7 @@ def project_staged_pipeline_item_dataframe(
     valid_time: Optional[ValidTimeConfig],
 ) -> pl.DataFrame:
     upload_items = dataset.pipeline.extract_items(pipeline_id)
+    stage_df = _omit_inapplicable_rows(stage_df, upload_items)
     src_tgt_colname_map = {item.source: item.target for item in upload_items}
     selected_columns = [item.source for item in upload_items]
     selected_columns = _include_valid_time_source_columns(
