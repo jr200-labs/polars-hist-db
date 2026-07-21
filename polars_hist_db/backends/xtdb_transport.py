@@ -393,6 +393,7 @@ def _execute_xtdb_arrow_copy(
     info = getattr(connection, "info", None)
     active_transaction = isinstance(info, dict) and _XTDB_ACTIVE_TRANSACTION_KEY in info
     if active_transaction and system_time is not None:
+        assert isinstance(info, dict)
         if info[_XTDB_ACTIVE_TRANSACTION_KEY] != system_time:
             raise ValueError("XTDB transaction cannot mix system times")
 
