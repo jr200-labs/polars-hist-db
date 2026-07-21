@@ -1,7 +1,7 @@
 import dateutil.parser
 import logging
 import re
-from typing import Collection, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Collection, Dict, List, Mapping, Optional, Tuple, Union, cast
 
 import polars as pl
 from sql_metadata import Parser
@@ -139,6 +139,10 @@ class _TypeConversionUtils:
 class SQLType:
     @staticmethod
     def from_polars(pl_dtype: pl.DataType, default_varchar_length: int = 255) -> str:
+        if isinstance(pl_dtype, pl.List):
+            inner = cast(pl.DataType, pl_dtype.inner)
+            return f"ARRAY({SQLType.from_polars(inner, default_varchar_length)})"
+
         idx = _TypeConversionUtils._rowidx_from_polars_type(pl_dtype)
         if idx >= 0:
             return TYPE_PRIORITY_MAP[idx][0]
@@ -176,6 +180,9 @@ class PolarsType:
         type_name, params, param_dict = _TypeConversionUtils._parse_parameterised_type(
             t
         )
+        if type_name == "ARRAY" and len(params) == 1:
+            return pl.List(PolarsType.from_sql(params[0]))
+
         if type_name == "VARCHAR" or type_name.endswith("TEXT"):
             return pl.Utf8()
 

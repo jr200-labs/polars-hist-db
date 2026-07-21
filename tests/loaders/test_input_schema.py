@@ -58,6 +58,15 @@ def test_input_schema_types_nulls_and_drops_declared_input_only_columns() -> Non
     assert transformed.columns == ["id", "note"]
 
 
+def test_input_schema_preserves_declared_array_input() -> None:
+    columns = [_column("coordinates", "ARRAY(DOUBLE)", column_type="input_only")]
+
+    typed = enforce_input_schema(pl.DataFrame({"coordinates": [[1.5, 2.5]]}), columns)
+
+    assert typed.schema == {"coordinates": pl.List(pl.Float64)}
+    assert apply_transformations(typed, columns).is_empty()
+
+
 def test_input_schema_accepts_only_null_structural_ancestors() -> None:
     columns = [_column("payload.child", "VARCHAR(32)")]
 

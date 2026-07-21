@@ -35,3 +35,10 @@ def test_timezone_aware_timestamp_type_roundtrip() -> None:
     sqlalchemy_type = SQLAlchemyType.from_sql("TIMESTAMP WITH TIME ZONE")
     assert isinstance(sqlalchemy_type, TIMESTAMP)
     assert sqlalchemy_type.timezone is True
+
+
+def test_array_type_roundtrip() -> None:
+    dtype = pl.List(pl.Float64)
+
+    assert PolarsType.from_sql("ARRAY(DOUBLE)") == dtype
+    assert SQLType.from_polars(dtype) == "ARRAY(DOUBLE)"
