@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.12.71](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.70...v0.12.71) (2026-07-21)
+
+
+### Bug Fixes
+
+* **deps:** update dependency jr200-labs/github-action-templates to shared-v0.1.32 ([#291](https://github.com/jr200-labs/polars-hist-db/issues/291)) ([ff8ba99](https://github.com/jr200-labs/polars-hist-db/commit/ff8ba99527415f293599a23682d2092ae58f34f1))
+* **deps:** update quarto-cli digest to 13b7e59 ([#290](https://github.com/jr200-labs/polars-hist-db/issues/290)) ([0d12ba2](https://github.com/jr200-labs/polars-hist-db/commit/0d12ba2e0b5b61ced9a532ca7f1ca868b6152063))
+* reject duplicate Arrow fields ([#292](https://github.com/jr200-labs/polars-hist-db/issues/292)) ([15ae6a4](https://github.com/jr200-labs/polars-hist-db/commit/15ae6a415537b6f8d8b241c1337097838e16671b))
+
 ## [0.12.70](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.69...v0.12.70) (2026-07-20)
 
 
