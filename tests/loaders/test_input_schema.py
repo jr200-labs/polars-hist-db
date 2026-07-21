@@ -58,6 +58,22 @@ def test_input_schema_types_nulls_and_drops_declared_input_only_columns() -> Non
     assert transformed.columns == ["id", "note"]
 
 
+def test_input_schema_accepts_only_null_structural_ancestors() -> None:
+    columns = [_column("payload.child", "VARCHAR(32)")]
+
+    typed = enforce_input_schema(
+        pl.DataFrame({"payload": [None]}, schema={"payload": pl.Null}), columns
+    )
+
+    assert typed.schema == {"payload.child": pl.String}
+    with pytest.raises(InputSchemaError, match="undeclared input columns: payload"):
+        enforce_input_schema(pl.DataFrame({"payload": ["bad"]}), columns)
+    with pytest.raises(InputSchemaError, match="undeclared input columns: other"):
+        enforce_input_schema(
+            pl.DataFrame({"other": [None]}, schema={"other": pl.Null}), columns
+        )
+
+
 def test_input_schema_rejects_unknown_missing_null_and_conflicting_columns() -> None:
     required = _column("id", "INT", nullable=False)
 
