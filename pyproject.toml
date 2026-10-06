@@ -46,7 +46,7 @@ dev = [
     "types-pyyaml>=6.0.12.20260906",
     "pyarrow-stubs>=20.0.0.20260819",
     "pycrdt>=0.14.8",
-    "hypothesis>=6.168.4",
+    "hypothesis>=6.168.5",
     "psycopg[binary]>=3.3.6",
 ]
 
