@@ -73,7 +73,6 @@ quarto-cli = { git = "https://github.com/quarto-dev/quarto-cli", rev = "abc6a78e
 
 [tool.mypy]
 warn_unused_configs = true
-plugins = ["sqlalchemy.ext.mypy.plugin"]
 packages = ["polars_hist_db"]
 
 [[tool.mypy.overrides]]

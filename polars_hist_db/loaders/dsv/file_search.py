@@ -79,10 +79,10 @@ def _find_files_with_timestamps(
 
     sd = Scandir(
         root_path=root_path,
-        dir_include=dir_include,
-        dir_exclude=dir_exclude,
+        dir_include=list(dir_include),
+        dir_exclude=list(dir_exclude),
         file_include=file_include,
-        file_exclude=file_exclude,
+        file_exclude=list(file_exclude),
         max_depth=max_depth,
     )
 
@@ -99,10 +99,13 @@ def _find_files_with_timestamps(
         if not entry.is_file:
             continue
         path = os.path.normpath(os.path.join(root_path, entry.path))
+        entry_mtime: datetime | float | None = entry.st_mtime
+        if entry_mtime is None:
+            entry_mtime = os.stat(path).st_mtime
         mtime = (
-            entry.st_mtime
-            if isinstance(entry.st_mtime, datetime)
-            else datetime.fromtimestamp(entry.st_mtime, tz=source_tz)
+            entry_mtime
+            if isinstance(entry_mtime, datetime)
+            else datetime.fromtimestamp(entry_mtime, tz=source_tz)
         ).astimezone(target_tz)
         created_at = (
             _parse_time(path, timestamp["datetime_regex"], source_tz, target_tz)

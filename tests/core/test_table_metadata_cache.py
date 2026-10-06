@@ -1,8 +1,32 @@
-from sqlalchemy import Column, Integer, MetaData, Table, create_engine, text
+import pytest
+from sqlalchemy import Column, Integer, MetaData, Table, create_engine, select, text
 
 from polars_hist_db.config.table import TableColumnConfig, TableConfig
 from polars_hist_db.core.table import TableOps
 from polars_hist_db.core.table_config import TableConfigOps
+
+
+@pytest.mark.parametrize(
+    "selection, expected",
+    [(None, ["id", "value"]), (["value", "missing"], ["value"]), ([], [])],
+)
+def test_column_intersection_preserves_types_order_and_detached_expressions(
+    selection, expected
+):
+    engine = create_engine("sqlite:///:memory:")
+    with engine.connect() as connection:
+        Table(
+            "items", MetaData(), Column("id", Integer), Column("value", Integer)
+        ).create(connection)
+        result = TableOps("main", "items", connection).get_column_intersection(
+            selection
+        )
+
+        assert list(result.keys()) == expected
+        assert all(isinstance(column.type, Integer) for column in result)
+        assert all(column.table is None for column in result)
+        if expected:
+            assert "FROM" not in str(select(*result))
 
 
 def test_table_metadata_is_cached_per_connection_and_can_be_invalidated():
