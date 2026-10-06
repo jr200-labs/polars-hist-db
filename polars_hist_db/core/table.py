@@ -106,13 +106,13 @@ class TableOps:
     ) -> ColumnCollection:
         tbl = self.get_table_metadata()
 
-        result: ColumnCollection = ColumnCollection(
-            [
-                (c.name, Column(c.name, c.type))
+        result: ColumnCollection = select(
+            *[
+                Column(c.name, c.type)
                 for c in tbl.columns
                 if column_selection is None or c.name in column_selection
             ]
-        )
+        ).selected_columns
 
         return result
 

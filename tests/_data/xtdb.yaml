@@ -1,0 +1,6 @@
+server:
+  host: '*'
+  port: 5432
+flightSql:
+  host: '*'
+  port: 9832

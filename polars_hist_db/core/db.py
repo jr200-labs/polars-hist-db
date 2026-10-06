@@ -74,8 +74,10 @@ class DbOps:
         else:
             sql = text(f"SHOW variables like '{filter}';")
 
-        result = self.execute_sqlalchemy("sql.op.get_all_variables", sql).fetchall()
-        df = pl.from_dicts([{k: v for k, v in result}])
+        result = (
+            self.execute_sqlalchemy("sql.op.get_all_variables", sql).mappings().all()
+        )
+        df = pl.from_dicts([{row["Variable_name"]: row["Value"] for row in result}])
         return df
 
     def get_system_versioning_time(self) -> datetime:

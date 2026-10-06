@@ -16,6 +16,7 @@ from polars_hist_db.backends import DbEngineConfig, XtdbBackend
 from polars_hist_db.backends.xtdb import _execute_xtdb_dml
 from polars_hist_db.config import TableColumnConfig, TableConfig
 from polars_hist_db.core import TimeHint
+from tests.utils.xtdb_helper import xtdb_container_args
 
 pytestmark = [
     pytest.mark.integration,
@@ -45,9 +46,7 @@ def _published_port(container_id: str, container_port: str) -> int:
 
 @contextmanager
 def _xtdb_adbc_connection() -> Iterator[Any]:
-    container_id = _docker(
-        ["run", "--rm", "-d", "-p", "9832", "ghcr.io/xtdb/xtdb:nightly"]
-    )
+    container_id = _docker(xtdb_container_args(9832))
     connection = None
     try:
         backend = XtdbBackend()
@@ -81,18 +80,7 @@ def _xtdb_adbc_connection() -> Iterator[Any]:
 
 @contextmanager
 def _xtdb_pgwire_and_adbc_connections() -> Iterator[tuple[Any, Any]]:
-    container_id = _docker(
-        [
-            "run",
-            "--rm",
-            "-d",
-            "-p",
-            "5432",
-            "-p",
-            "9832",
-            "ghcr.io/xtdb/xtdb:nightly",
-        ]
-    )
+    container_id = _docker(xtdb_container_args(5432, 9832))
     engine = None
     adbc_connection = None
     try:

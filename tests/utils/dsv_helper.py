@@ -35,6 +35,7 @@ from polars_hist_db.core import (
 )
 from polars_hist_db.loaders import load_typed_dsv
 from polars_hist_db.types import PolarsType, SQLAlchemyType
+from tests.utils.xtdb_helper import xtdb_container_args
 
 
 def _tests_dir():
@@ -89,18 +90,7 @@ def _published_port(container_id: str, container_port: str) -> int:
 
 
 def xtdb_engine_test() -> tuple[Engine, str, DbEngineConfig]:
-    container_id = _docker(
-        [
-            "run",
-            "--rm",
-            "-d",
-            "-p",
-            "5432",
-            "-p",
-            "9832",
-            "ghcr.io/xtdb/xtdb:nightly",
-        ]
-    )
+    container_id = _docker(xtdb_container_args(5432, 9832))
     config = DbEngineConfig(
         backend="xtdb",
         hostname="127.0.0.1",
