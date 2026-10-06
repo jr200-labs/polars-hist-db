@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.12.80](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.79...v0.12.80) (2026-10-06)
+
+
+### Features
+
+* **deps:** update astral-sh/setup-uv action to v10 ([#347](https://github.com/jr200-labs/polars-hist-db/issues/347)) ([458b2d1](https://github.com/jr200-labs/polars-hist-db/commit/458b2d19c4ded400f0be99b9837b8acdcdfa4add))
+
+
+### Bug Fixes
+
+* **deps:** support non-major dependency updates ([#361](https://github.com/jr200-labs/polars-hist-db/issues/361)) ([3a73f14](https://github.com/jr200-labs/polars-hist-db/commit/3a73f142e20e7fc3d7165de98de25c913fdcab7f))
+* **deps:** update all non-major dependencies ([#349](https://github.com/jr200-labs/polars-hist-db/issues/349)) ([9c80b7e](https://github.com/jr200-labs/polars-hist-db/commit/9c80b7e998142d108ccc0c309903bf14c361a18b))
+* **deps:** update all non-major dependencies ([#352](https://github.com/jr200-labs/polars-hist-db/issues/352)) ([27fb998](https://github.com/jr200-labs/polars-hist-db/commit/27fb998637412dfa4ec21b15d693dc33be98259a))
+* **deps:** update astral-sh/setup-uv action to v10.0.1 ([#351](https://github.com/jr200-labs/polars-hist-db/issues/351)) ([8e210e8](https://github.com/jr200-labs/polars-hist-db/commit/8e210e868f7c7de5d90c141f263ea24c20431e87))
+* **deps:** update astral-sh/setup-uv action to v10.2.0 ([#363](https://github.com/jr200-labs/polars-hist-db/issues/363)) ([da0fcb6](https://github.com/jr200-labs/polars-hist-db/commit/da0fcb6bdd91edbfa55a98624f82d5b7b4018a97))
+* **deps:** update dependency hypothesis to &gt;=6.168.5 ([#355](https://github.com/jr200-labs/polars-hist-db/issues/355)) ([6911c42](https://github.com/jr200-labs/polars-hist-db/commit/6911c4282d24aaa654c39872df97c2576ee93caf))
+* **deps:** update dependency jr200-labs/github-action-templates to shared-v0.1.37 ([#345](https://github.com/jr200-labs/polars-hist-db/issues/345)) ([2ddc3d8](https://github.com/jr200-labs/polars-hist-db/commit/2ddc3d865cd8d2dd0fce59dd83511788632126c6))
+* **deps:** update dependency jr200-labs/github-action-templates to shared-v0.1.38 ([#353](https://github.com/jr200-labs/polars-hist-db/issues/353)) ([d5ec181](https://github.com/jr200-labs/polars-hist-db/commit/d5ec181030f19a672047735de4a9ce9f7abd1917))
+* **deps:** update dependency jr200-labs/github-action-templates to shared-v0.1.46 ([#357](https://github.com/jr200-labs/polars-hist-db/issues/357)) ([eb3439a](https://github.com/jr200-labs/polars-hist-db/commit/eb3439ae7dbd52c3671382b88d3e1e58a9afb043))
+* **deps:** update dependency jr200-labs/github-action-templates to shared-v0.1.54 ([#358](https://github.com/jr200-labs/polars-hist-db/issues/358)) ([1ef9653](https://github.com/jr200-labs/polars-hist-db/commit/1ef96534af8230511968e919b462ea76d2c336fc))
+* **deps:** update dependency jr200-labs/github-action-templates to shared-v0.1.74 ([#360](https://github.com/jr200-labs/polars-hist-db/issues/360)) ([556052e](https://github.com/jr200-labs/polars-hist-db/commit/556052ecb16f7933fb73923e06aab96f5c1e88ee))
+* **deps:** update dependency sqlalchemy to &gt;=2.0.52 ([#346](https://github.com/jr200-labs/polars-hist-db/issues/346)) ([abef27d](https://github.com/jr200-labs/polars-hist-db/commit/abef27d353330c820b95d298fbb055a551cb5f87))
+* **deps:** update quarto-cli digest to 9717306 ([#356](https://github.com/jr200-labs/polars-hist-db/issues/356)) ([b6ab412](https://github.com/jr200-labs/polars-hist-db/commit/b6ab412bac3f38cbd83cd2fe4b7d8cadda1e03d9))
+
 ## [0.12.79](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.78...v0.12.79) (2026-08-12)
 
 
