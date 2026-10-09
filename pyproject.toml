@@ -9,7 +9,7 @@ requires-python = ">=3.12,<4.0"
 dependencies = [
     "nats-py>=2.16.0",
     "polars>=1.44.2",
-    "pyarrow>=25.0.1",
+    "pyarrow>=26.0.0",
     "pymysql>=1.2.3",
     "pytz>=2026.5",
     "pyyaml>=6.0.3",
