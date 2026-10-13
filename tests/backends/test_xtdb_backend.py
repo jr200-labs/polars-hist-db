@@ -51,6 +51,8 @@ def test_xtdb_casts_mediumtext_as_text():
         ("bigint", "BIGINT", "BIGINT"),
         ("integer", "INTEGER", "INT"),
         ("text", "TEXT", "VARCHAR(255)"),
+        ("real", "FLOAT", "FLOAT"),
+        ("double precision", "DOUBLE PRECISION", "DOUBLE"),
         ("time without time zone", "TIME", "TIME"),
         ("timestamp without time zone", "TIMESTAMP", "TIMESTAMP"),
         (
@@ -66,6 +68,10 @@ def test_xtdb_reflection_accepts_sql_information_schema_types(
 ):
     assert _xtdb_physical_type_family(data_type) == family
     assert _xtdb_type_to_config_type(data_type) == config_type
+
+
+def test_xtdb_configured_real_retains_mariadb_double_precision_semantics():
+    assert _xtdb_cast_type("REAL") == "DOUBLE PRECISION"
 
 
 def test_xtdb_rejects_unknown_configured_column_type():
