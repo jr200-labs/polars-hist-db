@@ -42,6 +42,7 @@ def test_load_typed_dsv_preserves_rows_and_types(
 
     result = load_typed_dsv(source, columns, delimiter=delimiter)
 
+    assert result.columns == ["id", "label", "event_date"]
     assert dict(result.schema) == {
         "id": pl.Int64,
         "label": pl.String,

@@ -13,6 +13,7 @@ from pycrdt import Doc, Map
 from sqlalchemy import Engine, text
 
 from polars_hist_db.backends import DbEngineConfig, XtdbBackend
+from polars_hist_db.backends.xtdb_schema import _xtdb_physical_type_family
 from polars_hist_db.overrides import (
     ArrowOverrideStoreConfig,
     CrdtDocumentStoreConfig,
@@ -181,7 +182,8 @@ def test_xtdb_override_bulk_write_uses_native_timestamp_instants():
         ":utf8" not in str(data_type) for data_type in timestamp_types.values()
     ), timestamp_types
     assert all(
-        ":instant" in str(data_type) for data_type in timestamp_types.values()
+        _xtdb_physical_type_family(str(data_type)) == "TIMESTAMP WITH TIME ZONE"
+        for data_type in timestamp_types.values()
     ), timestamp_types
 
 

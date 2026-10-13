@@ -164,6 +164,8 @@ def _xtdb_type_to_config_type(data_type: str) -> str:
 
 def _xtdb_physical_type_family(data_type: str) -> str:
     normalized = _unwrap_xtdb_optional_type(data_type)
+    if normalized[:1].isalpha():
+        return _xtdb_configured_type_family(normalized)
     if (members := _xtdb_union_members(normalized)) is not None:
         families = {
             family
@@ -175,10 +177,6 @@ def _xtdb_physical_type_family(data_type: str) -> str:
         if len(families) != 1:
             return "UNION"
         return families.pop()
-    if normalized.startswith(("DECIMAL", "NUMERIC")):
-        return "DECIMAL"
-    if normalized[:1].isalpha():
-        return _xtdb_configured_type_family(normalized)
     head = _xtdb_type_head(normalized)
     try:
         return _XTDB_PHYSICAL_TYPE_FAMILIES[head]
