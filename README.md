@@ -26,6 +26,13 @@ make test
 
 ## Development
 
+Development and CI use Python 3.15, selected by `.python-version`; uv installs
+that interpreter automatically. The library continues to support Python 3.12+.
+With the current lockfile, Python 3.15 builds `pycrdt`, `scandir-rs`, and the
+optional ADBC driver manager from source. Install a Rust toolchain supporting
+the 2024 edition and a C/C++ compiler before running
+`uv sync --group dev --extra xtdb`.
+
 ```bash
 make check       # ruff + mypy
 make docs        # render and preview quarto docs
