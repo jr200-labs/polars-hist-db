@@ -25,7 +25,6 @@ def _parse_header_row(
                 has_header=True,
                 infer_schema_length=0,
                 n_rows=0,
-                n_threads=1,
                 separator=delimiter,
             )
 
@@ -89,9 +88,9 @@ def load_typed_dsv(
     valid_col_configs = set()
     valid_col_configs |= {c.source for c in column_configs if c.source}
     valid_col_configs |= {c.target for c in column_configs if c.target}
-    source_cols: Sequence[str] = list(
-        {h for h in headers if h in valid_col_configs or h.startswith("__")}
-    )
+    source_cols: Sequence[str] = [
+        h for h in headers if h in valid_col_configs or h.startswith("__")
+    ]
 
     dsv_df = (
         pl.read_csv(
