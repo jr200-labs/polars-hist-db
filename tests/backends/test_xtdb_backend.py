@@ -51,6 +51,8 @@ def test_xtdb_casts_mediumtext_as_text():
         ("bigint", "BIGINT", "BIGINT"),
         ("integer", "INTEGER", "INT"),
         ("text", "TEXT", "VARCHAR(255)"),
+        ("time without time zone", "TIME", "TIME"),
+        ("timestamp without time zone", "TIMESTAMP", "TIMESTAMP"),
         (
             "timestamp with time zone",
             "TIMESTAMP WITH TIME ZONE",
