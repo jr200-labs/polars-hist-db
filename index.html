@@ -456,6 +456,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="development" class="level2">
 <h2 class="anchored" data-anchor-id="development">Development</h2>
+<p>Development and CI use Python 3.15, selected by <code>.python-version</code>; uv installs that interpreter automatically. The library continues to support Python 3.12+. With the current lockfile, Python 3.15 builds <code>pycrdt</code>, <code>scandir-rs</code>, and the optional ADBC driver manager from source. Install a Rust toolchain supporting the 2024 edition and a C/C++ compiler before running <code>uv sync --group dev --extra xtdb</code>.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> check       <span class="co"># ruff + mypy</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> docs        <span class="co"># render and preview quarto docs</span></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> bump PART=patch</span>
