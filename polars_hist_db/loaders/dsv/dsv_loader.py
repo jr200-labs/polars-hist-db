@@ -25,7 +25,6 @@ def _parse_header_row(
                 has_header=True,
                 infer_schema_length=0,
                 n_rows=0,
-                n_threads=1,
                 separator=delimiter,
             )
 
