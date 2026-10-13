@@ -21,7 +21,7 @@ def _parse_time(path, pattern: str, src_tz: TzInfo, target_tz: TzInfo) -> dateti
 
     d = {k: int(v) for k, v in m.groupdict().items()}
     src_dt = src_tz.localize(
-        datetime(  # noqa: DTZ001 -- pytz requires localizing a naive datetime
+        datetime(  # pytz requires localizing a naive datetime
             d["y"],
             d["m"],
             d["d"],
