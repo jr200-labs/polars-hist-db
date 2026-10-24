@@ -3681,6 +3681,111 @@
           "value": 7.857908620000018
         }
       ]
+    },
+    {
+      "commit": "c44bb94c4c7a70ff67ddc2a5be1184544d2dc134",
+      "repository": "jr200-labs/polars-hist-db",
+      "timestamp": "2026-10-24T06:28:30.388365+00:00",
+      "runner": "Linux/X64",
+      "python": "3.15.1",
+      "polars": "2.0.0",
+      "benchmarks": [
+        {
+          "name": "delta 50000 stored / 50000 uploaded",
+          "unit": "seconds",
+          "value": 0.006722479000004
+        },
+        {
+          "name": "delta 500000 stored / 50000 uploaded",
+          "unit": "seconds",
+          "value": 0.009221727999999985
+        },
+        {
+          "name": "delta 5000000 stored / 50000 uploaded",
+          "unit": "seconds",
+          "value": 0.027438060999998015
+        },
+        {
+          "name": "foreign keys 50000 stored / 50000 uploaded / 0 matched",
+          "unit": "seconds",
+          "value": 0.11342082999999548
+        },
+        {
+          "name": "foreign keys 50000 stored / 50000 uploaded / 0.5 matched",
+          "unit": "seconds",
+          "value": 0.08243855399999234
+        },
+        {
+          "name": "foreign keys 50000 stored / 50000 uploaded / 1 matched",
+          "unit": "seconds",
+          "value": 0.05750840999999696
+        },
+        {
+          "name": "foreign keys 500000 stored / 50000 uploaded / 0 matched",
+          "unit": "seconds",
+          "value": 0.10920909700000436
+        },
+        {
+          "name": "foreign keys 500000 stored / 50000 uploaded / 0.5 matched",
+          "unit": "seconds",
+          "value": 0.08342888399999993
+        },
+        {
+          "name": "foreign keys 500000 stored / 50000 uploaded / 1 matched",
+          "unit": "seconds",
+          "value": 0.05825038700000107
+        },
+        {
+          "name": "foreign keys 5000000 stored / 50000 uploaded / 0 matched",
+          "unit": "seconds",
+          "value": 0.12546786299999724
+        },
+        {
+          "name": "foreign keys 5000000 stored / 50000 uploaded / 0.5 matched",
+          "unit": "seconds",
+          "value": 0.1023013829999968
+        },
+        {
+          "name": "foreign keys 5000000 stored / 50000 uploaded / 1 matched",
+          "unit": "seconds",
+          "value": 0.07681496700000423
+        },
+        {
+          "name": "time partitioning 500000 rows / 365 buckets",
+          "unit": "seconds",
+          "value": 0.07793866900000523
+        },
+        {
+          "name": "Arrow override IPC 1000 operations / 1000 scopes",
+          "unit": "seconds",
+          "value": 0.054520078999999555
+        },
+        {
+          "name": "Arrow override sync 1000 operations / 1000 scopes",
+          "unit": "seconds",
+          "value": 0.3950329250000095
+        },
+        {
+          "name": "Arrow override IPC 10000 operations / 10000 scopes",
+          "unit": "seconds",
+          "value": 0.532342271999994
+        },
+        {
+          "name": "Arrow override sync 10000 operations / 10000 scopes",
+          "unit": "seconds",
+          "value": 4.049963488000003
+        },
+        {
+          "name": "Arrow override IPC 10000 operations / 1000 scopes",
+          "unit": "seconds",
+          "value": 0.5208008600000085
+        },
+        {
+          "name": "Arrow override sync 10000 operations / 1000 scopes",
+          "unit": "seconds",
+          "value": 4.015668463999987
+        }
+      ]
     }
   ]
 }
