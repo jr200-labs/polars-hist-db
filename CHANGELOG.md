@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.12.82](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.81...v0.12.82) (2026-10-24)
+
+
+### Bug Fixes
+
+* **deps:** update all non-major dependencies ([#378](https://github.com/jr200-labs/polars-hist-db/issues/378)) ([973b7df](https://github.com/jr200-labs/polars-hist-db/commit/973b7df38fed6cc722a0da999702ab850b850b5c))
+* **deps:** update dependency jr200-labs/github-action-templates to shared-v0.1.86 ([#379](https://github.com/jr200-labs/polars-hist-db/issues/379)) ([627e4e0](https://github.com/jr200-labs/polars-hist-db/commit/627e4e06309d5306d6f4d56faa1ceb898e44db21))
+* **deps:** update dependency jr200-labs/github-action-templates to shared-v0.1.87 ([#382](https://github.com/jr200-labs/polars-hist-db/issues/382)) ([0e48063](https://github.com/jr200-labs/polars-hist-db/commit/0e48063441ca433ea42b058aaf64c95c99c87a74))
+* **deps:** update quarto-cli digest to 5b23163 ([#377](https://github.com/jr200-labs/polars-hist-db/issues/377)) ([9ee6111](https://github.com/jr200-labs/polars-hist-db/commit/9ee6111ebfe84e11d44c451169b839c62acacedc))
+
 ## [0.12.81](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.80...v0.12.81) (2026-10-13)
 
 
