@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.85](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.84...v0.12.85) (2026-10-29)
+
+
+### Bug Fixes
+
+* **xtdb:** preserve nullable type contracts for null-only reflected columns ([#387](https://github.com/jr200-labs/polars-hist-db/issues/387)) ([176e87d](https://github.com/jr200-labs/polars-hist-db/commit/176e87db6097db6cc364881ba20de291a8d61db9))
+
 ## [0.12.84](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.83...v0.12.84) (2026-10-29)
 
 
