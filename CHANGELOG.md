@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.84](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.83...v0.12.84) (2026-10-29)
+
+
+### Bug Fixes
+
+* **deps:** update dependency jr200-labs/github-action-templates to shared-v0.1.89 ([dbb55dc](https://github.com/jr200-labs/polars-hist-db/commit/dbb55dc76324a05da1f4cb4dbca74e83b897f0e4))
+
 ## [0.12.83](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.82...v0.12.83) (2026-10-29)
 
 
