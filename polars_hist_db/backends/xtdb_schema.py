@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 import polars as pl
+from sqlalchemy import text
 
 from ..config import ForeignKeyConfig, TableColumnConfig, TableConfig
 from ..observability import record_database_type_contract
@@ -200,6 +201,8 @@ def _xtdb_configured_type_family(data_type: str) -> str:
 def _validate_xtdb_physical_types(
     metadata: pl.DataFrame,
     table_config: TableConfig,
+    *,
+    connection: Any | None = None,
 ) -> None:
     physical_columns = _xtdb_physical_column_map(table_config)
     expected = {
@@ -231,6 +234,21 @@ def _validate_xtdb_physical_types(
             nullable and actual_type in {"NULL", "MISSING"}
         ):
             continue
+
+        # pgwire information_schema can describe an all-null column as text.
+        # Prove it has no values across either timeline before accepting that
+        # fallback. Real text values and failed probes must still fail closed.
+        if nullable and actual_type == "TEXT" and connection is not None:
+            table_sql = _qualified_table_name(table_config.schema, table_config.name)
+            column_sql = _xtdb_column_identifier(column)
+            nonnull = connection.execute(
+                text(
+                    f"SELECT 1 FROM {table_sql} FOR ALL SYSTEM_TIME FOR ALL VALID_TIME "
+                    f"WHERE {column_sql} IS NOT NULL LIMIT 1"
+                )
+            ).first()
+            if nonnull is None:
+                continue
 
         record_database_type_contract(
             backend="xtdb",
@@ -523,7 +541,9 @@ class XtdbTableConfigOps:
         )
         if configured_table is not None:
             if not metadata.is_empty():
-                _validate_xtdb_physical_types(metadata, configured_table)
+                _validate_xtdb_physical_types(
+                    metadata, configured_table, connection=self.connection
+                )
             return configured_table
 
         if metadata.is_empty():
