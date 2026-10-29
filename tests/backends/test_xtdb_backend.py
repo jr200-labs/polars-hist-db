@@ -2003,3 +2003,53 @@ def test_xtdb_temporal_upsert_falls_back_to_pgwire_when_adbc_ingest_unavailable(
     assert result == 7
     adbc_ops.table_insert.assert_called_once()  # type: ignore[attr-defined]
     pgwire_ops.table_insert.assert_called_once()
+
+
+@pytest.mark.parametrize("has_value", [False, True])
+@pytest.mark.parametrize("nullable", [False, True])
+def test_xtdb_nullable_text_fallback_requires_no_nonnull_history(has_value, nullable):
+    table = TableConfig(
+        schema="test",
+        name="records",
+        primary_keys=["_id"],
+        columns=[
+            TableColumnConfig("records", "_id", "VARCHAR(255)", nullable=False),
+            TableColumnConfig("records", "valid_to", "DATETIME", nullable=nullable),
+        ],
+    )
+    metadata = pl.DataFrame(
+        {"column_name": ["_id", "valid_to"], "data_type": ["text", "text"]}
+    )
+    connection = Mock()
+    connection.execute.return_value.first.return_value = (1,) if has_value else None
+    if has_value or not nullable:
+        with pytest.raises(TypeError, match="expected TIMESTAMP WITH TIME ZONE"):
+            _validate_xtdb_physical_types(metadata, table, connection=connection)
+    else:
+        _validate_xtdb_physical_types(metadata, table, connection=connection)
+    if not nullable:
+        connection.execute.assert_not_called()
+        return
+    statement = str(connection.execute.call_args.args[0])
+    assert "test.records FOR ALL SYSTEM_TIME FOR ALL VALID_TIME" in statement
+    assert "valid_to IS NOT NULL" in statement
+    assert statement.endswith("LIMIT 1")
+
+
+def test_xtdb_nullable_fallback_does_not_hide_query_failure():
+    table = TableConfig(
+        schema="test",
+        name="records",
+        primary_keys=["_id"],
+        columns=[
+            TableColumnConfig("records", "_id", "VARCHAR(255)", nullable=False),
+            TableColumnConfig("records", "valid_to", "DATETIME", nullable=True),
+        ],
+    )
+    metadata = pl.DataFrame(
+        {"column_name": ["_id", "valid_to"], "data_type": ["text", "text"]}
+    )
+    connection = Mock()
+    connection.execute.side_effect = RuntimeError("unavailable")
+    with pytest.raises(RuntimeError, match="unavailable"):
+        _validate_xtdb_physical_types(metadata, table, connection=connection)

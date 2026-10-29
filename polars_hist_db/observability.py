@@ -183,7 +183,7 @@ def record_database_type_contract(
     outcome: str,
 ) -> None:
     """Record a database-boundary type violation or forced conversion."""
-    attrs = {
+    attrs: dict[str, str | bool] = {
         "backend": backend,
         "operation": operation,
         "expected_type": expected_type,
