@@ -4,14 +4,14 @@ version = "0.12.84"
 description = "(dsv,jetstream) --> dataframe <--> bitemporal-tables"
 authors = [{ name = "jr200", email = "jayshan+git@gmail.com" }]
 readme = "README.md"
-requires-python = ">=3.12,<4.0"
+requires-python = ">=3.15.2,<4.0"
 
 dependencies = [
     "nats-py>=2.16.0",
-    "polars>=2.0.0",
+    "polars>=2.1.0",
     "pyarrow>=26.0.0",
     "pymysql>=1.2.3",
-    "pytz>=2026.5",
+    "pytz>=2026.6",
     "pyyaml>=6.0.3",
     "scandir-rs>=2.10.1",
     "sql-metadata>=3.0.1",
@@ -21,7 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 sqlalchemy = ["polars"]
 nats = ["nats-py"]
-xtdb = ["adbc-driver-flightsql>=1.12.0", "psycopg[binary]>=3.3.6"]
+xtdb = ["adbc-driver-flightsql>=1.13.0", "psycopg[binary]>=3.3.6"]
 crdt = [
     "pycrdt>=0.14.10",
 ]
@@ -36,17 +36,17 @@ polars-hist-db-parity = "polars_hist_db.parity:main"
 dev = [
     "coverage>=7.17.0",
     "ipykernel>=7.4.0",
-    "mypy>=2.4.0",
-    "pytest>=9.1.1",
-    "pytest-asyncio>=1.4.0",
+    "mypy>=2.4.1",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.4.1",
     "quarto-cli",
-    "ruff>=0.17.2,<0.18",
-    "types-python-dateutil>=2.9.0.20261021",
-    "types-pytz>=2026.5.0.20261006",
-    "types-pyyaml>=6.0.12.20260906",
+    "ruff>=0.17.3,<0.18",
+    "types-python-dateutil>=2.9.0.20261029",
+    "types-pytz>=2026.6.0.20261031",
+    "types-pyyaml>=6.0.12.20261030",
     "pyarrow-stubs>=20.0.0.20260819",
     "pycrdt>=0.14.10",
-    "hypothesis>=6.170.9",
+    "hypothesis>=6.170.14",
     "psycopg[binary]>=3.3.6",
 ]
 
