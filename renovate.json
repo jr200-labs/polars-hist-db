@@ -1,11 +1,32 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>jr200-labs/github-action-templates"],
+  "extends": [
+    "github>jr200-labs/github-action-templates"
+  ],
   "packageRules": [
     {
       "description": "Use semver tags for quarto-cli git dep, not commit digests",
-      "matchPackageNames": ["quarto-cli"],
+      "matchPackageNames": [
+        "quarto-cli"
+      ],
       "versioning": "semver"
+    },
+    {
+      "description": "Library Python compatibility is reviewed separately from the development interpreter",
+      "matchDepTypes": [
+        "requires-python"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Keep the development interpreter within the supported Python series",
+      "matchDatasources": [
+        "python-version"
+      ],
+      "matchPackageNames": [
+        "python"
+      ],
+      "allowedVersions": ">=3.12,<3.16"
     }
   ]
 }

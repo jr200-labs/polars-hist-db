@@ -1,0 +1,40 @@
+name: python-compatibility
+
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: Python ${{ matrix.python }}
+    runs-on: ${{ fromJSON(vars.RUNNER_PROFILES)[vars.RUNNER_PROFILE].default }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14", "3.15.2"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install locked test dependencies
+        # Quarto is a documentation executable, not a library/test dependency.
+        # --locked still verifies the complete dependency graph and source pin.
+        run: uv sync --locked --python "${{ matrix.python }}" --group dev --extra xtdb --no-install-package quarto-cli
+      - name: Run unit suite on the supported interpreter
+        run: .venv/bin/python -m pytest tests/
+      - name: Verify installed compatibility metadata
+        run: |
+          .venv/bin/python - <<'PY'
+          from importlib.metadata import metadata
+          from packaging.specifiers import SpecifierSet
+          supported = SpecifierSet(metadata("polars-hist-db")["Requires-Python"])
+          for version in ("3.12.0", "3.13.0", "3.14.0", "3.15.2"):
+              assert version in supported, version
+          for version in ("3.11.9", "3.16.0"):
+              assert version not in supported, version
+          PY
