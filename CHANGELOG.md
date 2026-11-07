@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.86](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.85...v0.12.86) (2026-11-07)
+
+
+### Bug Fixes
+
+* **ci:** remove bespoke Python compatibility workflow ([#396](https://github.com/jr200-labs/polars-hist-db/issues/396)) ([b914eff](https://github.com/jr200-labs/polars-hist-db/commit/b914effbee1f15d5044bbab8b398db2fee33dde0))
+* **python:** restore Python 3.12 through 3.15 compatibility ([#394](https://github.com/jr200-labs/polars-hist-db/issues/394)) ([94e5d20](https://github.com/jr200-labs/polars-hist-db/commit/94e5d2058f6d98f53cc2f508f4f1fd934cb7fe1e))
+
 ## [0.12.85](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.84...v0.12.85) (2026-11-07)
 
 
