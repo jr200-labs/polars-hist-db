@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.12.85](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.84...v0.12.85) (2026-11-07)
+
+
+### Bug Fixes
+
+* **deps:** update all non-major dependencies ([#385](https://github.com/jr200-labs/polars-hist-db/issues/385)) ([1ee169b](https://github.com/jr200-labs/polars-hist-db/commit/1ee169bbdab00c76f79b11da6611a40e55dbefb2))
+* **deps:** update dependency jr200-labs/github-action-templates to shared-v0.1.92 ([540d29f](https://github.com/jr200-labs/polars-hist-db/commit/540d29fee9a065431c0b32d5fe17e76f0ef7ee1e))
+* **deps:** update dependency jr200-labs/github-action-templates to shared-v0.1.95 ([#393](https://github.com/jr200-labs/polars-hist-db/issues/393)) ([2f69afd](https://github.com/jr200-labs/polars-hist-db/commit/2f69afdd8122cf7160e99fe7a58c0375671add82))
+* **deps:** update quarto-cli digest to 38e34ec ([d6dd383](https://github.com/jr200-labs/polars-hist-db/commit/d6dd3834ec90c034dc71b9d387ba2de2120a4eea))
+* **xtdb:** preserve nullable type contracts for null-only reflected columns ([#387](https://github.com/jr200-labs/polars-hist-db/issues/387)) ([176e87d](https://github.com/jr200-labs/polars-hist-db/commit/176e87db6097db6cc364881ba20de291a8d61db9))
+
 ## [0.12.84](https://github.com/jr200-labs/polars-hist-db/compare/v0.12.83...v0.12.84) (2026-10-29)
 
 
