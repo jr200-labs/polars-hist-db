@@ -10,7 +10,7 @@ dependencies = [
     "nats-py>=2.16.0",
     "polars>=2.1.0",
     "pyarrow>=26.0.1",
-    "pymysql>=1.2.3",
+    "pymysql>=1.2.4",
     "pytz>=2026.6",
     "pyyaml>=6.0.3",
     "scandir-rs>=2.10.1",
@@ -21,7 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 sqlalchemy = ["polars"]
 nats = ["nats-py"]
-xtdb = ["adbc-driver-flightsql>=1.13.0", "psycopg[binary]>=3.3.8"]
+xtdb = ["adbc-driver-flightsql>=1.13.0", "psycopg[binary]>=3.3.9"]
 crdt = [
     "pycrdt>=0.14.13",
 ]
@@ -34,20 +34,20 @@ polars-hist-db-parity = "polars_hist_db.parity:main"
 
 [dependency-groups]
 dev = [
-    "coverage>=7.17.2",
+    "coverage>=7.17.3",
     "ipykernel>=7.4.0",
     "mypy>=2.4.1",
     "pytest>=9.2.0",
-    "pytest-asyncio>=1.4.1.post1",
+    "pytest-asyncio>=1.5.0",
     "quarto-cli",
-    "ruff>=0.17.4,<0.18",
+    "ruff>=0.17.5,<0.18",
     "types-python-dateutil>=2.9.0.20261104",
     "types-pytz>=2026.6.0.20261031",
-    "types-pyyaml>=6.0.12.20261103",
+    "types-pyyaml>=6.0.12.20261113",
     "pyarrow-stubs>=20.0.0.20260819",
     "pycrdt>=0.14.13",
     "hypothesis>=6.170.15",
-    "psycopg[binary]>=3.3.8",
+    "psycopg[binary]>=3.3.9",
 ]
 
 [tool.setuptools.package-data]
